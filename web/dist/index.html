@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>刮削助手</title>
+<link rel="stylesheet" href="style.css">
+<script src="vue.global.prod.js"></script>
+</head>
+<body>
+<div id="app">
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <h2>🎬 刮削助手</h2>
+    </div>
+    <ul class="nav-list">
+      <li :class="{active: page==='folders'}" @click="page='folders'">
+        <span class="icon">📂</span> 刮削目录
+      </li>
+      <li :class="{active: page==='records'}" @click="page='records'">
+        <span class="icon">📋</span> 刮削记录
+      </li>
+      <li :class="{active: page==='tmdb'}" @click="page='tmdb'">
+        <span class="icon">🎬</span> TMDB设置
+      </li>
+      <li :class="{active: page==='ai'}" @click="page='ai'">
+        <span class="icon">🤖</span> AI识别设置
+      </li>
+      <li :class="{active: page==='classify'}" @click="page='classify'">
+        <span class="icon">⚙️</span> 二级分类设置
+      </li>
+    </ul>
+    <div class="sidebar-footer">
+      <span class="version">v2.0</span>
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <main class="content">
+    <!-- 刮削目录 -->
+    <section v-if="page==='folders'">
+      <div class="page-header">
+        <h1>刮削目录</h1>
+        <button class="btn btn-primary" @click="showAddFolder=true">+ 添加目录</button>
+      </div>
+      <div class="card" v-if="showAddFolder">
+        <h3>添加监控目录</h3>
+        <div class="form-group">
+          <label>监控路径</label>
+          <div class="input-with-btn">
+            <input v-model="newFolder.path" placeholder="例如 D:\Media\Downloads" readonly>
+            <button class="btn btn-sm" @click="openBrowse('path')">浏览...</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>归档目标根目录</label>
+          <div class="input-with-btn">
+            <input v-model="newFolder.target_root" placeholder="例如 D:\Media\Library" readonly>
+            <button class="btn btn-sm" @click="openBrowse('target_root')">浏览...</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>媒体类型</label>
+            <select v-model="newFolder.media_type">
+              <option value="auto">自动判断</option>
+              <option value="movie">电影</option>
+              <option value="tv">电视剧</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>数据源</label>
+            <select v-model="newFolder.data_source">
+              <option value="siliconflow_tmdb">AI + TMDb</option>
+              <option value="siliconflow_bgm">AI + BGM</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" @click="addFolder">确认添加</button>
+          <button class="btn" @click="showAddFolder=false">取消</button>
+        </div>
+      </div>
+      <table class="table" v-if="folders.length">
+        <thead>
+          <tr>
+            <th>路径</th><th>归档目标</th><th>类型</th><th>数据源</th><th>状态</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="f in folders" :key="f.id">
+            <td>{{f.path}}</td>
+            <td>{{f.target_root || '-'}}</td>
+            <td>{{f.media_type==='auto'?'自动':f.media_type==='movie'?'电影':'电视剧'}}</td>
+            <td>{{f.data_source==='siliconflow_tmdb'?'TMDb':'BGM'}}</td>
+            <td><span :class="['badge', f.enabled?'badge-success':'badge-gray']">{{f.enabled?'监控中':'已停用'}}</span></td>
+            <td class="actions">
+              <button class="btn btn-sm" @click="scanFolder(f.id)" title="立即扫描">🔍</button>
+              <button class="btn btn-sm" @click="openEditFolder(f)" title="编辑">✏️</button>
+              <button class="btn btn-sm" @click="toggleFolder(f)" title="启停">{{f.enabled?'⏸':'▶'}}</button>
+              <button class="btn btn-sm btn-danger" @click="deleteFolder(f.id)" title="删除">🗑</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="empty" v-else-if="!showAddFolder">暂无监控目录，点击右上角添加</div>
+
+      <!-- 编辑目录弹窗 -->
+      <div class="modal-overlay" v-if="editFolderVisible" @click.self="editFolderVisible=false">
+        <div class="modal" style="width:550px">
+          <h2>编辑监控目录</h2>
+          <div class="form-group">
+            <label>监控路径</label>
+            <div class="input-with-btn">
+              <input v-model="editFolderData.path" placeholder="例如 D:\Media\Downloads" readonly>
+              <button class="btn btn-sm" @click="openBrowse('edit_path')">浏览...</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>归档目标根目录</label>
+            <div class="input-with-btn">
+              <input v-model="editFolderData.target_root" placeholder="例如 D:\Media\Library" readonly>
+              <button class="btn btn-sm" @click="openBrowse('edit_target_root')">浏览...</button>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>媒体类型</label>
+              <select v-model="editFolderData.media_type">
+                <option value="auto">自动判断</option>
+                <option value="movie">电影</option>
+                <option value="tv">电视剧</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>数据源</label>
+              <select v-model="editFolderData.data_source">
+                <option value="siliconflow_tmdb">AI + TMDb</option>
+                <option value="siliconflow_bgm">AI + BGM</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" @click="saveEditFolder">保存</button>
+            <button class="btn" @click="editFolderVisible=false">取消</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 刮削记录 -->
+    <section v-if="page==='records'">
+      <div class="page-header"><h1>刮削记录</h1></div>
+
+      <!-- 顶部操作栏 -->
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <button class="btn-grad btn-grad-orange btn-sm" @click="exportErrors">导出识别错误</button>
+          <button class="btn-grad btn-grad-red btn-sm" @click="batchDeleteSelected" :disabled="!selectedIds.length">删除所选记录</button>
+          <button class="btn-grad btn-grad-yellow btn-sm" @click="batchRetrySelected" :disabled="!selectedIds.length">重新整理所有</button>
+          <span class="toolbar-hint">已选择 {{selectedIds.length}} 条记录</span>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn-grad btn-grad-blue btn-sm" @click="refreshRecords">刷新</button>
+          <button class="btn-grad btn-grad-orange btn-sm" @click="clearFailed">清除失败记录</button>
+          <button class="btn-grad btn-grad-red btn-sm" @click="clearAll">清空记录</button>
+        </div>
+      </div>
+
+      <!-- 筛选栏 -->
+      <div class="filter-row">
+        <input v-model="recordKeyword" placeholder="按文件名模糊搜索" class="filter-input">
+        <select v-model="recordFilter" class="filter-select">
+          <option value="">筛选状态</option>
+          <option value="success">成功</option>
+          <option value="pending_manual">待手动</option>
+          <option value="processing">处理中</option>
+          <option value="failed">失败</option>
+        </select>
+        <select v-model="recordTypeFilter" class="filter-select">
+          <option value="">筛选类型</option>
+          <option value="movie">电影</option>
+          <option value="tv">电视剧</option>
+          <option value="auto">自动</option>
+        </select>
+        <button class="btn btn-primary btn-sm" @click="recordPage=1;loadRecords()">筛选</button>
+        <button class="btn btn-sm" @click="resetRecordFilter">重置</button>
+      </div>
+
+      <!-- 数据表格 -->
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="width:36px"><input type="checkbox" @change="toggleSelectAll" :checked="allSelected"></th>
+            <th>运行状态</th>
+            <th>文件状态</th>
+            <th>类型</th>
+            <th>来源</th>
+            <th>文件路径</th>
+            <th>识别信息</th>
+            <th>时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in records" :key="r.id">
+            <td><input type="checkbox" :value="r.id" v-model="selectedIds"></td>
+            <td><span :class="['badge', statusClass(r.status)]">{{statusText(r.status)}}</span></td>
+            <td><span :class="['badge', fileStatusClass(r)]">{{fileStatusText(r)}}</span></td>
+            <td>{{recordType(r)}}</td>
+            <td>{{r.matched_provider || '-'}}</td>
+            <td class="cell-path" :title="r.original_path">{{shortPath(r.original_path)}}</td>
+            <td class="cell-name">
+              <template v-if="r.matched_title">{{r.matched_title}}<span v-if="r.matched_id" style="color:#999;margin-left:4px">(ID:{{r.matched_id}})</span></template>
+              <span v-else style="color:#999">-</span>
+            </td>
+            <td style="white-space:nowrap;font-size:12px;color:#999">{{formatTime(r.updated_at || r.created_at)}}</td>
+            <td class="actions">
+              <button v-if="r.status==='pending_manual'" class="btn btn-sm btn-primary" @click="openManualMatch(r)">手动</button>
+              <button v-if="r.status==='failed'||r.status==='pending_manual'" class="btn btn-sm" @click="retryRecord(r.id)">重试</button>
+              <button class="btn btn-sm btn-danger" @click="deleteRecord(r.id)">删除</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="empty" v-if="!records.length">No Data</div>
+
+      <!-- 分页 -->
+      <div class="pagination-bar">
+        <span class="pagination-total">Total {{recordTotal}}</span>
+        <select v-model.number="recordPageSize" @change="recordPage=1;loadRecords()" class="pagination-size">
+          <option :value="20">20</option>
+          <option :value="50">50</option>
+          <option :value="100">100</option>
+        </select>
+        <div class="pagination-pages">
+          <button class="btn btn-sm" :disabled="recordPage<=1" @click="recordPage--;loadRecords()">&lt;</button>
+          <span class="pagination-current">{{recordPage}}</span>
+          <button class="btn btn-sm" :disabled="recordPage*recordPageSize>=recordTotal" @click="recordPage++;loadRecords()">&gt;</button>
+          <span style="margin-left:8px">Go to</span>
+          <input v-model.number="recordGoPage" class="pagination-goto" @keyup.enter="gotoPage">
+        </div>
+      </div>
+    </section>
+
+    <!-- 手动匹配弹窗 -->
+    <div class="modal-overlay" v-if="manualMatchVisible" @click.self="manualMatchVisible=false">
+      <div class="modal">
+        <h2>手动匹配 — {{manualRecord?.original_name}}</h2>
+        <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <label>搜索标题</label>
+            <input v-model="searchQuery" @keyup.enter="searchCandidates" placeholder="输入标题搜索">
+          </div>
+          <div class="form-group">
+            <label>类型</label>
+            <select v-model="searchIsTv">
+              <option :value="true">电视剧</option>
+              <option :value="false">电影</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>&nbsp;</label>
+            <button class="btn btn-primary" @click="searchCandidates" :disabled="searching">{{searching?'搜索中...':'搜索'}}</button>
+          </div>
+        </div>
+        <div class="candidates" v-if="candidates.length">
+          <div class="candidate-card" v-for="c in candidates" :key="c.id" @click="applyManualMatch(c)">
+            <img v-if="c.meta&&c.meta.poster" :src="c.meta.poster" class="candidate-poster" loading="lazy">
+            <div class="candidate-poster placeholder" v-else>无图</div>
+            <div class="candidate-info">
+              <strong>{{c.title}}</strong>
+              <span class="candidate-meta">{{c.release}} | ID: {{c.id}}</span>
+              <p class="candidate-overview" v-if="c.meta&&c.meta.overview">{{(c.meta.overview||'').slice(0,120)}}{{(c.meta.overview||'').length>120?'...':''}}</p>
+            </div>
+            <button class="btn btn-sm btn-primary">选择</button>
+          </div>
+        </div>
+        <div class="empty" v-else-if="searchDone">无结果，请尝试其他关键词</div>
+        <div class="form-actions">
+          <button class="btn" @click="manualMatchVisible=false">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 目录浏览弹窗 -->
+    <div class="modal-overlay" v-if="browseVisible" @click.self="browseVisible=false">
+      <div class="modal" style="width:550px">
+        <h2>选择目录</h2>
+        <div class="browse-path-bar">
+          <button class="btn btn-sm" @click="browseUp" :disabled="!browseCurrent">⬆ 上级</button>
+          <span class="browse-current">{{ browseCurrent || '我的电脑' }}</span>
+        </div>
+        <div class="browse-list">
+          <div class="browse-item" v-for="d in browseDirs" :key="d.path" @dblclick="browseInto(d.path)" @click="browseSelect(d)" :class="{selected: browseSelected===d.path}">
+            <span class="icon">📁</span> {{ d.name }}
+          </div>
+          <div class="empty" v-if="!browseDirs.length">此目录下无子文件夹</div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" @click="browseConfirm" :disabled="!browseCurrent && !browseSelected">确认选择</button>
+          <button class="btn" @click="browseVisible=false">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TMDB设置 -->
+    <section v-if="page==='tmdb'">
+      <div class="page-header"><h1>TMDB 设置</h1></div>
+      <div class="card">
+        <div class="form-group">
+          <label>TMDB API Key</label>
+          <input v-model="cfg.tmdb_api_key" type="text" placeholder="输入 TMDB API Key">
+        </div>
+        <div class="form-group">
+          <label>BGM API Key（可选）</label>
+          <input v-model="cfg.bgm_api_key" type="text" placeholder="输入 Bangumi API Key">
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" @click="saveSettings">保存</button>
+          <button class="btn" @click="testTmdb">测试 TMDB 连接</button>
+        </div>
+        <div v-if="testResult" :class="['msg', testResult.ok?'msg-ok':'msg-err']">{{testResult.message}}</div>
+      </div>
+    </section>
+
+    <!-- AI识别设置 -->
+    <section v-if="page==='ai'">
+      <div class="page-header"><h1>AI 识别设置</h1></div>
+      <div class="card">
+        <div class="form-group">
+          <label><input type="checkbox" v-model="cfg.prefer_ollama"> 优先使用本地 Ollama</label>
+        </div>
+        <fieldset class="fieldset">
+          <legend>Ollama / LM Studio（本地）</legend>
+          <div class="form-group">
+            <label>API 地址</label>
+            <input v-model="cfg.ollama_url">
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="flex:1">
+              <label>模型</label>
+              <input v-model="cfg.ollama_model">
+            </div>
+            <div class="form-group">
+              <label>&nbsp;</label>
+              <button class="btn btn-sm" @click="refreshOllamaModels">刷新模型列表</button>
+            </div>
+          </div>
+          <div v-if="ollamaModels.length" class="model-list">
+            可用: <span v-for="m in ollamaModels" :key="m" class="badge badge-info clickable" @click="cfg.ollama_model=m">{{m}}</span>
+          </div>
+          <div class="form-group">
+            <label>Embedding 模型</label>
+            <input v-model="cfg.embedding_model">
+          </div>
+          <div class="form-group">
+            <label><input type="checkbox" v-model="cfg.use_embedding_rank"> 启用 Embedding 候选重排</label>
+          </div>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend>OpenAI 兼容（SiliconFlow / DeepSeek 等）</legend>
+          <div class="form-group">
+            <label>API Key</label>
+            <input v-model="cfg.sf_api_key" type="text">
+          </div>
+          <div class="form-group">
+            <label>API URL</label>
+            <input v-model="cfg.sf_api_url">
+          </div>
+          <div class="form-group">
+            <label>模型名称</label>
+            <input v-model="cfg.sf_model">
+          </div>
+        </fieldset>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Temperature</label>
+            <input v-model="cfg.ai_temperature" type="number" step="0.01" min="0" max="2">
+          </div>
+          <div class="form-group">
+            <label>Top-P</label>
+            <input v-model="cfg.ai_top_p" type="number" step="0.01" min="0" max="1">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" @click="saveSettings">保存</button>
+          <button class="btn" @click="testAi">测试 AI 连接</button>
+          <button class="btn btn-danger" @click="clearCache">🗑 清除 API 缓存</button>
+        </div>
+        <div v-if="testResult" :class="['msg', testResult.ok?'msg-ok':'msg-err']">{{testResult.message}}</div>
+      </div>
+    </section>
+
+    <!-- 二级分类设置 -->
+    <section v-if="page==='classify'">
+      <div class="page-header"><h1>二级分类设置</h1></div>
+      <div class="card">
+        <div class="form-group">
+          <label>TV 命名格式</label>
+          <textarea v-model="cfg.tv_format" rows="2" style="font-family:monospace;resize:vertical"></textarea>
+        </div>
+        <div class="form-group">
+          <label>电影命名格式</label>
+          <textarea v-model="cfg.movie_format" rows="2" style="font-family:monospace;resize:vertical"></textarea>
+        </div>
+        <div class="form-group">
+          <label>视频扩展名</label>
+          <textarea v-model="cfg.video_exts" rows="2" style="font-family:monospace;resize:vertical"></textarea>
+        </div>
+        <div class="form-group">
+          <label>字幕/音频扩展名</label>
+          <textarea v-model="cfg.sub_audio_exts" rows="2" style="font-family:monospace;resize:vertical"></textarea>
+        </div>
+        <div class="form-group">
+          <label>语言标签</label>
+          <textarea v-model="cfg.lang_tags" rows="2" style="font-family:monospace;resize:vertical"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>预览线程数</label>
+            <input v-model.number="cfg.preview_workers" type="number" min="1" max="10">
+          </div>
+          <div class="form-group">
+            <label>同步线程数</label>
+            <input v-model.number="cfg.sync_workers" type="number" min="1" max="10">
+          </div>
+          <div class="form-group">
+            <label>执行线程数</label>
+            <input v-model.number="cfg.execution_workers" type="number" min="1" max="10">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" @click="saveSettings">保存</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

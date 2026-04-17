@@ -1,0 +1,17 @@
+__pycache__/
+.ruff_cache/
+*.py[cod]
+*.pyo
+*.log
+*.tmp
+*.bak
+.vscode/
+.venv/
+venv/
+renamer_config.json
+api_cache.json
+media_renamer.log
+media_renamer.db
+*.db
+*.rar
+/dist/
