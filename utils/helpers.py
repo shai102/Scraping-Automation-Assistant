@@ -282,6 +282,37 @@ def unique_keep_order(values):
     return out
 
 
+# ---------------------------------------------------------------------------
+# Decimal-episode detection (小数集如 4.5 属总集篇)
+# ---------------------------------------------------------------------------
+
+_DECIMAL_EP_RE = re.compile(
+    r"""(?ix)
+    (?:
+        s\d{1,2}\s*e\d{1,4}\.\d+          # S01E4.5
+        | (?:ep?)\s*0*\d{1,4}\.\d+          # E4.5, EP04.5
+        | \u7b2c\s*0*\d{1,4}\.\d+\s*[\u96c6\u8bdd\u8a71]  # \u7b2c4.5\u96c6
+        | [\[\(\uff08]\s*0*\d{1,4}\.\d+\s*[\]\)\uff09]   # [4.5] (4.5)
+        | (?<![.\d])-\s*0*\d{1,2}\.\d+(?=[\s\[\(\uff08]|$)  # - 4.5
+    )"""
+)
+
+
+def is_decimal_episode(pure_name):
+    """Return True if the filename has a fractional episode number (e.g. 4.5) indicating a recap."""
+    try:
+        from guessit import guessit as _guessit
+        g = _guessit(str(pure_name or ""))
+        ep = g.get("episode")
+        if isinstance(ep, list) and ep:
+            ep = ep[0]
+        if isinstance(ep, float) and ep != int(ep):
+            return True
+    except Exception:
+        pass
+    return bool(_DECIMAL_EP_RE.search(str(pure_name or "")))
+
+
 def extract_episode_number(pure_name, guess_data=None, ai_data=None):
     if guess_data:
         ep = guess_data.get("episode")

@@ -15,7 +15,7 @@ class MonitorFolder(Base):
     media_type = Column(String(32), nullable=False, default="auto")  # auto / movie / tv
     data_source = Column(String(32), nullable=False, default="siliconflow_tmdb")
     enabled = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.datetime.now)
 
     records = relationship("ScrapeRecord", back_populates="folder", cascade="all, delete-orphan")
 
@@ -35,7 +35,7 @@ class ScrapeRecord(Base):
     target_path = Column(Text, nullable=True)
     metadata_json = Column(Text, nullable=True)
     error_msg = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
 
     folder = relationship("MonitorFolder", back_populates="records")

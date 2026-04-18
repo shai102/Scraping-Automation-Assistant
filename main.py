@@ -64,6 +64,7 @@ def _build_tray_icon():
         webbrowser.open(f"http://127.0.0.1:{PORT}")
 
     def on_quit(_icon, _item):
+        _icon.visible = False
         _icon.stop()
         os._exit(0)
 

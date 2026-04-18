@@ -707,6 +707,35 @@ def fetch_tmdb_season_poster(tv_id, season, api_key):
     )
 
 
+def fetch_tmdb_season_episode_count_raw(tv_id, season, api_key):
+    """获取指定季的总集数。"""
+    if not tv_id or tv_id == "None" or not api_key.strip():
+        return 0
+    try:
+        response = _tmdb_get(
+            f"https://api.themoviedb.org/3/tv/{tv_id}/season/{season}",
+            params={"api_key": api_key.strip(), "language": "zh-CN"},
+            timeout=TIMEOUT_DB_DETAIL,
+        )
+        response.raise_for_status()
+        episodes = response.json().get("episodes")
+        if isinstance(episodes, list):
+            return len(episodes)
+        return 0
+    except Exception:
+        return 0
+
+
+def fetch_tmdb_season_episode_count(tv_id, season, api_key):
+    return cached_request(
+        fetch_tmdb_season_episode_count_raw,
+        get_cache_key("tmdb_season_ep_count", f"{tv_id}_{season}"),
+        tv_id,
+        season,
+        api_key,
+    )
+
+
 def _fetch_hybrid_tmdb_id_raw(title, year, api_key_tmdb):
     """根据标题从 TMDB 搜索剧集 ID，供 hybrid 模式缓存复用。"""
     q = re.sub(r"(?i)HD|重制版|重製版|Remaster|Season.*|第.*季", "", title).strip()

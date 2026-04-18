@@ -32,10 +32,15 @@ class SettingsModel(BaseModel):
     embedding_model: Optional[str] = None
     prefer_ollama: Optional[bool] = None
     use_embedding_rank: Optional[bool] = None
+    ai_mode: Optional[str] = None  # disabled / assist / force
     preview_workers: Optional[int] = None
     sync_workers: Optional[int] = None
     execution_workers: Optional[int] = None
     media_type_override: Optional[str] = None
+    tg_bot_token: Optional[str] = None
+    tg_chat_id: Optional[str] = None
+    tg_notify_enabled: Optional[bool] = None
+    tg_notify_delay: Optional[int] = None
 
 
 def _load() -> dict:
@@ -58,7 +63,7 @@ def get_settings():
     cfg = _load()
     # Mask API keys for display (show last 4 chars)
     safe = dict(cfg)
-    for key in ("sf_api_key", "bgm_api_key", "tmdb_api_key"):
+    for key in ("sf_api_key", "bgm_api_key", "tmdb_api_key", "tg_bot_token"):
         val = safe.get(key, "")
         if val and len(val) > 4:
             safe[key] = "*" * (len(val) - 4) + val[-4:]
@@ -158,6 +163,25 @@ def list_ollama_models():
         return {"models": []}
     except Exception:
         return {"models": []}
+
+
+@router.post("/test-telegram")
+def test_telegram():
+    cfg = _load()
+    token = (cfg.get("tg_bot_token") or "").strip()
+    chat_id = (cfg.get("tg_chat_id") or "").strip()
+    if not token:
+        raise HTTPException(400, detail="Telegram Bot Token 未配置")
+    if not chat_id:
+        raise HTTPException(400, detail="Telegram Chat ID 未配置")
+    try:
+        from utils.telegram_notify import send_test_message
+        result = send_test_message(token, chat_id)
+        if result.get("ok"):
+            return {"ok": True, "message": "Telegram 测试消息发送成功"}
+        return {"ok": False, "message": result.get("description", "发送失败")}
+    except Exception as e:
+        return {"ok": False, "message": str(e)[:200]}
 
 
 @router.post("/clear-cache")

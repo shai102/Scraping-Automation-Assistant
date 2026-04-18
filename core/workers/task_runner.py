@@ -296,6 +296,10 @@ def process_task(gui, i):
 
         extracted_ep = extract_episode_number(pure, g)
 
+        # 读取 AI 模式（在缓存判断前确定，后续 is_resolver 块也可访问）
+        _ai_mode_obj = getattr(gui, "ai_mode", None)
+        ai_mode_val = _ai_mode_obj.get() if _ai_mode_obj else "assist"
+
         with gui.cache_lock:
             cached_ai = gui.dir_cache.get(dir_p)
 
@@ -310,48 +314,43 @@ def process_task(gui, i):
             ai_data = None
             ai_msg = ""
 
-            if gui.prefer_ollama.get():
-                if gui.ollama_url.get().strip() and gui.ollama_model.get().strip():
-                    ai_data, ai_msg = gui._parse_with_ollama(pure)
-                    if ai_data is None and gui.sf_api_key.get().strip():
+            if ai_mode_val == "force":
+                # 强制使用 AI：只调 AI，失败则直接待手动
+                if gui.prefer_ollama.get():
+                    if gui.ollama_url.get().strip() and gui.ollama_model.get().strip():
+                        ai_data, ai_msg = gui._parse_with_ollama(pure)
+                        if ai_data is None and gui.sf_api_key.get().strip():
+                            ai_data, ai_msg = fetch_siliconflow_info(
+                                pure, gui.sf_api_key.get(), gui.sf_api_url.get(),
+                                gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
+                            )
+                    elif gui.sf_api_key.get().strip():
                         ai_data, ai_msg = fetch_siliconflow_info(
-                            pure,
-                            gui.sf_api_key.get(),
-                            gui.sf_api_url.get(),
-                            gui.sf_model.get(),
-                            gui._get_ai_temperature(),
-                            gui._get_ai_top_p(),
+                            pure, gui.sf_api_key.get(), gui.sf_api_url.get(),
+                            gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
                         )
                 elif gui.sf_api_key.get().strip():
                     ai_data, ai_msg = fetch_siliconflow_info(
-                        pure,
-                        gui.sf_api_key.get(),
-                        gui.sf_api_url.get(),
-                        gui.sf_model.get(),
-                        gui._get_ai_temperature(),
-                        gui._get_ai_top_p(),
+                        pure, gui.sf_api_key.get(), gui.sf_api_url.get(),
+                        gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
                     )
-            elif gui.sf_api_key.get().strip():
-                ai_data, ai_msg = fetch_siliconflow_info(
-                    pure,
-                    gui.sf_api_key.get(),
-                    gui.sf_api_url.get(),
-                    gui.sf_model.get(),
-                    gui._get_ai_temperature(),
-                    gui._get_ai_top_p(),
-                )
-
-            if ai_data:
-                t = ai_data.get("title", "未知")
-                y = ai_data.get("year")
-                ai_season = safe_int(ai_data.get("season"), 1)
-                if ai_season < 1:
-                    ai_season = 1
-                s = gui._pick_season(pure, g, ai_season)
-                e = extracted_ep or safe_int(ai_data.get("episode"), 1)
-                with gui.cache_lock:
-                    gui.dir_cache[dir_p] = ai_data
+                if ai_data:
+                    t = ai_data.get("title", "未知")
+                    y = ai_data.get("year")
+                    ai_season = safe_int(ai_data.get("season"), 1)
+                    if ai_season < 1:
+                        ai_season = 1
+                    s = gui._pick_season(pure, g, ai_season)
+                    e = extracted_ep or safe_int(ai_data.get("episode"), 1)
+                    with gui.cache_lock:
+                        gui.dir_cache[dir_p] = ai_data
+                else:
+                    # AI 失败 → 直接待手动，不猜测
+                    item.metadata = {"id": "None"}
+                    item.new_name_only = ""
+                    return
             else:
+                # disabled / assist 模式：先用 guessit 解析文件名
                 t = g.get("title") or derive_title_from_filename(pure) or "未知"
                 y = g.get("year")
                 s = gui._pick_season(pure, g, 1)
@@ -431,6 +430,40 @@ def process_task(gui, i):
                             db_c = (_ft, _fid, "文件夹ID锁定", _fmeta)
                     if not db_c:
                         db_c = gui._resolve_db_match(item, t, y, is_tv, mode, ai_data, g)
+                    # 辅助识别模式：TMDB 搜索无结果时，用 AI 重新提取标题再搜一次
+                    if (ai_mode_val == "assist"
+                            and (not db_c or (len(db_c) >= 2 and db_c[1] == "None"))):
+                        _ai_r = None
+                        if gui.prefer_ollama.get():
+                            if gui.ollama_url.get().strip() and gui.ollama_model.get().strip():
+                                _ai_r, _ = gui._parse_with_ollama(pure)
+                                if _ai_r is None and gui.sf_api_key.get().strip():
+                                    _ai_r, _ = fetch_siliconflow_info(
+                                        pure, gui.sf_api_key.get(), gui.sf_api_url.get(),
+                                        gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
+                                    )
+                            elif gui.sf_api_key.get().strip():
+                                _ai_r, _ = fetch_siliconflow_info(
+                                    pure, gui.sf_api_key.get(), gui.sf_api_url.get(),
+                                    gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
+                                )
+                        elif gui.sf_api_key.get().strip():
+                            _ai_r, _ = fetch_siliconflow_info(
+                                pure, gui.sf_api_key.get(), gui.sf_api_url.get(),
+                                gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
+                            )
+                        if _ai_r:
+                            _t_ai = _ai_r.get("title", "")
+                            _y_ai = _ai_r.get("year")
+                            if _t_ai and normalize_compare_text(_t_ai) != normalize_compare_text(t):
+                                t = _t_ai
+                                y = _y_ai
+                                ai_data = _ai_r
+                                with gui.cache_lock:
+                                    gui.dir_cache[dir_p] = _ai_r
+                                _db_retry = gui._resolve_db_match(item, t, y, is_tv, mode, ai_data, g)
+                                if _db_retry and len(_db_retry) >= 2 and _db_retry[1] != "None":
+                                    db_c = _db_retry
                     with gui.cache_lock:
                         if db_c and len(db_c) >= 2 and db_c[1] != "None":
                             gui.db_cache[cache_key] = db_c

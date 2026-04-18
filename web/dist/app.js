@@ -25,7 +25,12 @@ const app = Vue.createApp({
       // Manual match
       manualMatchVisible: false,
       manualRecord: null,
+      manualSeason: null,
+      manualEpOffset: 0,
       searchQuery: '',
+      searchYear: null,
+      searchMode: 'name',
+      searchTmdbId: '',
       searchIsTv: true,
       searching: false,
       searchDone: false,
@@ -33,6 +38,7 @@ const app = Vue.createApp({
       // Settings
       cfg: {},
       testResult: null,
+      tgTestResult: null,
       ollamaModels: [],
       // WebSocket
       ws: null,
@@ -313,11 +319,11 @@ const app = Vue.createApp({
       return t.replace('T', ' ').substring(0, 19);
     },
     statusClass(s) {
-      var map = { success: 'badge-success', pending_manual: 'badge-warning', processing: 'badge-processing', failed: 'badge-danger' };
+      var map = { success: 'badge-success', pending_manual: 'badge-warning', processing: 'badge-processing', failed: 'badge-danger', skipped: 'badge-gray' };
       return map[s] || 'badge-gray';
     },
     statusText(s) {
-      var map = { success: '成功', pending_manual: '待手动', processing: '处理中', failed: '失败' };
+      var map = { success: '成功', pending_manual: '待手动', processing: '处理中', failed: '失败', skipped: '已跳过' };
       return map[s] || s;
     },
     shortPath(p) {
@@ -330,8 +336,14 @@ const app = Vue.createApp({
     openManualMatch(record) {
       this.manualRecord = record;
       this.searchQuery = record.matched_title || record.original_name.replace(/\.[^.]+$/, '');
+      var ym = /(19|20)\d{2}/.exec(record.original_name);
+      this.searchYear = ym ? parseInt(ym[0]) : null;
       this.candidates = [];
       this.searchDone = false;
+      this.manualSeason = null;
+      this.manualEpOffset = 0;
+      this.searchMode = 'name';
+      this.searchTmdbId = '';
       this.manualMatchVisible = true;
     },
     async searchCandidates() {
@@ -341,6 +353,7 @@ const app = Vue.createApp({
       try {
         var data = await this.api('POST', '/api/records/search-candidates', {
           query: this.searchQuery.trim(),
+          year: this.searchYear || null,
           is_tv: this.searchIsTv,
           source: (this.cfg && this.cfg.data_source) || 'siliconflow_tmdb',
         });
@@ -348,6 +361,24 @@ const app = Vue.createApp({
       } catch (e) { alert(e.message); }
       this.searching = false;
       this.searchDone = true;
+    },
+    async applyByTmdbId() {
+      if (!this.searchTmdbId.trim() || !this.manualRecord) return;
+      var provider = ((this.cfg && this.cfg.data_source) || 'siliconflow_tmdb') === 'siliconflow_tmdb' ? 'tmdb' : 'bgm';
+      this.searching = true;
+      try {
+        await this.api('POST', '/api/records/' + this.manualRecord.id + '/manual-match', {
+          candidate_id: this.searchTmdbId.trim(),
+          candidate_title: '',
+          provider: provider,
+          is_tv: this.searchIsTv,
+          season_override: (this.manualSeason !== null && this.manualSeason !== '') ? parseInt(this.manualSeason) : null,
+          episode_offset: parseInt(this.manualEpOffset) || 0,
+        });
+        this.manualMatchVisible = false;
+        this.loadRecords();
+      } catch (e) { alert('匹配失败: ' + e.message); }
+      this.searching = false;
     },
     async applyManualMatch(candidate) {
       if (!this.manualRecord) return;
@@ -358,6 +389,8 @@ const app = Vue.createApp({
           candidate_title: candidate.title,
           provider: provider,
           is_tv: this.searchIsTv,
+          season_override: (this.manualSeason !== null && this.manualSeason !== '') ? parseInt(this.manualSeason) : null,
+          episode_offset: parseInt(this.manualEpOffset) || 0,
         });
         this.manualMatchVisible = false;
         this.loadRecords();
@@ -399,6 +432,14 @@ const app = Vue.createApp({
         var r = await this.api('POST', '/api/settings/clear-cache');
         this.testResult = { ok: true, message: r.message };
       } catch (e) { this.testResult = { ok: false, message: e.message }; }
+    },
+    async testTelegram() {
+      this.tgTestResult = null;
+      try {
+        await this.api('PUT', '/api/settings', this.cfg);
+        var r = await this.api('POST', '/api/settings/test-telegram');
+        this.tgTestResult = r;
+      } catch (e) { this.tgTestResult = { ok: false, message: e.message }; }
     },
   },
 });

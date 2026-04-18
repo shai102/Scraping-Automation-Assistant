@@ -49,6 +49,8 @@ class ManualMatchBody(BaseModel):
     candidate_title: str
     provider: str  # tmdb / bgm
     is_tv: bool = True
+    season_override: Optional[int] = None
+    episode_offset: int = 0
 
 
 class SearchCandidatesBody(BaseModel):
@@ -221,8 +223,16 @@ def manual_match(record_id: int, body: ManualMatchBody, db: Session = Depends(ge
     if folder and folder.data_source:
         ctx.source_var.set(folder.data_source)
 
+    # Manual match: user's explicit is_tv choice overrides guessit detection
+    ctx.media_type_override.set("电视剧" if body.is_tv else "电影")
+
     # Inject the manual match into the context's manual_locks so process_task uses it
     ctx.manual_locks[item.path] = (body.candidate_title, str(body.candidate_id), f"手动/{body.provider}命中", meta or {})
+    # Apply season override and episode offset
+    if body.season_override is not None:
+        ctx.forced_seasons[item.path] = body.season_override
+    if body.episode_offset != 0:
+        ctx.forced_offsets[item.path] = body.episode_offset
     ctx.file_list = [item]
 
     try:
@@ -271,6 +281,12 @@ def manual_match(record_id: int, body: ManualMatchBody, db: Session = Depends(ge
         if w and w._broadcast:
             from monitor.watcher import _record_to_dict
             w._broadcast({"type": "record_update", "data": _record_to_dict(row)})
+
+        # TG notification
+        if w and hasattr(w, '_tg_batcher'):
+            folder_id_val = folder.id if folder else 0
+            folder_name_val = os.path.basename(folder.path) if folder else ""
+            w._tg_batcher.add(folder_id_val, folder_name_val, item)
 
         return _row_to_out(row).model_dump()
 

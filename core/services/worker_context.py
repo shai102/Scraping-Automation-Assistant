@@ -134,6 +134,7 @@ class WorkerContext:
         self.embedding_model = _SimpleVar(config.get("embedding_model", ""))
         self.prefer_ollama = _SimpleVar(config.get("prefer_ollama", False))
         self.use_embedding_rank = _SimpleVar(config.get("use_embedding_rank", True))
+        self.ai_mode = _SimpleVar(config.get("ai_mode", "assist"))  # disabled / assist / force
         self.preview_workers = _SimpleVar(str(self._clamp_workers(config.get("preview_workers"), 1)))
         self.sync_workers = _SimpleVar(str(self._clamp_workers(config.get("sync_workers"), 5)))
         self.execution_workers = _SimpleVar(str(self._clamp_workers(config.get("execution_workers"), 5)))
@@ -177,6 +178,7 @@ class WorkerContext:
                 var.set(cfg.get(attr, var.get()))
         self.prefer_ollama.set(cfg.get("prefer_ollama", False))
         self.use_embedding_rank.set(cfg.get("use_embedding_rank", True))
+        self.ai_mode.set(cfg.get("ai_mode", "assist"))
         self.target_root.set(cfg.get("target_root", self.target_root.get()))
         self.source_var.set(cfg.get("data_source", self.source_var.get()))
 
