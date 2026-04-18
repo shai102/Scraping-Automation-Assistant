@@ -23,11 +23,15 @@ from core.services.worker_context import WorkerContext
 from core.workers.task_runner import process_task as _process_task
 from db.database import SessionLocal
 from db.scrape_models import MonitorFolder, ScrapeRecord
+from utils.telegram_notify import NotificationBatcher
 
 logger = logging.getLogger(__name__)
 
 # Debounce: wait this many seconds after last event before processing a file
 _DEBOUNCE_SECONDS = 5.0
+
+# Polling: scan folders every N seconds to catch network-written files
+_POLL_INTERVAL_SECONDS = 30.0
 
 
 class _MediaHandler(FileSystemEventHandler):
@@ -70,6 +74,10 @@ class FolderWatcher:
         self._running = False
         self._worker_ctx: Optional[WorkerContext] = None
         self._debounce_thread: Optional[threading.Thread] = None
+        self._poll_thread: Optional[threading.Thread] = None
+        self._tg_batcher = NotificationBatcher(
+            cfg_getter=lambda: self._worker_ctx._cfg if self._worker_ctx else {}
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -85,6 +93,8 @@ class FolderWatcher:
         self._observer.start()
         self._debounce_thread = threading.Thread(target=self._debounce_loop, daemon=True)
         self._debounce_thread.start()
+        self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self._poll_thread.start()
         self._sync_watches()
         logger.info("FolderWatcher started")
 
@@ -165,6 +175,53 @@ class FolderWatcher:
                     self._processed.add(p)
                 self._pool.submit(self._process_file, p)
 
+    def _poll_loop(self):
+        """Periodically scan all enabled folders for new files not yet recorded.
+        This catches files written over the network where watchdog events are not delivered.
+        """
+        while self._running:
+            time.sleep(_POLL_INTERVAL_SECONDS)
+            if not self._running:
+                break
+            try:
+                self._poll_once()
+            except Exception as e:
+                logger.error(f"Poll error: {e}")
+
+    def _poll_once(self):
+        """Single pass: walk enabled folders and enqueue any file not yet in ScrapeRecord."""
+        if not self._worker_ctx:
+            return
+        exts = self._worker_ctx.get_media_exts()
+        db = SessionLocal()
+        try:
+            folders = db.query(MonitorFolder).filter(MonitorFolder.enabled == True).all()
+            for folder in folders:
+                if not os.path.isdir(folder.path):
+                    continue
+                for dirpath, _, filenames in os.walk(folder.path):
+                    for fn in filenames:
+                        if not fn.lower().endswith(exts):
+                            continue
+                        full = os.path.normpath(os.path.join(dirpath, fn))
+                        with self._pending_lock:
+                            if full in self._processed or full in self._pending:
+                                continue
+                        # Check DB — already processed?
+                        existing = db.query(ScrapeRecord).filter(
+                            ScrapeRecord.original_path == full
+                        ).first()
+                        if existing:
+                            with self._pending_lock:
+                                self._processed.add(full)
+                            continue
+                        # New file — enqueue via debounce
+                        with self._pending_lock:
+                            self._pending[full] = time.time()
+                        logger.debug(f"Poll found new file: {full}")
+        finally:
+            db.close()
+
     # ------------------------------------------------------------------
     # Full scan
     # ------------------------------------------------------------------
@@ -223,6 +280,24 @@ class FolderWatcher:
                 return
 
             folder = self._find_folder(path, db)
+
+            # Decimal episode (e.g. 4.5) = \u603b\u96c6\u7bc7 \u2014 skip
+            from utils.helpers import is_decimal_episode
+            pure_name = os.path.splitext(os.path.basename(path))[0]
+            if is_decimal_episode(pure_name):
+                logger.info(f"\u8df3\u8fc7\u5c0f\u6570\u96c6\uff08\u603b\u96c6\u7bc7\uff09: {path}")
+                record = ScrapeRecord(
+                    folder_id=folder.id if folder else None,
+                    original_path=path,
+                    original_name=os.path.basename(path),
+                    status="skipped",
+                    error_msg="\u5c0f\u6570\u96c6\uff08\u603b\u96c6\u7bc7\uff09\uff0c\u5df2\u8df3\u8fc7",
+                )
+                db.add(record)
+                db.commit()
+                db.refresh(record)
+                self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
+                return
 
             # Create record
             record = ScrapeRecord(
@@ -317,6 +392,16 @@ class FolderWatcher:
                 db.commit()
                 self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
                 logger.info(f"Archived: {os.path.basename(path)} -> {target}")
+
+                # Telegram batch notification
+                try:
+                    self._tg_batcher.add(
+                        folder.id if folder else 0,
+                        os.path.basename(folder.path) if folder else "",
+                        item,
+                    )
+                except Exception as _tg_err:
+                    logger.debug(f"TG 通知排队失败: {_tg_err}")
 
             except Exception as e:
                 logger.error(f"Archive failed for {path}: {e}")
