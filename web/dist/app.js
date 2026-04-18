@@ -309,9 +309,8 @@ const app = Vue.createApp({
       return r.target_path ? '已归档' : '未归档';
     },
     recordType(r) {
-      if (r.matched_provider === 'tmdb' || r.matched_provider === 'bgm') {
-        // Try to infer from target_path or metadata
-      }
+      if (r.media_type === 'episode') return '电视剧';
+      if (r.media_type === 'movie') return '电影';
       return '-';
     },
     formatTime(t) {

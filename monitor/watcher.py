@@ -237,7 +237,7 @@ class FolderWatcher:
             for dirpath, _, filenames in os.walk(folder.path):
                 for fn in filenames:
                     if fn.lower().endswith(exts):
-                        full = os.path.join(dirpath, fn)
+                        full = os.path.normpath(os.path.join(dirpath, fn))
                         # Skip already-recorded files
                         existing = db.query(ScrapeRecord).filter(
                             ScrapeRecord.original_path == full
@@ -311,12 +311,14 @@ class FolderWatcher:
             db.refresh(record)
             self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
 
-            # Build a single-file WorkerContext + MediaItem
-            ctx = self._worker_ctx
-            if not ctx:
+            # Build a per-call WorkerContext to avoid concurrent mutation of shared state.
+            # Each thread gets its own copy of the config; the global _worker_ctx is only
+            # used for extension filtering (enqueue / _poll_once).
+            if not self._worker_ctx:
                 return
+            ctx = WorkerContext(config=dict(self._worker_ctx._cfg))
 
-            # Apply folder-level overrides
+            # Apply folder-level overrides onto this thread-local ctx
             if folder:
                 if folder.target_root:
                     ctx.target_root.set(folder.target_root)

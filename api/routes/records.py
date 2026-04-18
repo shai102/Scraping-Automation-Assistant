@@ -39,6 +39,7 @@ class RecordOut(BaseModel):
     matched_id: Optional[str] = None
     matched_provider: Optional[str] = None
     target_path: Optional[str] = None
+    media_type: Optional[str] = None
     error_msg: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -61,6 +62,14 @@ class SearchCandidatesBody(BaseModel):
 
 
 def _row_to_out(r: ScrapeRecord) -> RecordOut:
+    # Extract media_type from stored metadata_json
+    _media_type = None
+    if r.metadata_json:
+        try:
+            _meta = json.loads(r.metadata_json)
+            _media_type = _meta.get("type")  # "episode" or "movie"
+        except Exception:
+            pass
     return RecordOut(
         id=r.id,
         folder_id=r.folder_id,
@@ -71,6 +80,7 @@ def _row_to_out(r: ScrapeRecord) -> RecordOut:
         matched_id=r.matched_id,
         matched_provider=r.matched_provider,
         target_path=r.target_path,
+        media_type=_media_type,
         error_msg=r.error_msg,
         created_at=r.created_at.isoformat() if r.created_at else None,
         updated_at=r.updated_at.isoformat() if r.updated_at else None,
@@ -144,29 +154,40 @@ def clear_all(db: Session = Depends(get_db)):
 
 @router.post("/batch-retry")
 def batch_retry(body: BatchDeleteBody, db: Session = Depends(get_db)):
-    """Retry multiple records (sets status back to processing)."""
+    """Retry multiple records by deleting them and re-enqueuing the original files."""
     rows = db.query(ScrapeRecord).filter(
         ScrapeRecord.id.in_(body.ids),
-        ScrapeRecord.status.in_(["failed", "pending_manual"]),
     ).all()
+
+    # Collect paths of files that still exist on disk before deleting records
+    paths_to_retry = [
+        row.original_path for row in rows
+        if os.path.isfile(row.original_path)
+    ]
+
+    # Delete the old records so _process_file can re-create them fresh
     for row in rows:
-        row.status = "processing"
-        row.error_msg = None
+        db.delete(row)
     db.commit()
-    # Trigger re-processing in background
+
+    # Re-enqueue via watcher
     from server import get_watcher
     w = get_watcher()
+    count = 0
     if w:
-        for row in rows:
-            if os.path.isfile(row.original_path):
-                import threading
-                # Remove from processed set so watcher accepts it
-                with w._pending_lock:
-                    w._processed.discard(os.path.normpath(row.original_path))
-                # Delete the record so _process_file can recreate
-                # Actually, let's just re-enqueue. We need to remove old record first
-                pass
-    return {"ok": True, "count": len(rows)}
+        for path in paths_to_retry:
+            norm = os.path.normpath(path)
+            with w._pending_lock:
+                # Temporarily remove so _process_file can run, then re-add to block
+                # _poll_loop from also picking up the file while processing is in flight.
+                w._processed.discard(norm)
+            w._pool.submit(w._process_file, path)
+            # Re-add to _processed so _poll_loop won't double-enqueue the same file
+            with w._pending_lock:
+                w._processed.add(norm)
+            count += 1
+
+    return {"ok": True, "count": count}
 
 
 @router.post("/search-candidates")
