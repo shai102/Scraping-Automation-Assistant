@@ -103,6 +103,13 @@
             </select>
           </div>
         </div>
+        <div class="form-group" style="margin-top:4px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" v-model="newFolder.skip_if_scraped">
+            <span>跳过已刮削文件</span>
+          </label>
+          <small style="color:#888;display:block;margin-top:4px">文件旁边已存在同名 .nfo 时自动跳过，不再重新刮削</small>
+        </div>
         <div class="form-actions">
           <button class="btn btn-primary" @click="addFolder">确认添加</button>
           <button class="btn" @click="showAddFolder=false">取消</button>
@@ -179,6 +186,13 @@
                 <option value="siliconflow_bgm">AI + BGM</option>
               </select>
             </div>
+          </div>
+          <div class="form-group" style="margin-top:4px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" v-model="editFolderData.skip_if_scraped">
+              <span>跳过已刮削文件</span>
+            </label>
+            <small style="color:#888;display:block;margin-top:4px">文件旁边已存在同名 .nfo 时自动跳过，不再重新刮削</small>
           </div>
           <div class="form-actions">
             <button class="btn btn-primary" @click="saveEditFolder">保存</button>

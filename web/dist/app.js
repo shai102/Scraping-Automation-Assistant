@@ -9,9 +9,9 @@ const app = Vue.createApp({
       // Folders
       folders: [],
       showAddFolder: false,
-      newFolder: { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '' },
+      newFolder: { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '', skip_if_scraped: false },
       editFolderVisible: false,
-      editFolderData: { id: null, path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '' },
+      editFolderData: { id: null, path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '', skip_if_scraped: false },
       // Symlink export
       showAddSymlink: false,
       newSymlinkFolder: { path: '', target_root: '' },
@@ -222,7 +222,7 @@ const app = Vue.createApp({
       try {
         await this.api('POST', '/api/monitor/folders', this.newFolder);
         this.showAddFolder = false;
-        this.newFolder = { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '' };
+        this.newFolder = { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '', skip_if_scraped: false };
         this.loadFolders();
       } catch (e) { alert(e.message); }
     },
@@ -245,6 +245,7 @@ const app = Vue.createApp({
         data_source: f.data_source || 'siliconflow_tmdb',
         organize_mode: f.organize_mode || 'move',
         symlink_source: f.symlink_source || '',
+        skip_if_scraped: f.skip_if_scraped || false,
       };
       this.editFolderVisible = true;
     },
@@ -257,6 +258,7 @@ const app = Vue.createApp({
           data_source: this.editFolderData.data_source,
           organize_mode: this.editFolderData.organize_mode,
           symlink_source: this.editFolderData.symlink_source,
+          skip_if_scraped: this.editFolderData.skip_if_scraped,
         });
         this.editFolderVisible = false;
         this.loadFolders();

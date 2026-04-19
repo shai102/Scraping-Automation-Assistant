@@ -16,6 +16,7 @@ class MonitorFolder(Base):
     data_source = Column(String(32), nullable=False, default="siliconflow_tmdb")
     organize_mode = Column(String(32), nullable=False, default="move")  # move / copy / symlink / hardlink / rename
     symlink_source = Column(String(1024), nullable=False, default="")  # STRM source dir (rename mode only)
+    skip_if_scraped = Column(Boolean, nullable=False, default=False)
     enabled = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=datetime.datetime.now)
 

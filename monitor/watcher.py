@@ -34,6 +34,12 @@ _DEBOUNCE_SECONDS = 5.0
 _POLL_INTERVAL_SECONDS = 30.0
 
 
+def _has_nfo(filepath: str) -> bool:
+    """Check if a sibling .nfo file exists for the given media file."""
+    base = os.path.splitext(filepath)[0]
+    return os.path.isfile(base + ".nfo")
+
+
 class _MediaHandler(FileSystemEventHandler):
     """watchdog handler that queues newly created / moved-in media files."""
 
@@ -213,6 +219,7 @@ class FolderWatcher:
                 if not os.path.isdir(folder.path):
                     continue
                 is_sl_export = getattr(folder, 'organize_mode', 'move') == 'symlink_export'
+                skip_scraped = getattr(folder, 'skip_if_scraped', False) and not is_sl_export
                 for dirpath, _, filenames in os.walk(folder.path):
                     for fn in filenames:
                         if not is_sl_export and not fn.lower().endswith(exts):
@@ -221,6 +228,11 @@ class FolderWatcher:
                         with self._pending_lock:
                             if full in self._processed or full in self._pending:
                                 continue
+                        # Skip files that already have a sibling .nfo
+                        if skip_scraped and _has_nfo(full):
+                            with self._pending_lock:
+                                self._processed.add(full)
+                            continue
                         # Check DB — already processed?
                         if is_sl_export:
                             existing = db.query(SymlinkRecord).filter(
@@ -255,11 +267,17 @@ class FolderWatcher:
                 return
             exts = self._worker_ctx.get_media_exts() if self._worker_ctx else ()
             is_sl_export = getattr(folder, 'organize_mode', 'move') == 'symlink_export'
+            skip_scraped = getattr(folder, 'skip_if_scraped', False) and not is_sl_export
             for dirpath, _, filenames in os.walk(folder.path):
                 for fn in filenames:
                     if not is_sl_export and not fn.lower().endswith(exts):
                         continue
                     full = os.path.normpath(os.path.join(dirpath, fn))
+                    # Skip files that already have a sibling .nfo
+                    if skip_scraped and _has_nfo(full):
+                        with self._pending_lock:
+                            self._processed.add(full)
+                        continue
                     # Skip already-recorded files
                     if is_sl_export:
                         existing = db.query(SymlinkRecord).filter(

@@ -50,3 +50,10 @@ def init_db():
             conn.commit()
         except Exception:
             conn.rollback()
+        try:
+            conn.execute(sqlalchemy.text(
+                "ALTER TABLE monitor_folders ADD COLUMN skip_if_scraped BOOLEAN NOT NULL DEFAULT 0"
+            ))
+            conn.commit()
+        except Exception:
+            conn.rollback()
