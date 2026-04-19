@@ -7,8 +7,8 @@
 ## 功能概览
 
 - **文件夹监控**：可添加多个监控目录，watchdog 实时检测新文件并自动入队。
-- **多种整理方式**：移动、复制、软链接、硬链接、原地整理（rename）五种模式可选。
-- **软链接源同步**：原地整理模式下可配置 STRM 源目录，自动以软链接方式同步到监控目录后刮削。
+- **多种整理方式**：移动、复制、软链接、硬链接、原地整理（rename）、导出软链接（symlink_export）六种模式可选。
+- **导出软链接 + 原地整理拆分方案**：导出软链接模式监控目录，将原始文件软链接到目标目录（如 E:\STRM）；再用另一个目标目录配置原地整理，对软链接进行特刮和建立有序目录结构，原始文件不动。
 - **AI 识别**：支持 OpenAI 兼容 API（SiliconFlow / DeepSeek / OpenAI 等）与本地 Ollama。
 - **关键词过滤**：全局配置剔除关键词，在 AI/guessit 识别前自动过滤干扰字符串，提升匹配准确度。
 - **数据库匹配**：支持 TMDb 与 Bangumi（BGM），embedding 候选重排可选。
@@ -33,7 +33,7 @@ api/
     settings.py                 # 配置读写、TMDB/AI 连接测试、剔除关键词、缓存过期
     ws.py                       # WebSocket 实时推送
 monitor/
-  watcher.py                    # watchdog 文件监控 + 软链接源同步 + 自动处理流程
+  watcher.py                    # watchdog 文件监控 + 导出软链接模式 + 自动处理流程
 core/
   services/
     worker_context.py           # 无 GUI 版配置上下文（供 API 调用）
@@ -105,7 +105,17 @@ python -m uvicorn server:app --host 0.0.0.0 --port 8090
 一键打包.bat
 ```
 
-生成 `dist/刮削助手.exe`，单文件可执行，包含所有静态资源。
+生成 `dist/刮削助手.exe`，单文件可执行，包含所有静态资源。EXE 图标与系统托盘图标一致（蓝色圆形图标）。
+
+> 首次打包前需确保项目目录下已生成 `app.ico`，可单独运行：
+> ```python
+> python -c "
+> from PIL import Image, ImageDraw
+> size=256; img=Image.new('RGBA',(size,size),(0,0,0,0)); draw=ImageDraw.Draw(img)
+> draw.ellipse([2,2,253,253],fill='#4361ee'); draw.ellipse([72,72,183,183],fill='#ffffff'); draw.ellipse([112,112,143,143],fill='#4361ee')
+> img.save('app.ico',format='ICO',sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+> "
+> ```
 
 ## 配置说明
 
@@ -129,11 +139,25 @@ python -m uvicorn server:app --host 0.0.0.0 --port 8090
 | 字段 | 说明 |
 |---|---|
 | 监控路径 | 文件来源目录 |
-| 归档目标根目录 | 归档后的目标路径（原地整理模式下自动使用监控路径） |
-| 整理方式 | 移动 / 复制 / 软链接 / 硬链接 / 原地整理 |
-| 软链接源目录 | 仅原地整理模式可用，设置后自动同步源目录文件 |
+| 归档目标根目录 | 归档后的目标路径（原地整理模式不需要；导出软链接模式必填） |
+| 整理方式 | 移动 / 复制 / 软链接 / 硬链接 / 原地整理 / 导出软链接 |
 | 媒体类型 | 自动判断 / 电影 / 电视剧 |
 | 数据源 | AI + TMDb 或 AI + BGM |
+
+#### 导出软链接 + 原地整理拆分方案
+
+适用场景：原始文件存放在一个目录（如 `E:\MPSTRM`），希望在另一个目录（如 `E:\STRM`）建立完整的媒体库结构供 Emby/Jellyfin 读取，同时不占用额外磁盘空间。
+
+```
+监控目录1： E:\MPSTRM（导出软链接模式，目标 = E:\STRM）
+  ↓ 新文件到达 → 在 E:\STRM 创建同名软链接 → 完成（不刮削）
+
+监控目录2： E:\STRM（原地整理模式）
+  ↓ 检测到新软链接 → AI 识别 + 刮削 → 在 E:\STRM 内建立有序结构
+
+结果： E:\MPSTRM\raw.mkv 不动
+        E:\STRM\黑袍纠察队 (2019)\Season 5\黑袍纠察队 - S05E01.mkv → 软链接
+```
 
 ## 日志
 

@@ -9,6 +9,7 @@ pyinstaller --noconfirm ^
   --onefile ^
   --windowed ^
   --name "刮削助手" ^
+  --icon "app.ico" ^
   --collect-all guessit ^
   --collect-all babelfish ^
   --collect-all Pillow ^

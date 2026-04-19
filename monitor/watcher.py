@@ -50,43 +50,6 @@ class _MediaHandler(FileSystemEventHandler):
             self.watcher.enqueue(event.dest_path)
 
 
-class _SymlinkSyncHandler(FileSystemEventHandler):
-    """Watches a symlink_source directory and mirrors new files into the
-    monitored folder as symlinks, preserving relative directory structure."""
-
-    def __init__(self, watcher: "FolderWatcher", folder_id: int,
-                 source_root: str, target_root: str):
-        super().__init__()
-        self.watcher = watcher
-        self.folder_id = folder_id
-        self.source_root = os.path.normpath(source_root)
-        self.target_root = os.path.normpath(target_root)
-
-    def _create_symlink(self, src_path: str):
-        if not os.path.isfile(src_path):
-            return
-        rel = os.path.relpath(src_path, self.source_root)
-        link = os.path.join(self.target_root, rel)
-        if os.path.exists(link):
-            return
-        try:
-            os.makedirs(os.path.dirname(link), exist_ok=True)
-            os.symlink(os.path.abspath(src_path), link)
-            logger.info(f"Symlink sync: {link} -> {src_path}")
-            # Enqueue the symlink itself so the watcher processes it
-            self.watcher.enqueue(link)
-        except Exception as e:
-            logger.error(f"Symlink sync failed for {src_path}: {e}")
-
-    def on_created(self, event):
-        if not event.is_directory:
-            self._create_symlink(event.src_path)
-
-    def on_moved(self, event):
-        if not event.is_directory:
-            self._create_symlink(event.dest_path)
-
-
 class FolderWatcher:
     """Manages watchdog observers for all enabled MonitorFolder rows and
     processes new files through the recognition + archive pipeline.
@@ -104,7 +67,6 @@ class FolderWatcher:
         self._observer = Observer()
         self._observer.daemon = True
         self._watches: Dict[int, object] = {}  # folder_id -> ObservedWatch
-        self._symlink_watches: Dict[int, object] = {}  # folder_id -> ObservedWatch (symlink_source)
         self._pending: Dict[str, float] = {}  # path -> last event time
         self._pending_lock = threading.Lock()
         self._processed: Set[str] = set()
@@ -144,7 +106,6 @@ class FolderWatcher:
         except Exception:
             pass
         self._watches.clear()
-        self._symlink_watches.clear()
         self._pool.shutdown(wait=False)
         logger.info("FolderWatcher stopped")
 
@@ -166,28 +127,6 @@ class FolderWatcher:
                     except Exception as e:
                         logger.error(f"Failed to watch {f.path}: {e}")
 
-                # Symlink source watches (rename mode only)
-                src = getattr(f, 'symlink_source', '') or ''
-                if src and getattr(f, 'organize_mode', '') == 'rename' and os.path.isdir(src):
-                    if f.id not in self._symlink_watches:
-                        try:
-                            handler = _SymlinkSyncHandler(self, f.id, src, f.path)
-                            sw = self._observer.schedule(handler, src, recursive=True)
-                            self._symlink_watches[f.id] = sw
-                            logger.info(f"Watching symlink source: {src} -> {f.path}")
-                            # Initial sync of existing files
-                            self._sync_symlinks(f, src)
-                        except Exception as e:
-                            logger.error(f"Failed to watch symlink source {src}: {e}")
-                else:
-                    # Remove stale symlink watch if config changed
-                    if f.id in self._symlink_watches:
-                        try:
-                            self._observer.unschedule(self._symlink_watches[f.id])
-                        except Exception:
-                            pass
-                        del self._symlink_watches[f.id]
-
             # Remove watches for disabled / deleted folders
             for fid in list(self._watches):
                 if fid not in active_ids:
@@ -196,33 +135,8 @@ class FolderWatcher:
                     except Exception:
                         pass
                     del self._watches[fid]
-            for fid in list(self._symlink_watches):
-                if fid not in active_ids:
-                    try:
-                        self._observer.unschedule(self._symlink_watches[fid])
-                    except Exception:
-                        pass
-                    del self._symlink_watches[fid]
         finally:
             db.close()
-
-    def _sync_symlinks(self, folder, source_root: str):
-        """Walk symlink_source and create missing symlinks in the monitored folder."""
-        source_root = os.path.normpath(source_root)
-        target_root = os.path.normpath(folder.path)
-        for dirpath, _, filenames in os.walk(source_root):
-            for fn in filenames:
-                src = os.path.join(dirpath, fn)
-                rel = os.path.relpath(src, source_root)
-                link = os.path.join(target_root, rel)
-                if os.path.exists(link):
-                    continue
-                try:
-                    os.makedirs(os.path.dirname(link), exist_ok=True)
-                    os.symlink(os.path.abspath(src), link)
-                    logger.info(f"Symlink sync (init): {link} -> {src}")
-                except Exception as e:
-                    logger.error(f"Symlink sync (init) failed for {src}: {e}")
 
     def refresh(self):
         """Called after monitor folder CRUD to resync watches."""
@@ -399,6 +313,41 @@ class FolderWatcher:
             db.commit()
             db.refresh(record)
             self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
+
+            # ---- symlink_export mode: just create symlink in target_root, no scraping ----
+            organize_mode = getattr(folder, 'organize_mode', 'move') or 'move' if folder else 'move'
+            if organize_mode == 'symlink_export' and folder:
+                target_root = (folder.target_root or '').strip()
+                if not target_root or not os.path.isdir(target_root):
+                    record.status = "failed"
+                    record.error_msg = "导出软链接模式需要设置有效的归档目标目录"
+                    db.commit()
+                    self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
+                    return
+                rel = os.path.relpath(path, os.path.normpath(folder.path))
+                link = os.path.join(target_root, rel)
+                if os.path.exists(link):
+                    record.status = "success"
+                    record.target_path = link
+                    record.error_msg = "软链接已存在"
+                    db.commit()
+                    self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
+                    return
+                try:
+                    os.makedirs(os.path.dirname(link), exist_ok=True)
+                    os.symlink(os.path.abspath(path), link)
+                    logger.info(f"Symlink export: {link} -> {path}")
+                    record.status = "success"
+                    record.target_path = link
+                    db.commit()
+                    self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
+                except Exception as e:
+                    logger.error(f"Symlink export failed for {path}: {e}")
+                    record.status = "failed"
+                    record.error_msg = f"创建软链接失败: {e}"
+                    db.commit()
+                    self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
+                return
 
             # Build a per-call WorkerContext to avoid concurrent mutation of shared state.
             # Each thread gets its own copy of the config; the global _worker_ctx is only
