@@ -292,7 +292,17 @@ def process_task(gui, i):
         pure, ext = gui.extract_lang_and_ext(item.old_name)
         dir_p = item.dir
         mode = gui.source_var.get()
-        g = guessit(pure)
+
+        # Apply strip_keywords: remove user-defined keywords before recognition
+        strip_kw = getattr(gui, 'strip_keywords', None) or []
+        pure_for_parse = pure
+        if strip_kw:
+            for kw in strip_kw:
+                if kw:
+                    pure_for_parse = re.sub(re.escape(kw), ' ', pure_for_parse, flags=re.IGNORECASE)
+            pure_for_parse = re.sub(r'\s+', ' ', pure_for_parse).strip()
+
+        g = guessit(pure_for_parse)
 
         extracted_ep = extract_episode_number(pure, g)
 
@@ -303,6 +313,8 @@ def process_task(gui, i):
         with gui.cache_lock:
             cached_ai = gui.dir_cache.get(dir_p)
 
+        parse_source = "guessit"  # default; overridden when AI is actually used
+
         if cached_ai and gui._can_reuse_dir_ai(cached_ai, pure, g):
             t = cached_ai["title"]
             y = cached_ai.get("year")
@@ -310,6 +322,7 @@ def process_task(gui, i):
             e = extracted_ep or 1
             ai_msg = "复用"
             ai_data = cached_ai
+            parse_source = cached_ai.get("parse_source", "guessit")
         else:
             ai_data = None
             ai_msg = ""
@@ -318,20 +331,20 @@ def process_task(gui, i):
                 # 强制使用 AI：只调 AI，失败则直接待手动
                 if gui.prefer_ollama.get():
                     if gui.ollama_url.get().strip() and gui.ollama_model.get().strip():
-                        ai_data, ai_msg = gui._parse_with_ollama(pure)
+                        ai_data, ai_msg = gui._parse_with_ollama(pure_for_parse)
                         if ai_data is None and gui.sf_api_key.get().strip():
                             ai_data, ai_msg = fetch_siliconflow_info(
-                                pure, gui.sf_api_key.get(), gui.sf_api_url.get(),
+                                pure_for_parse, gui.sf_api_key.get(), gui.sf_api_url.get(),
                                 gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
                             )
                     elif gui.sf_api_key.get().strip():
                         ai_data, ai_msg = fetch_siliconflow_info(
-                            pure, gui.sf_api_key.get(), gui.sf_api_url.get(),
+                            pure_for_parse, gui.sf_api_key.get(), gui.sf_api_url.get(),
                             gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
                         )
                 elif gui.sf_api_key.get().strip():
                     ai_data, ai_msg = fetch_siliconflow_info(
-                        pure, gui.sf_api_key.get(), gui.sf_api_url.get(),
+                        pure_for_parse, gui.sf_api_key.get(), gui.sf_api_url.get(),
                         gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
                     )
                 if ai_data:
@@ -342,7 +355,9 @@ def process_task(gui, i):
                         ai_season = 1
                     s = gui._pick_season(pure, g, ai_season)
                     e = extracted_ep or safe_int(ai_data.get("episode"), 1)
+                    parse_source = "ai"
                     with gui.cache_lock:
+                        ai_data["parse_source"] = "ai"
                         gui.dir_cache[dir_p] = ai_data
                 else:
                     # AI 失败 → 直接待手动，不猜测
@@ -356,6 +371,7 @@ def process_task(gui, i):
                 s = gui._pick_season(pure, g, 1)
                 e = extracted_ep or 1
                 ai_msg = "猜测"
+                parse_source = "guessit"
                 if t and normalize_compare_text(t) not in ("", "未知"):
                     with gui.cache_lock:
                         if dir_p not in gui.dir_cache:
@@ -364,6 +380,7 @@ def process_task(gui, i):
                                 "year": y,
                                 "season": s,
                                 "episode": e,
+                                "parse_source": "guessit",
                             }
 
         if SPECIAL_TAG_RE.search(pure):
@@ -436,20 +453,20 @@ def process_task(gui, i):
                         _ai_r = None
                         if gui.prefer_ollama.get():
                             if gui.ollama_url.get().strip() and gui.ollama_model.get().strip():
-                                _ai_r, _ = gui._parse_with_ollama(pure)
+                                _ai_r, _ = gui._parse_with_ollama(pure_for_parse)
                                 if _ai_r is None and gui.sf_api_key.get().strip():
                                     _ai_r, _ = fetch_siliconflow_info(
-                                        pure, gui.sf_api_key.get(), gui.sf_api_url.get(),
+                                        pure_for_parse, gui.sf_api_key.get(), gui.sf_api_url.get(),
                                         gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
                                     )
                             elif gui.sf_api_key.get().strip():
                                 _ai_r, _ = fetch_siliconflow_info(
-                                    pure, gui.sf_api_key.get(), gui.sf_api_url.get(),
+                                    pure_for_parse, gui.sf_api_key.get(), gui.sf_api_url.get(),
                                     gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
                                 )
                         elif gui.sf_api_key.get().strip():
                             _ai_r, _ = fetch_siliconflow_info(
-                                pure, gui.sf_api_key.get(), gui.sf_api_url.get(),
+                                pure_for_parse, gui.sf_api_key.get(), gui.sf_api_url.get(),
                                 gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
                             )
                         if _ai_r:
@@ -459,7 +476,9 @@ def process_task(gui, i):
                                 t = _t_ai
                                 y = _y_ai
                                 ai_data = _ai_r
+                                parse_source = "ai"
                                 with gui.cache_lock:
+                                    _ai_r["parse_source"] = "ai"
                                     gui.dir_cache[dir_p] = _ai_r
                                 _db_retry = gui._resolve_db_match(item, t, y, is_tv, mode, ai_data, g)
                                 if _db_retry and len(_db_retry) >= 2 and _db_retry[1] != "None":
@@ -581,7 +600,9 @@ def process_task(gui, i):
             "votes": meta.get("votes", 0),
             "release": meta.get("release", ""),
             "original_title": meta.get("original_title", ""),
+            "parse_source": parse_source,
         }
+        item.parse_source = parse_source
 
         item.new_name_only = new_fn
 

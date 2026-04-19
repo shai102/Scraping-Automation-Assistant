@@ -141,6 +141,11 @@ class WorkerContext:
         self.media_type_override = _SimpleVar(config.get("media_type_override", "自动判断"))
         self.target_root = _SimpleVar(config.get("target_root", ""))
         self.source_var = _SimpleVar(config.get("data_source", "siliconflow_tmdb"))
+        self.strip_keywords = config.get("strip_keywords", [])
+
+        # Sync runtime cache expiry from config
+        from utils.helpers import set_cache_expiry_days
+        set_cache_expiry_days(config.get("cache_expiry_days", 7))
 
         # --- File list (populated externally) ---
         self.file_list: list = []
@@ -181,6 +186,9 @@ class WorkerContext:
         self.ai_mode.set(cfg.get("ai_mode", "assist"))
         self.target_root.set(cfg.get("target_root", self.target_root.get()))
         self.source_var.set(cfg.get("data_source", self.source_var.get()))
+        self.strip_keywords = cfg.get("strip_keywords", [])
+        from utils.helpers import set_cache_expiry_days
+        set_cache_expiry_days(cfg.get("cache_expiry_days", 7))
 
     @staticmethod
     def _clamp_workers(value, default):

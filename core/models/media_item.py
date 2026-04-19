@@ -11,4 +11,5 @@ class MediaItem:
     metadata: dict = field(default_factory=lambda: {"id": "None"})
     new_name_only: str = ""
     full_target: str = ""
+    parse_source: str = ""
 

@@ -18,6 +18,8 @@ class FolderCreate(BaseModel):
     target_root: str = ""
     media_type: str = "auto"
     data_source: str = "siliconflow_tmdb"
+    organize_mode: str = "move"  # move / copy / symlink / hardlink / rename
+    symlink_source: str = ""  # STRM source dir (rename mode only)
     enabled: bool = True
 
 
@@ -26,6 +28,8 @@ class FolderUpdate(BaseModel):
     target_root: Optional[str] = None
     media_type: Optional[str] = None
     data_source: Optional[str] = None
+    organize_mode: Optional[str] = None
+    symlink_source: Optional[str] = None
     enabled: Optional[bool] = None
 
 
@@ -35,6 +39,8 @@ class FolderOut(BaseModel):
     target_root: str
     media_type: str
     data_source: str
+    organize_mode: str = "move"
+    symlink_source: str = ""
     enabled: bool
     created_at: Optional[str] = None
 
@@ -50,6 +56,8 @@ def list_folders(db: Session = Depends(get_db)):
         result.append(FolderOut(
             id=r.id, path=r.path, target_root=r.target_root,
             media_type=r.media_type, data_source=r.data_source,
+            organize_mode=getattr(r, 'organize_mode', 'move') or 'move',
+            symlink_source=getattr(r, 'symlink_source', '') or '',
             enabled=r.enabled,
             created_at=r.created_at.isoformat() if r.created_at else None,
         ))
@@ -68,6 +76,8 @@ def create_folder(body: FolderCreate, db: Session = Depends(get_db)):
         target_root=body.target_root,
         media_type=body.media_type,
         data_source=body.data_source,
+        organize_mode=body.organize_mode,
+        symlink_source=body.symlink_source,
         enabled=body.enabled,
     )
     db.add(row)
@@ -83,6 +93,8 @@ def create_folder(body: FolderCreate, db: Session = Depends(get_db)):
     return FolderOut(
         id=row.id, path=row.path, target_root=row.target_root,
         media_type=row.media_type, data_source=row.data_source,
+        organize_mode=getattr(row, 'organize_mode', 'move') or 'move',
+        symlink_source=getattr(row, 'symlink_source', '') or '',
         enabled=row.enabled,
         created_at=row.created_at.isoformat() if row.created_at else None,
     )
@@ -103,6 +115,10 @@ def update_folder(folder_id: int, body: FolderUpdate, db: Session = Depends(get_
         row.media_type = body.media_type
     if body.data_source is not None:
         row.data_source = body.data_source
+    if body.organize_mode is not None:
+        row.organize_mode = body.organize_mode
+    if body.symlink_source is not None:
+        row.symlink_source = body.symlink_source
     if body.enabled is not None:
         row.enabled = body.enabled
     db.commit()
@@ -116,6 +132,8 @@ def update_folder(folder_id: int, body: FolderUpdate, db: Session = Depends(get_
     return FolderOut(
         id=row.id, path=row.path, target_root=row.target_root,
         media_type=row.media_type, data_source=row.data_source,
+        organize_mode=getattr(row, 'organize_mode', 'move') or 'move',
+        symlink_source=getattr(row, 'symlink_source', '') or '',
         enabled=row.enabled,
         created_at=row.created_at.isoformat() if row.created_at else None,
     )

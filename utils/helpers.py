@@ -24,6 +24,7 @@ else:
 CONFIG_FILE = os.path.join(_CFG_DIR, 'renamer_config.json')
 CACHE_FILE = os.path.join(_CFG_DIR, 'api_cache.json')
 CACHE_EXPIRY_DAYS = 7
+_cache_expiry_days = CACHE_EXPIRY_DAYS  # mutable runtime value
 CACHE_FLUSH_INTERVAL_SECONDS = 8
 CACHE_FLUSH_MAX_WRITES = 20
 
@@ -443,6 +444,8 @@ def _load_cache_from_disk():
 
 
 def _prune_expired_cache_entries(cache, now_ts=None):
+    if _cache_expiry_days == 0:
+        return 0  # 0 = never auto-expire
     now_value = now_ts or datetime.now().timestamp()
     expired_keys = [
         key
@@ -452,6 +455,12 @@ def _prune_expired_cache_entries(cache, now_ts=None):
     for key in expired_keys:
         cache.pop(key, None)
     return len(expired_keys)
+
+
+def set_cache_expiry_days(days: int):
+    """Update the runtime cache expiry duration (0 = never expire)."""
+    global _cache_expiry_days
+    _cache_expiry_days = max(0, int(days))
 
 
 def _ensure_cache_loaded_unlocked():
@@ -557,7 +566,7 @@ def cached_request(api_func, cache_key, *args, **kwargs):
             _cache_data[cache_key] = {
                 "data": result,
                 "expiry": (
-                    datetime.now() + timedelta(days=CACHE_EXPIRY_DAYS)
+                    datetime.now() + timedelta(days=_cache_expiry_days if _cache_expiry_days > 0 else 36500)
                 ).timestamp(),
             }
             _cache_dirty = True

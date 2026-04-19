@@ -6,7 +6,7 @@ import os
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 
 from utils.helpers import CONFIG_FILE
 
@@ -41,6 +41,8 @@ class SettingsModel(BaseModel):
     tg_chat_id: Optional[str] = None
     tg_notify_enabled: Optional[bool] = None
     tg_notify_delay: Optional[int] = None
+    strip_keywords: Optional[List[str]] = None
+    cache_expiry_days: Optional[int] = None
 
 
 def _load() -> dict:
@@ -85,6 +87,11 @@ def update_settings(body: SettingsModel):
     updates = body.model_dump(exclude_none=True)
     cfg.update(updates)
     _save(cfg)
+
+    # Apply cache expiry setting immediately
+    if 'cache_expiry_days' in updates:
+        from utils.helpers import set_cache_expiry_days
+        set_cache_expiry_days(updates['cache_expiry_days'])
 
     # Reload worker context if watcher is running
     from server import get_watcher

@@ -9,9 +9,9 @@ const app = Vue.createApp({
       // Folders
       folders: [],
       showAddFolder: false,
-      newFolder: { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb' },
+      newFolder: { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '' },
       editFolderVisible: false,
-      editFolderData: { id: null, path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb' },
+      editFolderData: { id: null, path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '' },
       // Records
       records: [],
       recordFilter: '',
@@ -22,11 +22,16 @@ const app = Vue.createApp({
       recordTotal: 0,
       selectedIds: [],
       recordGoPage: 1,
+      // Grouped view
+      groupedView: false,
+      groupedRecords: [],
+      expandedGroups: {},
       // Manual match
       manualMatchVisible: false,
       manualRecord: null,
       manualSeason: null,
       manualEpOffset: 0,
+      manualScope: 'single',
       searchQuery: '',
       searchYear: null,
       searchMode: 'name',
@@ -49,6 +54,7 @@ const app = Vue.createApp({
       browseParent: '',
       browseDirs: [],
       browseSelected: '',
+      newKeyword: '',
     };
   },
   mounted() {
@@ -106,6 +112,8 @@ const app = Vue.createApp({
         this.records.unshift(data);
         this.recordTotal++;
       }
+      // Refresh grouped view in background if active
+      if (this.groupedView) this.loadGroupedRecords();
     },
 
     // --- Folder Browser ---
@@ -115,8 +123,10 @@ const app = Vue.createApp({
       var startPath = '';
       if (field === 'path') startPath = this.newFolder.path;
       else if (field === 'target_root') startPath = this.newFolder.target_root;
+      else if (field === 'symlink_source') startPath = this.newFolder.symlink_source;
       else if (field === 'edit_path') startPath = this.editFolderData.path;
       else if (field === 'edit_target_root') startPath = this.editFolderData.target_root;
+      else if (field === 'edit_symlink_source') startPath = this.editFolderData.symlink_source;
       try {
         var data = await this.api('POST', '/api/monitor/browse', { path: startPath || '' });
         this.browseCurrent = data.current || '';
@@ -154,10 +164,14 @@ const app = Vue.createApp({
         this.newFolder.path = chosen;
       } else if (this.browseField === 'target_root') {
         this.newFolder.target_root = chosen;
+      } else if (this.browseField === 'symlink_source') {
+        this.newFolder.symlink_source = chosen;
       } else if (this.browseField === 'edit_path') {
         this.editFolderData.path = chosen;
       } else if (this.browseField === 'edit_target_root') {
         this.editFolderData.target_root = chosen;
+      } else if (this.browseField === 'edit_symlink_source') {
+        this.editFolderData.symlink_source = chosen;
       }
       this.browseVisible = false;
     },
@@ -170,7 +184,7 @@ const app = Vue.createApp({
       try {
         await this.api('POST', '/api/monitor/folders', this.newFolder);
         this.showAddFolder = false;
-        this.newFolder = { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb' };
+        this.newFolder = { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '' };
         this.loadFolders();
       } catch (e) { alert(e.message); }
     },
@@ -191,6 +205,8 @@ const app = Vue.createApp({
         target_root: f.target_root || '',
         media_type: f.media_type || 'auto',
         data_source: f.data_source || 'siliconflow_tmdb',
+        organize_mode: f.organize_mode || 'move',
+        symlink_source: f.symlink_source || '',
       };
       this.editFolderVisible = true;
     },
@@ -201,6 +217,8 @@ const app = Vue.createApp({
           target_root: this.editFolderData.target_root,
           media_type: this.editFolderData.media_type,
           data_source: this.editFolderData.data_source,
+          organize_mode: this.editFolderData.organize_mode,
+          symlink_source: this.editFolderData.symlink_source,
         });
         this.editFolderVisible = false;
         this.loadFolders();
@@ -227,14 +245,16 @@ const app = Vue.createApp({
       } catch (ex) {}
     },
     refreshRecords() {
-      this.loadRecords();
+      if (this.groupedView) this.loadGroupedRecords();
+      else this.loadRecords();
     },
     resetRecordFilter() {
       this.recordFilter = '';
       this.recordKeyword = '';
       this.recordTypeFilter = '';
       this.recordPage = 1;
-      this.loadRecords();
+      if (this.groupedView) this.loadGroupedRecords();
+      else this.loadRecords();
     },
     gotoPage() {
       var max = Math.ceil(this.recordTotal / this.recordPageSize) || 1;
@@ -264,28 +284,32 @@ const app = Vue.createApp({
       if (!confirm('确认删除选中的 ' + this.selectedIds.length + ' 条记录？')) return;
       try {
         await this.api('POST', '/api/records/batch-delete', { ids: this.selectedIds });
-        this.loadRecords();
+        if (this.groupedView) this.loadGroupedRecords();
+        else this.loadRecords();
       } catch (e) { alert(e.message); }
     },
     async batchRetrySelected() {
       if (!this.selectedIds.length) return;
       try {
         await this.api('POST', '/api/records/batch-retry', { ids: this.selectedIds });
-        this.loadRecords();
+        if (this.groupedView) this.loadGroupedRecords();
+        else this.loadRecords();
       } catch (e) { alert(e.message); }
     },
     async clearFailed() {
       if (!confirm('确认清除所有失败记录？')) return;
       try {
         await this.api('POST', '/api/records/clear-failed');
-        this.loadRecords();
+        if (this.groupedView) this.loadGroupedRecords();
+        else this.loadRecords();
       } catch (e) { alert(e.message); }
     },
     async clearAll() {
       if (!confirm('确认清空所有刮削记录？此操作不可恢复。')) return;
       try {
         await this.api('POST', '/api/records/clear-all');
-        this.loadRecords();
+        if (this.groupedView) this.loadGroupedRecords();
+        else this.loadRecords();
       } catch (e) { alert(e.message); }
     },
     exportErrors() {
@@ -331,6 +355,96 @@ const app = Vue.createApp({
       return parts.length > 3 ? '.../' + parts.slice(-3).join('/') : p;
     },
 
+    // --- Grouped View ---
+    toggleGroupedView() {
+      this.groupedView = !this.groupedView;
+      this.selectedIds = [];
+      if (this.groupedView) {
+        this.loadGroupedRecords();
+      } else {
+        this.loadRecords();
+      }
+    },
+    async loadGroupedRecords() {
+      try {
+        var params = new URLSearchParams();
+        if (this.recordFilter) params.set('status', this.recordFilter);
+        if (this.recordKeyword) params.set('keyword', this.recordKeyword);
+        if (this.recordTypeFilter) params.set('media_type', this.recordTypeFilter);
+        var data = await this.api('GET', '/api/records/grouped?' + params.toString());
+        this.groupedRecords = data.groups || [];
+      } catch (ex) {}
+    },
+    toggleGroup(g) {
+      var key = g.dir_path;
+      if (this.expandedGroups[key]) {
+        delete this.expandedGroups[key];
+        // Force Vue reactivity
+        this.expandedGroups = Object.assign({}, this.expandedGroups);
+      } else {
+        this.expandedGroups[key] = { records: [], page: 1, total: 0, loading: false };
+        this.expandedGroups = Object.assign({}, this.expandedGroups);
+        this.loadGroupRecords(g);
+      }
+    },
+    async loadGroupRecords(g) {
+      var state = this.expandedGroups[g.dir_path];
+      if (!state) return;
+      state.loading = true;
+      this.expandedGroups = Object.assign({}, this.expandedGroups);
+      try {
+        var params = new URLSearchParams({ page: state.page, page_size: 50, dir: g.dir_path });
+        if (this.recordFilter) params.set('status', this.recordFilter);
+        if (this.recordKeyword) params.set('keyword', this.recordKeyword);
+        var data = await this.api('GET', '/api/records?' + params.toString());
+        state.records = data.items || [];
+        state.total = data.total || 0;
+      } catch (ex) {}
+      state.loading = false;
+      this.expandedGroups = Object.assign({}, this.expandedGroups);
+    },
+    groupPagePrev(g) {
+      var state = this.expandedGroups[g.dir_path];
+      if (!state || state.page <= 1) return;
+      state.page--;
+      this.loadGroupRecords(g);
+    },
+    groupPageNext(g) {
+      var state = this.expandedGroups[g.dir_path];
+      if (!state) return;
+      if (state.page * 50 >= state.total) return;
+      state.page++;
+      this.loadGroupRecords(g);
+    },
+    isGroupAllSelected(g) {
+      var self = this;
+      return g.ids.length > 0 && g.ids.every(function(id) { return self.selectedIds.indexOf(id) >= 0; });
+    },
+    toggleSelectGroup(g) {
+      var self = this;
+      if (this.isGroupAllSelected(g)) {
+        this.selectedIds = this.selectedIds.filter(function(id) { return g.ids.indexOf(id) < 0; });
+      } else {
+        var newIds = g.ids.filter(function(id) { return self.selectedIds.indexOf(id) < 0; });
+        this.selectedIds = this.selectedIds.concat(newIds);
+      }
+    },
+    async deleteGroup(g) {
+      if (!confirm('确认删除「' + g.dir_name + '」内的全部 ' + g.total + ' 条记录？')) return;
+      try {
+        await this.api('POST', '/api/records/batch-delete', { ids: g.ids });
+        this.loadGroupedRecords();
+      } catch (e) { alert(e.message); }
+    },
+    async deleteGroupRecord(g, id) {
+      if (!confirm('确认删除该记录？')) return;
+      try {
+        await this.api('DELETE', '/api/records/' + id);
+        this.loadGroupedRecords();
+        if (this.expandedGroups[g.dir_path]) this.loadGroupRecords(g);
+      } catch (e) { alert(e.message); }
+    },
+
     // --- Manual Match ---
     openManualMatch(record) {
       this.manualRecord = record;
@@ -341,8 +455,16 @@ const app = Vue.createApp({
       this.searchDone = false;
       this.manualSeason = null;
       this.manualEpOffset = 0;
+      this.manualScope = 'single';
       this.searchMode = 'name';
       this.searchTmdbId = '';
+      // Auto-detect TV/Movie
+      if (record.media_type === 'movie') this.searchIsTv = false;
+      else if (record.media_type === 'episode') this.searchIsTv = true;
+      else {
+        var p = record.target_path || record.original_path || '';
+        this.searchIsTv = /[Ss]\d{1,2}[Ee]\d{1,4}|Season\s*\d/i.test(p);
+      }
       this.manualMatchVisible = true;
     },
     async searchCandidates() {
@@ -373,6 +495,7 @@ const app = Vue.createApp({
           is_tv: this.searchIsTv,
           season_override: (this.manualSeason !== null && this.manualSeason !== '') ? parseInt(this.manualSeason) : null,
           episode_offset: parseInt(this.manualEpOffset) || 0,
+          scope: this.manualScope,
         });
         this.manualMatchVisible = false;
         this.loadRecords();
@@ -390,6 +513,7 @@ const app = Vue.createApp({
           is_tv: this.searchIsTv,
           season_override: (this.manualSeason !== null && this.manualSeason !== '') ? parseInt(this.manualSeason) : null,
           episode_offset: parseInt(this.manualEpOffset) || 0,
+          scope: this.manualScope,
         });
         this.manualMatchVisible = false;
         this.loadRecords();
@@ -431,6 +555,20 @@ const app = Vue.createApp({
         var r = await this.api('POST', '/api/settings/clear-cache');
         this.testResult = { ok: true, message: r.message };
       } catch (e) { this.testResult = { ok: false, message: e.message }; }
+    },
+    addStripKeyword() {
+      var kw = (this.newKeyword || '').trim();
+      if (!kw) return;
+      if (!this.cfg.strip_keywords) this.cfg.strip_keywords = [];
+      if (this.cfg.strip_keywords.indexOf(kw) === -1) {
+        this.cfg.strip_keywords.push(kw);
+      }
+      this.newKeyword = '';
+    },
+    removeStripKeyword(idx) {
+      if (this.cfg.strip_keywords) {
+        this.cfg.strip_keywords.splice(idx, 1);
+      }
     },
     async testTelegram() {
       this.tgTestResult = null;

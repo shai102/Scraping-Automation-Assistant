@@ -14,6 +14,8 @@ class MonitorFolder(Base):
     target_root = Column(String(1024), nullable=False, default="")
     media_type = Column(String(32), nullable=False, default="auto")  # auto / movie / tv
     data_source = Column(String(32), nullable=False, default="siliconflow_tmdb")
+    organize_mode = Column(String(32), nullable=False, default="move")  # move / copy / symlink / hardlink / rename
+    symlink_source = Column(String(1024), nullable=False, default="")  # STRM source dir (rename mode only)
     enabled = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=datetime.datetime.now)
 

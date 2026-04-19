@@ -7,11 +7,18 @@
 ## 功能概览
 
 - **文件夹监控**：可添加多个监控目录，watchdog 实时检测新文件并自动入队。
+- **多种整理方式**：移动、复制、软链接、硬链接、原地整理（rename）五种模式可选。
+- **软链接源同步**：原地整理模式下可配置 STRM 源目录，自动以软链接方式同步到监控目录后刮削。
 - **AI 识别**：支持 OpenAI 兼容 API（SiliconFlow / DeepSeek / OpenAI 等）与本地 Ollama。
+- **关键词过滤**：全局配置剔除关键词，在 AI/guessit 识别前自动过滤干扰字符串，提升匹配准确度。
 - **数据库匹配**：支持 TMDb 与 Bangumi（BGM），embedding 候选重排可选。
-- **自动归档**：识别成功后自动将文件移动到目标目录，归档后清理空目录。
+- **自动归档**：识别成功后根据整理方式归档文件，归档后清理空目录。
 - **元数据刮削**：自动生成 NFO，下载 poster / fanart / still，写入演员、导演、类型等完整字段。
+- **手动识别**：所有记录均可发起手动识别，支持选择季/集偏移（TV）或直接匹配（电影），整理范围可选"仅此文件"或"目录内所有文件"；已归档文件会自动恢复到原始状态后重新整理。
+- **分组视图**：刮削记录支持按源目录分组显示，组内懒加载 + 分页，千集长番也不卡顿；可一键删除整组记录。
+- **缓存管理**：API 查询缓存支持自定义过期天数（1 ~ 365 天或永不过期）。
 - **Web 管理界面**：Vue.js 3 单页应用，侧边栏导航，实时推送（WebSocket），无需刷新。
+- **Telegram 通知**：归档完成后自动批量发送 TG 通知。
 - **系统托盘**：后台运行，托盘图标右键可打开界面或退出。
 
 ## 项目结构
@@ -22,18 +29,18 @@ server.py                       # FastAPI 应用、lifespan、静态文件挂载
 api/
   routes/
     monitor.py                  # 监控文件夹 CRUD + 目录浏览 API
-    records.py                  # 归档记录查询、批量删除/重试
-    settings.py                 # 配置读写、TMDB/AI 连接测试、清除缓存
+    records.py                  # 归档记录查询/分组/手动识别/批量操作
+    settings.py                 # 配置读写、TMDB/AI 连接测试、剔除关键词、缓存过期
     ws.py                       # WebSocket 实时推送
 monitor/
-  watcher.py                    # watchdog 文件监控 + 自动处理流程
+  watcher.py                    # watchdog 文件监控 + 软链接源同步 + 自动处理流程
 core/
   services/
     worker_context.py           # 无 GUI 版配置上下文（供 API 调用）
     matcher_service.py          # Ollama 解析、embedding 重排、候选判定
     naming_service.py           # 季集提取、标题复用、命名辅助
   workers/
-    task_runner.py              # 预览/同步调度
+    task_runner.py              # 识别调度（支持剔除关键词预处理）
     execution_runner.py         # 执行重命名/归档/刮削逻辑
   models/
     media_item.py               # MediaItem 数据模型（dataclass）
@@ -47,9 +54,11 @@ ai/
   ollama_ai.py                  # OpenAI 兼容 API 解析与连通性测试
 db/
   tmdb_api.py                   # TMDb/BGM 查询与元数据抓取
-  database.py                   # SQLAlchemy 初始化、ORM 模型
+  database.py                   # SQLAlchemy 初始化、自动迁移
+  scrape_models.py              # ORM 模型（MonitorFolder / ScrapeRecord）
 utils/
   helpers.py                    # 通用工具（缓存、NFO/图片写入等）
+  telegram_notify.py            # Telegram 批量通知
 web/
   dist/
     index.html                  # Vue.js SPA 主页面
@@ -111,6 +120,20 @@ python -m uvicorn server:app --host 0.0.0.0 --port 8090
 | Temperature / Top-P | AI 推理参数，默认 0.20 / 0.85 |
 | TV / 电影命名格式 | 支持 `{title}`, `{year}`, `{s:02d}`, `{e:02d}` 等占位符 |
 | 预览/同步/执行线程数 | 各阶段并发数 |
+| 剔除关键词 | AI 识别前自动移除的干扰字符串（全局） |
+| 缓存过期天数 | API 查询缓存自动清理周期（0 = 永不过期） |
+| Telegram Bot Token / Chat ID | 归档完成后发送 TG 通知 |
+
+### 监控目录配置
+
+| 字段 | 说明 |
+|---|---|
+| 监控路径 | 文件来源目录 |
+| 归档目标根目录 | 归档后的目标路径（原地整理模式下自动使用监控路径） |
+| 整理方式 | 移动 / 复制 / 软链接 / 硬链接 / 原地整理 |
+| 软链接源目录 | 仅原地整理模式可用，设置后自动同步源目录文件 |
+| 媒体类型 | 自动判断 / 电影 / 电视剧 |
+| 数据源 | AI + TMDb 或 AI + BGM |
 
 ## 日志
 

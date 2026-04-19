@@ -40,6 +40,7 @@ class RecordOut(BaseModel):
     matched_provider: Optional[str] = None
     target_path: Optional[str] = None
     media_type: Optional[str] = None
+    parse_source: Optional[str] = None
     error_msg: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -52,6 +53,7 @@ class ManualMatchBody(BaseModel):
     is_tv: bool = True
     season_override: Optional[int] = None
     episode_offset: int = 0
+    scope: str = "single"  # "single" | "folder"
 
 
 class SearchCandidatesBody(BaseModel):
@@ -62,12 +64,14 @@ class SearchCandidatesBody(BaseModel):
 
 
 def _row_to_out(r: ScrapeRecord) -> RecordOut:
-    # Extract media_type from stored metadata_json
+    # Extract media_type and parse_source from stored metadata_json
     _media_type = None
+    _parse_source = None
     if r.metadata_json:
         try:
             _meta = json.loads(r.metadata_json)
             _media_type = _meta.get("type")  # "episode" or "movie"
+            _parse_source = _meta.get("parse_source")  # "guessit" or "ai"
         except Exception:
             pass
     return RecordOut(
@@ -81,6 +85,7 @@ def _row_to_out(r: ScrapeRecord) -> RecordOut:
         matched_provider=r.matched_provider,
         target_path=r.target_path,
         media_type=_media_type,
+        parse_source=_parse_source,
         error_msg=r.error_msg,
         created_at=r.created_at.isoformat() if r.created_at else None,
         updated_at=r.updated_at.isoformat() if r.updated_at else None,
@@ -92,6 +97,7 @@ def list_records(
     status: Optional[str] = None,
     keyword: Optional[str] = None,
     media_type: Optional[str] = None,
+    dir: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -104,14 +110,71 @@ def list_records(
     if media_type:
         q = q.join(MonitorFolder, ScrapeRecord.folder_id == MonitorFolder.id, isouter=True)
         q = q.filter(MonitorFolder.media_type == media_type)
-    total = q.count()
-    rows = q.order_by(ScrapeRecord.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    if dir:
+        # Filter records whose original_path is directly inside the given directory
+        norm_dir = os.path.normpath(dir)
+        all_rows = q.all()
+        all_rows = [r for r in all_rows
+                    if os.path.normpath(os.path.dirname(r.original_path)) == norm_dir]
+        total = len(all_rows)
+        # Sort by id desc
+        all_rows.sort(key=lambda r: r.id, reverse=True)
+        start = (page - 1) * page_size
+        rows = all_rows[start:start + page_size]
+    else:
+        total = q.count()
+        rows = q.order_by(ScrapeRecord.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return {
         "total": total,
         "page": page,
         "page_size": page_size,
         "items": [_row_to_out(r).model_dump() for r in rows],
     }
+
+
+@router.get("/grouped")
+def list_records_grouped(
+    status: Optional[str] = None,
+    keyword: Optional[str] = None,
+    media_type: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Return records grouped by source directory (summary only, no full records)."""
+    q = db.query(ScrapeRecord)
+    if status:
+        q = q.filter(ScrapeRecord.status == status)
+    if keyword:
+        q = q.filter(ScrapeRecord.original_name.ilike(f"%{keyword}%"))
+    if media_type:
+        q = q.join(MonitorFolder, ScrapeRecord.folder_id == MonitorFolder.id, isouter=True)
+        q = q.filter(MonitorFolder.media_type == media_type)
+    rows = q.order_by(ScrapeRecord.id.desc()).all()
+
+    groups: dict = {}
+    for r in rows:
+        dir_path = os.path.normpath(os.path.dirname(r.original_path))
+        if dir_path not in groups:
+            groups[dir_path] = {
+                "dir_path": dir_path,
+                "dir_name": os.path.basename(dir_path),
+                "folder_id": r.folder_id,
+                "total": 0,
+                "success": 0,
+                "failed": 0,
+                "pending": 0,
+                "ids": [],
+            }
+        g = groups[dir_path]
+        g["total"] += 1
+        g["ids"].append(r.id)
+        if r.status == "success":
+            g["success"] += 1
+        elif r.status == "failed":
+            g["failed"] += 1
+        elif r.status == "pending_manual":
+            g["pending"] += 1
+
+    return {"groups": list(groups.values())}
 
 
 @router.delete("/{record_id}")
@@ -205,12 +268,141 @@ def search_candidates(body: SearchCandidatesBody, db: Session = Depends(get_db))
     return {"candidates": results or []}
 
 
-@router.post("/{record_id}/manual-match")
-def manual_match(record_id: int, body: ManualMatchBody, db: Session = Depends(get_db)):
-    """Apply a manually chosen candidate to a pending record, then archive."""
-    row = db.query(ScrapeRecord).get(record_id)
-    if not row:
-        raise HTTPException(404)
+# ------------------------------------------------------------------
+# Helpers: restore a record to pre-archive state
+# ------------------------------------------------------------------
+
+def _delete_file_sidecars(file_path: str):
+    """Delete per-file sidecar files (NFO + thumbnail) for a given media file."""
+    stem = os.path.splitext(file_path)[0]
+    for suffix in (".nfo", "-thumb.jpg"):
+        p = stem + suffix
+        if os.path.isfile(p):
+            try:
+                os.remove(p)
+                logger.debug(f"Deleted sidecar: {p}")
+            except Exception as e:
+                logger.warning(f"Failed to delete sidecar {p}: {e}")
+
+
+def _restore_record_file(row: ScrapeRecord, folder, db: Session):
+    """Restore an already-archived record back to its original state.
+
+    - Deletes per-file sidecar files at target_path
+    - Moves / removes the target file depending on organize_mode
+    - Validates that original_path exists afterwards
+    - Resets row fields (does NOT commit — caller must commit)
+    """
+    tgt = row.target_path
+    if not tgt or not os.path.exists(tgt):
+        # Nothing archived yet, or file gone — just validate original
+        if not os.path.isfile(row.original_path):
+            raise HTTPException(400, detail="源文件不存在，无法恢复")
+        return
+
+    organize_mode = getattr(folder, 'organize_mode', 'move') or 'move' if folder else 'move'
+
+    # 1. Delete per-file sidecar files at target location
+    _delete_file_sidecars(tgt)
+
+    # 2. Restore / remove the target file
+    if os.path.normcase(os.path.normpath(tgt)) != os.path.normcase(os.path.normpath(row.original_path)):
+        if organize_mode in ('move', 'rename'):
+            # File was moved — move it back
+            orig_dir = os.path.dirname(row.original_path)
+            os.makedirs(orig_dir, exist_ok=True)
+            shutil.move(tgt, row.original_path)
+            logger.info(f"Restored: {tgt} -> {row.original_path}")
+            # Clean up empty directories left behind
+            from monitor.watcher import _remove_empty_dirs
+            watch_root = os.path.normpath(folder.path) if folder else None
+            _remove_empty_dirs(os.path.dirname(tgt), stop_at=watch_root)
+        else:
+            # copy / symlink / hardlink — original is still in place, just remove target
+            try:
+                os.remove(tgt)
+                logger.info(f"Removed target copy/link: {tgt}")
+                from monitor.watcher import _remove_empty_dirs
+                watch_root = os.path.normpath(folder.path) if folder else None
+                _remove_empty_dirs(os.path.dirname(tgt), stop_at=watch_root)
+            except Exception as e:
+                logger.warning(f"Failed to remove target {tgt}: {e}")
+
+    if not os.path.isfile(row.original_path):
+        raise HTTPException(400, detail="源文件恢复失败，文件不存在")
+
+    # 3. Reset record fields
+    row.target_path = None
+    row.status = "processing"
+    row.error_msg = None
+    row.matched_title = None
+    row.matched_id = None
+    row.matched_provider = None
+    row.metadata_json = None
+    db.flush()
+
+
+def _archive_file(item, row, folder, ctx, tid, provider, db):
+    """Archive a single file after successful process_task, respecting organize_mode."""
+    organize_mode = getattr(folder, 'organize_mode', 'move') or 'move' if folder else 'move'
+
+    # For 'rename' mode, use the monitored folder path as target_root
+    if organize_mode == 'rename' and folder:
+        ctx.target_root.set(folder.path)
+
+    target = item.full_target or os.path.join(item.dir, item.new_name_only or item.old_name)
+    target_dir = os.path.dirname(target)
+    if target_dir:
+        os.makedirs(target_dir, exist_ok=True)
+
+    if os.path.normcase(item.path) != os.path.normcase(target):
+        if os.path.exists(target):
+            row.status = "failed"
+            row.error_msg = "目标文件已存在"
+            db.commit()
+            raise HTTPException(400, detail="目标文件已存在")
+        src_dir = os.path.dirname(item.path)
+
+        if organize_mode == 'copy':
+            shutil.copy2(item.path, target)
+        elif organize_mode == 'symlink':
+            os.symlink(os.path.abspath(item.path), target)
+        elif organize_mode == 'hardlink':
+            os.link(item.path, target)
+        else:
+            # move / rename — both use shutil.move
+            shutil.move(item.path, target)
+
+        # For modes that keep the source file, don't clean up source dirs
+        if organize_mode not in ('copy', 'symlink', 'hardlink'):
+            item.path = target
+            watch_root = os.path.normpath(folder.path) if folder else None
+            from monitor.watcher import _remove_empty_dirs
+            _remove_empty_dirs(src_dir, stop_at=watch_root)
+        else:
+            item.path = target
+
+    ctx._write_sidecar_files(item, target)
+
+    row.status = "success"
+    row.matched_title = (item.metadata or {}).get("title")
+    row.matched_id = str(tid)
+    row.matched_provider = provider
+    row.target_path = target
+    row.metadata_json = json.dumps(item.metadata or {}, ensure_ascii=False)
+    row.error_msg = None
+    db.flush()
+    return target
+
+
+def _process_single_manual(row, body, folder, db):
+    """Process a single record through manual match: restore → recognize → archive.
+    Returns the updated row on success, raises HTTPException on failure.
+    """
+    # Restore if already archived
+    if row.target_path and os.path.exists(row.target_path):
+        _restore_record_file(row, folder, db)
+        db.commit()
 
     if not os.path.isfile(row.original_path):
         row.status = "failed"
@@ -228,7 +420,6 @@ def manual_match(record_id: int, body: ManualMatchBody, db: Session = Depends(ge
     if tid == "None":
         raise HTTPException(400, detail="候选 ID 无效")
 
-    # Build item and run through naming pipeline
     item = MediaItem(
         id=str(uuid.uuid4()),
         path=row.original_path,
@@ -238,18 +429,14 @@ def manual_match(record_id: int, body: ManualMatchBody, db: Session = Depends(ge
     )
 
     # Apply folder settings
-    folder = db.query(MonitorFolder).get(row.folder_id) if row.folder_id else None
     if folder and folder.target_root:
         ctx.target_root.set(folder.target_root)
     if folder and folder.data_source:
         ctx.source_var.set(folder.data_source)
 
-    # Manual match: user's explicit is_tv choice overrides guessit detection
     ctx.media_type_override.set("电视剧" if body.is_tv else "电影")
 
-    # Inject the manual match into the context's manual_locks so process_task uses it
     ctx.manual_locks[item.path] = (body.candidate_title, str(body.candidate_id), f"手动/{body.provider}命中", meta or {})
-    # Apply season override and episode offset
     if body.season_override is not None:
         ctx.forced_seasons[item.path] = body.season_override
     if body.episode_offset != 0:
@@ -265,52 +452,9 @@ def manual_match(record_id: int, body: ManualMatchBody, db: Session = Depends(ge
         db.commit()
         raise HTTPException(500, detail=f"识别失败: {str(e)[:100]}")
 
-    # Archive
     try:
-        target = item.full_target or os.path.join(item.dir, item.new_name_only or item.old_name)
-        target_dir = os.path.dirname(target)
-        if target_dir:
-            os.makedirs(target_dir, exist_ok=True)
-
-        if os.path.normcase(item.path) != os.path.normcase(target):
-            if os.path.exists(target):
-                row.status = "failed"
-                row.error_msg = "目标文件已存在"
-                db.commit()
-                raise HTTPException(400, detail="目标文件已存在")
-            src_dir = os.path.dirname(item.path)
-            shutil.move(item.path, target)
-            item.path = target
-            from monitor.watcher import _remove_empty_dirs
-            watch_root = os.path.normpath(folder.path) if folder else None
-            _remove_empty_dirs(src_dir, stop_at=watch_root)
-
-        ctx._write_sidecar_files(item, target)
-
-        row.status = "success"
-        row.matched_title = (item.metadata or {}).get("title")
-        row.matched_id = str(tid)
-        row.matched_provider = body.provider
-        row.target_path = target
-        row.metadata_json = json.dumps(item.metadata or {}, ensure_ascii=False)
-        row.error_msg = None
+        _archive_file(item, row, folder, ctx, tid, body.provider, db)
         db.commit()
-
-        # Broadcast
-        from server import get_watcher
-        w = get_watcher()
-        if w and w._broadcast:
-            from monitor.watcher import _record_to_dict
-            w._broadcast({"type": "record_update", "data": _record_to_dict(row)})
-
-        # TG notification
-        if w and hasattr(w, '_tg_batcher'):
-            folder_id_val = folder.id if folder else 0
-            folder_name_val = os.path.basename(folder.path) if folder else ""
-            w._tg_batcher.add(folder_id_val, folder_name_val, item)
-
-        return _row_to_out(row).model_dump()
-
     except HTTPException:
         raise
     except Exception as e:
@@ -319,6 +463,53 @@ def manual_match(record_id: int, body: ManualMatchBody, db: Session = Depends(ge
         row.error_msg = str(e)[:500]
         db.commit()
         raise HTTPException(500, detail=f"归档失败: {str(e)[:100]}")
+
+    # Broadcast
+    from server import get_watcher
+    w = get_watcher()
+    if w and w._broadcast:
+        from monitor.watcher import _record_to_dict
+        w._broadcast({"type": "record_update", "data": _record_to_dict(row)})
+
+    # TG notification
+    if w and hasattr(w, '_tg_batcher') and folder:
+        w._tg_batcher.add(folder.id, os.path.basename(folder.path), item)
+
+    return row
+
+
+@router.post("/{record_id}/manual-match")
+def manual_match(record_id: int, body: ManualMatchBody, db: Session = Depends(get_db)):
+    """Apply a manually chosen candidate to a pending record, then archive."""
+    row = db.query(ScrapeRecord).get(record_id)
+    if not row:
+        raise HTTPException(404)
+
+    folder = db.query(MonitorFolder).get(row.folder_id) if row.folder_id else None
+
+    # Process the primary record
+    _process_single_manual(row, body, folder, db)
+
+    processed_count = 1
+
+    # Folder scope: also process sibling files in the same directory
+    if body.scope == "folder":
+        org_dir = os.path.normpath(os.path.dirname(row.original_path))
+        siblings = db.query(ScrapeRecord).filter(
+            ScrapeRecord.folder_id == row.folder_id,
+            ScrapeRecord.id != row.id,
+        ).all()
+        siblings = [s for s in siblings
+                    if os.path.normpath(os.path.dirname(s.original_path)) == org_dir]
+
+        for sib in siblings:
+            try:
+                _process_single_manual(sib, body, folder, db)
+                processed_count += 1
+            except Exception as e:
+                logger.error(f"Folder-scope manual match failed for {sib.original_path}: {e}")
+
+    return {"ok": True, "processed": processed_count}
 
 
 @router.post("/{record_id}/retry")

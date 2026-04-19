@@ -32,3 +32,21 @@ def get_db():
 def init_db():
     from db.scrape_models import MonitorFolder, ScrapeRecord  # noqa: F401
     Base.metadata.create_all(bind=engine)
+
+    # Lightweight migration: add columns introduced after initial schema
+    import sqlalchemy
+    with engine.connect() as conn:
+        try:
+            conn.execute(sqlalchemy.text(
+                "ALTER TABLE monitor_folders ADD COLUMN organize_mode TEXT NOT NULL DEFAULT 'move'"
+            ))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+        try:
+            conn.execute(sqlalchemy.text(
+                "ALTER TABLE monitor_folders ADD COLUMN symlink_source TEXT NOT NULL DEFAULT ''"
+            ))
+            conn.commit()
+        except Exception:
+            conn.rollback()

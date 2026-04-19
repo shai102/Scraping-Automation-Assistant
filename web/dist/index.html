@@ -59,9 +59,33 @@
         <div class="form-group">
           <label>归档目标根目录</label>
           <div class="input-with-btn">
-            <input v-model="newFolder.target_root" placeholder="例如 D:\Media\Library" readonly>
-            <button class="btn btn-sm" @click="openBrowse('target_root')">浏览...</button>
+            <input v-model="newFolder.target_root" placeholder="例如 D:\Media\Library" readonly :disabled="newFolder.organize_mode==='rename'">
+            <button class="btn btn-sm" @click="openBrowse('target_root')" :disabled="newFolder.organize_mode==='rename'">浏览...</button>
           </div>
+          <small v-if="newFolder.organize_mode==='rename'" style="color:#888;display:block;margin-top:4px">原地整理模式不需要归档目标，文件将在监控目录内建立层级结构</small>
+        </div>
+        <div class="form-group">
+          <label>* 整理方式</label>
+          <div class="btn-group" style="display:flex;gap:0;margin-top:4px">
+            <button :class="['btn', newFolder.organize_mode==='move'?'btn-primary':'']" style="border-radius:6px 0 0 6px;min-width:72px" @click="newFolder.organize_mode='move'">移动</button>
+            <button :class="['btn', newFolder.organize_mode==='copy'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='copy'">复制</button>
+            <button :class="['btn', newFolder.organize_mode==='symlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='symlink'">软链接</button>
+            <button :class="['btn', newFolder.organize_mode==='hardlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='hardlink'">硬链接</button>
+            <button :class="['btn', newFolder.organize_mode==='rename'?'btn-primary':'']" style="border-radius:0 6px 6px 0;min-width:88px" @click="newFolder.organize_mode='rename'">原地整理</button>
+          </div>
+          <small style="color:#1976d2;display:block;margin-top:6px" v-if="newFolder.organize_mode==='move'">移动：将视频文件移动到目标路径，元数据（nfo、字幕等）也会直接生成或移动到目标路径</small>
+          <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='copy'">复制：将文件复制到目标路径，元数据（nfo、字幕等）也会直接生成或复制到目标路径</small>
+          <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='symlink'">软链接：创建文件的软链接到目标路径，元数据（nfo、字幕等）也会直接生成或复制到目标路径。Windows 可能需要管理员权限或开启开发者模式</small>
+          <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='hardlink'">硬链接：创建文件的硬链接到目标路径，元数据（nfo、字幕等）也会直接生成或复制到目标路径。仅支持同分区</small>
+          <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='rename'">原地整理：在监控目录内建立完整层级结构（剧名/Season X/），不需要设置归档目标</small>
+        </div>
+        <div class="form-group" v-if="newFolder.organize_mode==='rename'">
+          <label>软链接源目录（可选）</label>
+          <div class="input-with-btn">
+            <input v-model="newFolder.symlink_source" placeholder="例如 Y:\MPSTRM" readonly>
+            <button class="btn btn-sm" @click="openBrowse('symlink_source')">浏览...</button>
+          </div>
+          <small style="color:#888;display:block;margin-top:4px">设置后，该目录下的文件会自动以软链接方式同步到监控目录，再进行刮削整理</small>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -88,13 +112,14 @@
       <table class="table" v-if="folders.length">
         <thead>
           <tr>
-            <th>路径</th><th>归档目标</th><th>类型</th><th>数据源</th><th>状态</th><th>操作</th>
+            <th>路径</th><th>归档目标</th><th>整理方式</th><th>类型</th><th>数据源</th><th>状态</th><th>操作</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="f in folders" :key="f.id">
             <td>{{f.path}}</td>
-            <td>{{f.target_root || '-'}}</td>
+            <td>{{f.organize_mode==='rename'?'(原地)':f.target_root || '-'}}</td>
+            <td>{{({move:'移动',copy:'复制',symlink:'软链接',hardlink:'硬链接',rename:'原地整理'})[f.organize_mode]||'移动'}}</td>
             <td>{{f.media_type==='auto'?'自动':f.media_type==='movie'?'电影':'电视剧'}}</td>
             <td>{{f.data_source==='siliconflow_tmdb'?'TMDb':'BGM'}}</td>
             <td><span :class="['badge', f.enabled?'badge-success':'badge-gray']">{{f.enabled?'监控中':'已停用'}}</span></td>
@@ -123,9 +148,28 @@
           <div class="form-group">
             <label>归档目标根目录</label>
             <div class="input-with-btn">
-              <input v-model="editFolderData.target_root" placeholder="例如 D:\Media\Library" readonly>
-              <button class="btn btn-sm" @click="openBrowse('edit_target_root')">浏览...</button>
+              <input v-model="editFolderData.target_root" placeholder="例如 D:\Media\Library" readonly :disabled="editFolderData.organize_mode==='rename'">
+              <button class="btn btn-sm" @click="openBrowse('edit_target_root')" :disabled="editFolderData.organize_mode==='rename'">浏览...</button>
             </div>
+            <small v-if="editFolderData.organize_mode==='rename'" style="color:#888;display:block;margin-top:4px">原地整理模式不需要归档目标</small>
+          </div>
+          <div class="form-group">
+            <label>* 整理方式</label>
+            <div class="btn-group" style="display:flex;gap:0;margin-top:4px">
+              <button :class="['btn', editFolderData.organize_mode==='move'?'btn-primary':'']" style="border-radius:6px 0 0 6px;min-width:72px" @click="editFolderData.organize_mode='move'">移动</button>
+              <button :class="['btn', editFolderData.organize_mode==='copy'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="editFolderData.organize_mode='copy'">复制</button>
+              <button :class="['btn', editFolderData.organize_mode==='symlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="editFolderData.organize_mode='symlink'">软链接</button>
+              <button :class="['btn', editFolderData.organize_mode==='hardlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="editFolderData.organize_mode='hardlink'">硬链接</button>
+              <button :class="['btn', editFolderData.organize_mode==='rename'?'btn-primary':'']" style="border-radius:0 6px 6px 0;min-width:88px" @click="editFolderData.organize_mode='rename'">原地整理</button>
+            </div>
+          </div>
+          <div class="form-group" v-if="editFolderData.organize_mode==='rename'">
+            <label>软链接源目录（可选）</label>
+            <div class="input-with-btn">
+              <input v-model="editFolderData.symlink_source" placeholder="例如 Y:\MPSTRM" readonly>
+              <button class="btn btn-sm" @click="openBrowse('edit_symlink_source')">浏览...</button>
+            </div>
+            <small style="color:#888;display:block;margin-top:4px">设置后，该目录下的文件会自动以软链接方式同步到监控目录</small>
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -165,6 +209,7 @@
           <span class="toolbar-hint">已选择 {{selectedIds.length}} 条记录</span>
         </div>
         <div class="toolbar-right">
+          <button class="btn-grad btn-grad-blue btn-sm" @click="toggleGroupedView">{{groupedView?'列表视图':'分组视图'}}</button>
           <button class="btn-grad btn-grad-blue btn-sm" @click="refreshRecords">刷新</button>
           <button class="btn-grad btn-grad-orange btn-sm" @click="clearFailed">清除失败记录</button>
           <button class="btn-grad btn-grad-red btn-sm" @click="clearAll">清空记录</button>
@@ -188,11 +233,12 @@
           <option value="tv">电视剧</option>
           <option value="auto">自动</option>
         </select>
-        <button class="btn btn-primary btn-sm" @click="recordPage=1;loadRecords()">筛选</button>
+        <button class="btn btn-primary btn-sm" @click="recordPage=1;groupedView?loadGroupedRecords():loadRecords()">筛选</button>
         <button class="btn btn-sm" @click="resetRecordFilter">重置</button>
       </div>
 
-      <!-- 数据表格 -->
+      <!-- 数据表格 - 列表视图 -->
+      <template v-if="!groupedView">
       <table class="table">
         <thead>
           <tr>
@@ -217,6 +263,8 @@
             <td class="cell-name">
               <template v-if="r.matched_title">{{r.matched_title}}<span v-if="r.matched_id" style="color:#999;margin-left:4px">(ID:{{r.matched_id}})</span></template>
               <span v-else style="color:#999">-</span>
+              <span v-if="r.parse_source==='ai'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#e8f4fd;color:#1a73e8;border:1px solid #90cdf4">AI</span>
+              <span v-else-if="r.parse_source==='guessit'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#f0fdf4;color:#16a34a;border:1px solid #86efac">guessit</span>
             </td>
             <td class="cell-path">
               <div>{{r.original_path || '-'}}</div>
@@ -224,7 +272,7 @@
             </td>
             <td style="white-space:nowrap;font-size:12px;color:#999">{{formatTime(r.updated_at || r.created_at)}}</td>
             <td class="actions">
-              <button v-if="r.status==='pending_manual'" class="btn btn-sm btn-primary" @click="openManualMatch(r)">手动</button>
+              <button v-if="r.status!=='processing'" class="btn btn-sm btn-primary" @click="openManualMatch(r)">手动识别</button>
               <button v-if="r.status==='failed'||r.status==='pending_manual'" class="btn btn-sm" @click="retryRecord(r.id)">重试</button>
               <button class="btn btn-sm btn-danger" @click="deleteRecord(r.id)">删除</button>
             </td>
@@ -249,6 +297,77 @@
           <input v-model.number="recordGoPage" class="pagination-goto" @keyup.enter="gotoPage">
         </div>
       </div>
+      </template>
+
+      <!-- 数据表格 - 分组视图 -->
+      <template v-else>
+      <div class="empty" v-if="!groupedRecords.length">No Data</div>
+      <table class="table" v-else>
+        <thead>
+          <tr>
+            <th style="width:36px"></th>
+            <th>目录</th>
+            <th style="width:80px">总数</th>
+            <th style="width:80px">成功</th>
+            <th style="width:80px">失败</th>
+            <th style="width:80px">待手动</th>
+            <th style="width:120px">操作</th>
+          </tr>
+        </thead>
+        <template v-for="g in groupedRecords" :key="g.dir_path">
+          <tbody>
+            <tr class="group-row" @click="toggleGroup(g)">
+              <td><input type="checkbox" :checked="isGroupAllSelected(g)" @click.stop="toggleSelectGroup(g)"></td>
+              <td>
+                <span style="display:inline-block;width:18px;text-align:center;margin-right:4px">{{expandedGroups[g.dir_path]?'▼':'▶'}}</span>
+                <strong>{{g.dir_name}}</strong>
+                <span style="color:#999;margin-left:8px;font-size:12px">{{g.dir_path}}</span>
+              </td>
+              <td><span class="badge badge-gray">{{g.total}}</span></td>
+              <td><span class="badge badge-success" v-if="g.success">{{g.success}}</span><span v-else>-</span></td>
+              <td><span class="badge badge-danger" v-if="g.failed">{{g.failed}}</span><span v-else>-</span></td>
+              <td><span class="badge badge-warning" v-if="g.pending">{{g.pending}}</span><span v-else>-</span></td>
+              <td class="actions" @click.stop>
+                <button class="btn btn-sm btn-danger" @click="deleteGroup(g)">删除全组</button>
+              </td>
+            </tr>
+          </tbody>
+          <tbody v-if="expandedGroups[g.dir_path]">
+            <tr v-if="expandedGroups[g.dir_path].loading">
+              <td colspan="7" style="text-align:center;color:#999;padding:12px">加载中...</td>
+            </tr>
+            <template v-else>
+              <tr class="group-record-row" v-for="r in expandedGroups[g.dir_path].records" :key="r.id">
+                <td><input type="checkbox" :value="r.id" v-model="selectedIds"></td>
+                <td colspan="2" class="cell-name" style="padding-left:40px">
+                  <div style="font-size:13px">{{r.original_name}}</div>
+                  <div class="path-target" v-if="r.target_path" style="font-size:12px">→ {{r.target_path}}</div>
+                </td>
+                <td>
+                  <span :class="['badge', statusClass(r.status)]">{{statusText(r.status)}}</span>
+                </td>
+                <td class="cell-name">
+                  <template v-if="r.matched_title">{{r.matched_title}}<span v-if="r.matched_id" style="color:#999;margin-left:4px;font-size:11px">({{r.matched_id}})</span></template>
+                  <span v-else style="color:#999">-</span>
+                </td>
+                <td style="white-space:nowrap;font-size:12px;color:#999">{{formatTime(r.updated_at || r.created_at)}}</td>
+                <td class="actions">
+                  <button v-if="r.status!=='processing'" class="btn btn-sm btn-primary" @click="openManualMatch(r)">手动识别</button>
+                  <button class="btn btn-sm btn-danger" @click="deleteGroupRecord(g, r.id)">删除</button>
+                </td>
+              </tr>
+              <tr v-if="expandedGroups[g.dir_path].total > 50" class="group-pagination-row">
+                <td colspan="7" style="text-align:center;padding:8px">
+                  <button class="btn btn-sm" :disabled="expandedGroups[g.dir_path].page<=1" @click.stop="groupPagePrev(g)">&lt; 上一页</button>
+                  <span style="margin:0 12px;font-size:13px;color:#666">{{expandedGroups[g.dir_path].page}} / {{Math.ceil(expandedGroups[g.dir_path].total/50)}}</span>
+                  <button class="btn btn-sm" :disabled="expandedGroups[g.dir_path].page*50>=expandedGroups[g.dir_path].total" @click.stop="groupPageNext(g)">下一页 &gt;</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </template>
+      </table>
+      </template>
     </section>
 
     <!-- 手动匹配弹窗 -->
@@ -320,6 +439,15 @@
           </div>
         </div>
         <div class="empty" v-else-if="searchDone">无结果，请尝试其他关键词</div>
+        <div style="display:flex;align-items:center;gap:20px;margin:14px 0;padding-top:12px;border-top:1px solid #f0f0f0">
+          <span style="color:#888;font-size:13px;white-space:nowrap">整理范围</span>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:14px">
+            <input type="radio" v-model="manualScope" value="single" style="accent-color:#1976d2"> 仅此文件
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:14px">
+            <input type="radio" v-model="manualScope" value="folder" style="accent-color:#1976d2"> 目录内所有文件
+          </label>
+        </div>
         <div class="form-actions" style="margin-top:16px">
           <button class="btn" @click="manualMatchVisible=false">取消</button>
           <button class="btn btn-primary" @click="searchMode==='id'?applyByTmdbId():searchCandidates()" :disabled="searching">
@@ -448,6 +576,46 @@
           <button class="btn btn-danger" @click="clearCache">🗑 清除 API 缓存</button>
         </div>
         <div v-if="testResult" :class="['msg', testResult.ok?'msg-ok':'msg-err']">{{testResult.message}}</div>
+      </div>
+
+      <!-- 要删除的关键词 -->
+      <div class="card" style="margin-top:16px">
+        <div class="form-group">
+          <label style="font-weight:600;font-size:15px">要删除的关键词</label>
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+            <input v-model="newKeyword" placeholder="输入关键词" @keyup.enter="addStripKeyword" style="flex:1;max-width:260px">
+            <button class="btn btn-primary btn-sm" @click="addStripKeyword">+ 添加</button>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px" v-if="cfg.strip_keywords&&cfg.strip_keywords.length">
+            <span v-for="(kw, idx) in cfg.strip_keywords" :key="idx" style="display:inline-flex;align-items:center;padding:4px 10px;background:#e8f4fd;color:#1976d2;border-radius:14px;font-size:13px;border:1px solid #90cdf4">
+              {{kw}}
+              <span @click="removeStripKeyword(idx)" style="margin-left:6px;cursor:pointer;color:#999;font-size:15px;line-height:1">&times;</span>
+            </span>
+          </div>
+          <small style="color:#1976d2;display:block;margin-top:8px">从视频文件名中提取影视剧标题时先删除这些关键词，添加的越多识别准确率越高</small>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" @click="saveSettings">保存</button>
+        </div>
+      </div>
+
+      <!-- 缓存自动清除 -->
+      <div class="card" style="margin-top:16px">
+        <div class="form-group">
+          <label style="font-weight:600;font-size:15px">识别缓存自动清除</label>
+          <select v-model.number="cfg.cache_expiry_days" style="margin-top:8px;max-width:200px">
+            <option :value="1">1 天</option>
+            <option :value="3">3 天</option>
+            <option :value="7">7 天（默认）</option>
+            <option :value="14">14 天</option>
+            <option :value="30">30 天</option>
+            <option :value="0">永不过期</option>
+          </select>
+          <small style="color:#888;display:block;margin-top:6px">设置 API 识别缓存的自动过期时间，过期后下次识别将重新向 API 请求。选择「永不过期」则只能手动清除。</small>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" @click="saveSettings">保存</button>
+        </div>
       </div>
     </section>
 
