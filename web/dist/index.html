@@ -284,6 +284,8 @@
         <div class="pagination-pages">
           <button class="btn btn-sm" :disabled="recordPage<=1" @click="recordPage--;loadRecords()">&lt;</button>
           <span class="pagination-current">{{recordPage}}</span>
+          <span style="color:#aaa;margin:0 2px">/</span>
+          <span style="color:#666">{{Math.ceil(recordTotal/recordPageSize)||1}}</span>
           <button class="btn btn-sm" :disabled="recordPage*recordPageSize>=recordTotal" @click="recordPage++;loadRecords()">&gt;</button>
           <span style="margin-left:8px">Go to</span>
           <input v-model.number="recordGoPage" class="pagination-goto" @keyup.enter="gotoPage">
@@ -774,6 +776,8 @@
         <div class="pagination-pages">
           <button class="btn btn-sm" :disabled="symlinkPage<=1" @click="symlinkPage--;loadSymlinkRecords()">&lt;</button>
           <span class="pagination-current">{{symlinkPage}}</span>
+          <span style="color:#aaa;margin:0 2px">/</span>
+          <span style="color:#666">{{Math.ceil(symlinkTotal/symlinkPageSize)||1}}</span>
           <button class="btn btn-sm" :disabled="symlinkPage*symlinkPageSize>=symlinkTotal" @click="symlinkPage++;loadSymlinkRecords()">&gt;</button>
         </div>
       </div>
