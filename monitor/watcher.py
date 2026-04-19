@@ -76,7 +76,7 @@ class FolderWatcher:
         self._pending: Dict[str, float] = {}  # path -> last event time
         self._pending_lock = threading.Lock()
         self._processed: Set[str] = set()
-        self._pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="scrape")
+        self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="scrape")
         self._running = False
         self._worker_ctx: Optional[WorkerContext] = None
         self._debounce_thread: Optional[threading.Thread] = None
@@ -293,6 +293,7 @@ class FolderWatcher:
                         if full not in self._processed:
                             self._processed.add(full)
                     self._pool.submit(self._process_file, full)
+                    time.sleep(0.1)
         finally:
             db.close()
 

@@ -66,6 +66,14 @@ def symlink_stats(db: Session = Depends(get_db)):
     return {"total": total, "success": success, "failed": failed}
 
 
+@router.delete("/all")
+def clear_all(db: Session = Depends(get_db)):
+    """Delete all symlink records."""
+    deleted = db.query(SymlinkRecord).delete(synchronize_session=False)
+    db.commit()
+    return {"ok": True, "deleted": deleted}
+
+
 @router.delete("/{record_id}")
 def delete_symlink(record_id: int, db: Session = Depends(get_db)):
     row = db.query(SymlinkRecord).get(record_id)
@@ -90,13 +98,5 @@ def batch_delete(body: dict, db: Session = Depends(get_db)):
 def clear_failed(db: Session = Depends(get_db)):
     """Delete all failed symlink records."""
     deleted = db.query(SymlinkRecord).filter(SymlinkRecord.status == "failed").delete(synchronize_session=False)
-    db.commit()
-    return {"ok": True, "deleted": deleted}
-
-
-@router.delete("/all")
-def clear_all(db: Session = Depends(get_db)):
-    """Delete all symlink records."""
-    deleted = db.query(SymlinkRecord).delete(synchronize_session=False)
     db.commit()
     return {"ok": True, "deleted": deleted}
