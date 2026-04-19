@@ -21,6 +21,12 @@
       <li :class="{active: page==='records'}" @click="page='records'">
         <span class="icon">📋</span> 刮削记录
       </li>
+      <li :class="{active: page==='symlink_folders'}" @click="page='symlink_folders'">
+        <span class="icon">🔗</span> 导出软链接
+      </li>
+      <li :class="{active: page==='symlink_records'}" @click="page='symlink_records'">
+        <span class="icon">📎</span> 软链接记录
+      </li>
       <li :class="{active: page==='tmdb'}" @click="page='tmdb'">
         <span class="icon">🎬</span> TMDB设置
       </li>
@@ -63,7 +69,7 @@
             <button class="btn btn-sm" @click="openBrowse('target_root')" :disabled="newFolder.organize_mode==='rename'">浏览...</button>
           </div>
           <small v-if="newFolder.organize_mode==='rename'" style="color:#888;display:block;margin-top:4px">原地整理模式不需要归档目标，文件将在监控目录内建立层级结构</small>
-          <small v-if="newFolder.organize_mode==='symlink_export'" style="color:#888;display:block;margin-top:4px">必须设置目标目录，监控目录中的原始文件将在此目录创建同名软链接</small>
+
         </div>
         <div class="form-group">
           <label>* 整理方式</label>
@@ -72,7 +78,6 @@
             <button :class="['btn', newFolder.organize_mode==='copy'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='copy'">复制</button>
             <button :class="['btn', newFolder.organize_mode==='symlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='symlink'">软链接</button>
             <button :class="['btn', newFolder.organize_mode==='hardlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='hardlink'">硬链接</button>
-            <button :class="['btn', newFolder.organize_mode==='symlink_export'?'btn-primary':'']" style="border-radius:0;min-width:88px" @click="newFolder.organize_mode='symlink_export'">导出软链接</button>
             <button :class="['btn', newFolder.organize_mode==='rename'?'btn-primary':'']" style="border-radius:0 6px 6px 0;min-width:88px" @click="newFolder.organize_mode='rename'">原地整理</button>
           </div>
           <small style="color:#1976d2;display:block;margin-top:6px" v-if="newFolder.organize_mode==='move'">移动：将视频文件移动到目标路径，元数据（nfo、字幕等）也会直接生成或移动到目标路径</small>
@@ -80,7 +85,6 @@
           <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='symlink'">软链接：创建文件的软链接到目标路径，元数据（nfo、字幕等）也会直接生成或复制到目标路径。Windows 可能需要管理员权限或开启开发者模式</small>
           <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='hardlink'">硬链接：创建文件的硬链接到目标路径，元数据（nfo、字幕等）也会直接生成或复制到目标路径。仅支持同分区</small>
           <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='rename'">原地整理：在监控目录内建立完整层级结构（剧名/Season X/），不需要设置归档目标</small>
-          <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='symlink_export'">导出软链接：在目标目录中创建指向监控目录原始文件的同名软链接，不刮削不改名。需要配合另一个「原地整理」监控目录来刮削整理软链接</small>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -104,17 +108,17 @@
           <button class="btn" @click="showAddFolder=false">取消</button>
         </div>
       </div>
-      <table class="table" v-if="folders.length">
+      <table class="table" v-if="scrapeFolders.length">
         <thead>
           <tr>
             <th>路径</th><th>归档目标</th><th>整理方式</th><th>类型</th><th>数据源</th><th>状态</th><th>操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="f in folders" :key="f.id">
+          <tr v-for="f in scrapeFolders" :key="f.id">
             <td>{{f.path}}</td>
-            <td>{{f.organize_mode==='rename'?'(原地)':f.organize_mode==='symlink_export'?f.target_root:f.target_root || '-'}}</td>
-            <td>{{({move:'移动',copy:'复制',symlink:'软链接',hardlink:'硬链接',rename:'原地整理',symlink_export:'导出软链接'})[f.organize_mode]||'移动'}}</td>
+            <td>{{f.organize_mode==='rename'?'(原地)':f.target_root || '-'}}</td>
+            <td>{{({move:'移动',copy:'复制',symlink:'软链接',hardlink:'硬链接',rename:'原地整理'})[f.organize_mode]||'移动'}}</td>
             <td>{{f.media_type==='auto'?'自动':f.media_type==='movie'?'电影':'电视剧'}}</td>
             <td>{{f.data_source==='siliconflow_tmdb'?'TMDb':'BGM'}}</td>
             <td><span :class="['badge', f.enabled?'badge-success':'badge-gray']">{{f.enabled?'监控中':'已停用'}}</span></td>
@@ -147,7 +151,7 @@
               <button class="btn btn-sm" @click="openBrowse('edit_target_root')" :disabled="editFolderData.organize_mode==='rename'">浏览...</button>
             </div>
             <small v-if="editFolderData.organize_mode==='rename'" style="color:#888;display:block;margin-top:4px">原地整理模式不需要归档目标</small>
-            <small v-if="editFolderData.organize_mode==='symlink_export'" style="color:#888;display:block;margin-top:4px">必须设置目标目录，监控目录中的原始文件将在此目录创建同名软链接</small>
+
           </div>
           <div class="form-group">
             <label>* 整理方式</label>
@@ -156,7 +160,6 @@
               <button :class="['btn', editFolderData.organize_mode==='copy'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="editFolderData.organize_mode='copy'">复制</button>
               <button :class="['btn', editFolderData.organize_mode==='symlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="editFolderData.organize_mode='symlink'">软链接</button>
               <button :class="['btn', editFolderData.organize_mode==='hardlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="editFolderData.organize_mode='hardlink'">硬链接</button>
-              <button :class="['btn', editFolderData.organize_mode==='symlink_export'?'btn-primary':'']" style="border-radius:0;min-width:88px" @click="editFolderData.organize_mode='symlink_export'">导出软链接</button>
               <button :class="['btn', editFolderData.organize_mode==='rename'?'btn-primary':'']" style="border-radius:0 6px 6px 0;min-width:88px" @click="editFolderData.organize_mode='rename'">原地整理</button>
             </div>
           </div>
@@ -677,6 +680,102 @@
           <button class="btn" @click="testTelegram">测试发送</button>
         </div>
         <div v-if="tgTestResult" :class="['msg', tgTestResult.ok?'msg-ok':'msg-err']">{{tgTestResult.message}}</div>
+      </div>
+    </section>
+
+    <!-- 导出软链接 -->
+    <section v-if="page==='symlink_folders'">
+      <div class="page-header">
+        <h1>导出软链接</h1>
+        <button class="btn btn-primary" @click="showAddSymlink=true">+ 添加目录</button>
+      </div>
+      <div class="card" v-if="showAddSymlink">
+        <h3>添加软链接导出目录</h3>
+        <div class="form-group">
+          <label>监控路径（原始文件所在目录）</label>
+          <div class="input-with-btn">
+            <input v-model="newSymlinkFolder.path" placeholder="例如 E:\MPSTRM" readonly>
+            <button class="btn btn-sm" @click="openBrowse('symlink_path')">浏览...</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>导出目标目录（软链接创建位置）</label>
+          <div class="input-with-btn">
+            <input v-model="newSymlinkFolder.target_root" placeholder="例如 E:\STRM" readonly>
+            <button class="btn btn-sm" @click="openBrowse('symlink_target')">浏览...</button>
+          </div>
+          <small style="color:#1976d2;display:block;margin-top:6px">监控路径中的文件将在目标目录创建同名软链接，保持相同的目录结构，不刮削不改名</small>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" @click="addSymlinkFolder">确认添加</button>
+          <button class="btn" @click="showAddSymlink=false">取消</button>
+        </div>
+      </div>
+      <table class="table" v-if="symlinkFolders.length">
+        <thead>
+          <tr>
+            <th>监控路径</th><th>导出目标</th><th>状态</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="f in symlinkFolders" :key="f.id">
+            <td>{{f.path}}</td>
+            <td>{{f.target_root || '-'}}</td>
+            <td><span :class="['badge', f.enabled?'badge-success':'badge-gray']">{{f.enabled?'监控中':'已停用'}}</span></td>
+            <td class="actions">
+              <button class="btn btn-sm" @click="scanFolder(f.id)" title="立即扫描">🔍</button>
+              <button class="btn btn-sm" @click="toggleFolder(f)" title="启停">{{f.enabled?'⏸':'▶'}}</button>
+              <button class="btn btn-sm btn-danger" @click="deleteFolder(f.id)" title="删除">🗑</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="empty" v-else-if="!showAddSymlink">暂无软链接导出目录，点击右上角添加</div>
+    </section>
+
+    <!-- 软链接记录 -->
+    <section v-if="page==='symlink_records'">
+      <div class="page-header"><h1>软链接记录</h1></div>
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <span class="toolbar-hint" v-if="symlinkStats.total">共 {{symlinkStats.total}} 条，成功 {{symlinkStats.success || 0}}，失败 {{symlinkStats.failed || 0}}</span>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn-grad btn-grad-blue btn-sm" @click="loadSymlinkRecords">刷新</button>
+          <button class="btn-grad btn-grad-orange btn-sm" @click="clearSymlinkFailed">清除失败记录</button>
+          <button class="btn-grad btn-grad-red btn-sm" @click="clearSymlinkAll">清空记录</button>
+        </div>
+      </div>
+      <table class="table" v-if="symlinkRecords.length">
+        <thead>
+          <tr>
+            <th>状态</th>
+            <th>原始文件</th>
+            <th>软链接路径</th>
+            <th style="width:148px">时间</th>
+            <th style="width:90px">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in symlinkRecords" :key="r.id">
+            <td><span :class="['badge', r.status==='success'?'badge-success':'badge-danger']">{{r.status==='success'?'成功':'失败'}}</span></td>
+            <td class="cell-path">{{r.original_path}}</td>
+            <td class="cell-path">{{r.link_path || '-'}}</td>
+            <td style="white-space:nowrap;font-size:12px;color:#999">{{formatTime(r.created_at)}}</td>
+            <td class="actions">
+              <button class="btn btn-sm btn-danger" @click="deleteSymlinkRecord(r.id)">删除</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="empty" v-else>暂无软链接记录</div>
+      <div class="pagination-bar" v-if="symlinkTotal>symlinkPageSize">
+        <span class="pagination-total">Total {{symlinkTotal}}</span>
+        <div class="pagination-pages">
+          <button class="btn btn-sm" :disabled="symlinkPage<=1" @click="symlinkPage--;loadSymlinkRecords()">&lt;</button>
+          <span class="pagination-current">{{symlinkPage}}</span>
+          <button class="btn btn-sm" :disabled="symlinkPage*symlinkPageSize>=symlinkTotal" @click="symlinkPage++;loadSymlinkRecords()">&gt;</button>
+        </div>
       </div>
     </section>
   </main>

@@ -12,6 +12,14 @@ const app = Vue.createApp({
       newFolder: { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '' },
       editFolderVisible: false,
       editFolderData: { id: null, path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '' },
+      // Symlink export
+      showAddSymlink: false,
+      newSymlinkFolder: { path: '', target_root: '' },
+      symlinkRecords: [],
+      symlinkPage: 1,
+      symlinkPageSize: 20,
+      symlinkTotal: 0,
+      symlinkStats: {},
       // Records
       records: [],
       recordFilter: '',
@@ -63,11 +71,21 @@ const app = Vue.createApp({
     this.loadRecords();
     this.connectWs();
     // Keep hash in sync when page changes, so F5 restores correctly
-    this.$watch('page', function(val) { location.hash = val; });
+    this.$watch('page', function(val) {
+      location.hash = val;
+      if (val === 'symlink_records') { this.loadSymlinkRecords(); this.loadSymlinkStats(); }
+      if (val === 'symlink_folders') { this.loadFolders(); }
+    });
   },
   computed: {
     allSelected: function() {
       return this.records.length > 0 && this.selectedIds.length === this.records.length;
+    },
+    scrapeFolders: function() {
+      return this.folders.filter(function(f) { return f.organize_mode !== 'symlink_export'; });
+    },
+    symlinkFolders: function() {
+      return this.folders.filter(function(f) { return f.organize_mode === 'symlink_export'; });
     },
   },
   methods: {
@@ -93,6 +111,7 @@ const app = Vue.createApp({
           try {
             var msg = JSON.parse(e.data);
             if (msg.type === 'record_update') self.onRecordUpdate(msg.data);
+            if (msg.type === 'symlink_update') self.onSymlinkUpdate(msg.data);
           } catch (ex) {}
         };
         this.ws.onclose = function() {
@@ -115,6 +134,16 @@ const app = Vue.createApp({
       // Refresh grouped view in background if active
       if (this.groupedView) this.loadGroupedRecords();
     },
+    onSymlinkUpdate(data) {
+      var idx = this.symlinkRecords.findIndex(function(r) { return r.id === data.id; });
+      if (idx >= 0) {
+        Object.assign(this.symlinkRecords[idx], data);
+      } else {
+        this.symlinkRecords.unshift(data);
+        this.symlinkTotal++;
+      }
+      this.loadSymlinkStats();
+    },
 
     // --- Folder Browser ---
     async openBrowse(field) {
@@ -127,6 +156,8 @@ const app = Vue.createApp({
       else if (field === 'edit_path') startPath = this.editFolderData.path;
       else if (field === 'edit_target_root') startPath = this.editFolderData.target_root;
       else if (field === 'edit_symlink_source') startPath = this.editFolderData.symlink_source;
+      else if (field === 'symlink_path') startPath = this.newSymlinkFolder.path;
+      else if (field === 'symlink_target') startPath = this.newSymlinkFolder.target_root;
       try {
         var data = await this.api('POST', '/api/monitor/browse', { path: startPath || '' });
         this.browseCurrent = data.current || '';
@@ -172,6 +203,10 @@ const app = Vue.createApp({
         this.editFolderData.target_root = chosen;
       } else if (this.browseField === 'edit_symlink_source') {
         this.editFolderData.symlink_source = chosen;
+      } else if (this.browseField === 'symlink_path') {
+        this.newSymlinkFolder.path = chosen;
+      } else if (this.browseField === 'symlink_target') {
+        this.newSymlinkFolder.target_root = chosen;
       }
       this.browseVisible = false;
     },
@@ -229,6 +264,45 @@ const app = Vue.createApp({
         var r = await this.api('POST', '/api/monitor/folders/' + id + '/scan');
         alert(r.message || '扫描已启动');
       } catch (e) { alert(e.message); }
+    },
+
+    // --- Symlink Export ---
+    async addSymlinkFolder() {
+      try {
+        await this.api('POST', '/api/monitor/folders', {
+          path: this.newSymlinkFolder.path,
+          target_root: this.newSymlinkFolder.target_root,
+          media_type: 'auto',
+          data_source: 'siliconflow_tmdb',
+          organize_mode: 'symlink_export',
+        });
+        this.showAddSymlink = false;
+        this.newSymlinkFolder = { path: '', target_root: '' };
+        this.loadFolders();
+      } catch (e) { alert(e.message); }
+    },
+    async loadSymlinkRecords() {
+      try {
+        var params = new URLSearchParams({ page: this.symlinkPage, page_size: this.symlinkPageSize });
+        var data = await this.api('GET', '/api/symlinks?' + params.toString());
+        this.symlinkRecords = data.items || [];
+        this.symlinkTotal = data.total || 0;
+      } catch (ex) {}
+    },
+    async loadSymlinkStats() {
+      try { this.symlinkStats = await this.api('GET', '/api/symlinks/stats'); } catch (ex) {}
+    },
+    async deleteSymlinkRecord(id) {
+      if (!confirm('确认删除该记录？')) return;
+      try { await this.api('DELETE', '/api/symlinks/' + id); this.loadSymlinkRecords(); this.loadSymlinkStats(); } catch (e) { alert(e.message); }
+    },
+    async clearSymlinkFailed() {
+      if (!confirm('确认清除所有失败的软链接记录？')) return;
+      try { await this.api('POST', '/api/symlinks/clear-failed'); this.loadSymlinkRecords(); this.loadSymlinkStats(); } catch (e) { alert(e.message); }
+    },
+    async clearSymlinkAll() {
+      if (!confirm('确认清空所有软链接记录？此操作不可恢复。')) return;
+      try { await this.api('DELETE', '/api/symlinks/all'); this.loadSymlinkRecords(); this.loadSymlinkStats(); } catch (e) { alert(e.message); }
     },
 
     // --- Records ---

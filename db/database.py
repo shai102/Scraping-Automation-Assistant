@@ -30,7 +30,7 @@ def get_db():
 
 
 def init_db():
-    from db.scrape_models import MonitorFolder, ScrapeRecord  # noqa: F401
+    from db.scrape_models import MonitorFolder, ScrapeRecord, SymlinkRecord  # noqa: F401
     Base.metadata.create_all(bind=engine)
 
     # Lightweight migration: add columns introduced after initial schema

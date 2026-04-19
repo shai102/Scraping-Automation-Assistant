@@ -20,6 +20,7 @@ class MonitorFolder(Base):
     created_at = Column(DateTime, default=datetime.datetime.now)
 
     records = relationship("ScrapeRecord", back_populates="folder", cascade="all, delete-orphan")
+    symlink_records = relationship("SymlinkRecord", back_populates="folder", cascade="all, delete-orphan")
 
 
 class ScrapeRecord(Base):
@@ -41,3 +42,18 @@ class ScrapeRecord(Base):
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
 
     folder = relationship("MonitorFolder", back_populates="records")
+
+
+class SymlinkRecord(Base):
+    """Records for symlink_export mode — tracks each symlink created."""
+    __tablename__ = "symlink_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    folder_id = Column(Integer, ForeignKey("monitor_folders.id"), nullable=True)
+    original_path = Column(String(2048), nullable=False)
+    link_path = Column(String(2048), nullable=False, default="")
+    status = Column(String(32), nullable=False, default="success")  # success | failed
+    error_msg = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.now)
+
+    folder = relationship("MonitorFolder", back_populates="symlink_records")

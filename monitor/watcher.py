@@ -22,7 +22,7 @@ from core.models.media_item import MediaItem
 from core.services.worker_context import WorkerContext
 from core.workers.task_runner import process_task as _process_task
 from db.database import SessionLocal
-from db.scrape_models import MonitorFolder, ScrapeRecord
+from db.scrape_models import MonitorFolder, ScrapeRecord, SymlinkRecord
 from utils.telegram_notify import NotificationBatcher
 
 logger = logging.getLogger(__name__)
@@ -287,7 +287,10 @@ class FolderWatcher:
             # Decimal episode (e.g. 4.5) = \u603b\u96c6\u7bc7 \u2014 skip
             from utils.helpers import is_decimal_episode
             pure_name = os.path.splitext(os.path.basename(path))[0]
-            if is_decimal_episode(pure_name):
+            # ---- symlink_export mode: write SymlinkRecord, no scraping ----
+            organize_mode_early = getattr(folder, 'organize_mode', 'move') or 'move' if folder else 'move'
+
+            if is_decimal_episode(pure_name) and organize_mode_early != 'symlink_export':
                 logger.info(f"\u8df3\u8fc7\u5c0f\u6570\u96c6\uff08\u603b\u96c6\u7bc7\uff09: {path}")
                 record = ScrapeRecord(
                     folder_id=folder.id if folder else None,
@@ -302,6 +305,58 @@ class FolderWatcher:
                 self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
                 return
 
+            # ---- symlink_export mode: write SymlinkRecord, no scraping ----
+            if organize_mode_early == 'symlink_export' and folder:
+                target_root = (folder.target_root or '').strip()
+                if not target_root or not os.path.isdir(target_root):
+                    slr = SymlinkRecord(
+                        folder_id=folder.id,
+                        original_path=path,
+                        link_path="",
+                        status="failed",
+                        error_msg="导出软链接模式需要设置有效的归档目标目录",
+                    )
+                    db.add(slr); db.commit(); db.refresh(slr)
+                    self._broadcast({"type": "symlink_update", "data": _symlink_record_to_dict(slr)})
+                    return
+                rel = os.path.relpath(path, os.path.normpath(folder.path))
+                link = os.path.join(target_root, rel)
+                if os.path.exists(link):
+                    slr = SymlinkRecord(
+                        folder_id=folder.id,
+                        original_path=path,
+                        link_path=link,
+                        status="success",
+                        error_msg="软链接已存在",
+                    )
+                    db.add(slr); db.commit(); db.refresh(slr)
+                    self._broadcast({"type": "symlink_update", "data": _symlink_record_to_dict(slr)})
+                    return
+                try:
+                    os.makedirs(os.path.dirname(link), exist_ok=True)
+                    os.symlink(os.path.abspath(path), link)
+                    logger.info(f"Symlink export: {link} -> {path}")
+                    slr = SymlinkRecord(
+                        folder_id=folder.id,
+                        original_path=path,
+                        link_path=link,
+                        status="success",
+                    )
+                    db.add(slr); db.commit(); db.refresh(slr)
+                    self._broadcast({"type": "symlink_update", "data": _symlink_record_to_dict(slr)})
+                except Exception as e:
+                    logger.error(f"Symlink export failed for {path}: {e}")
+                    slr = SymlinkRecord(
+                        folder_id=folder.id,
+                        original_path=path,
+                        link_path=link,
+                        status="failed",
+                        error_msg=f"创建软链接失败: {e}",
+                    )
+                    db.add(slr); db.commit(); db.refresh(slr)
+                    self._broadcast({"type": "symlink_update", "data": _symlink_record_to_dict(slr)})
+                return
+
             # Create record
             record = ScrapeRecord(
                 folder_id=folder.id if folder else None,
@@ -313,41 +368,6 @@ class FolderWatcher:
             db.commit()
             db.refresh(record)
             self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
-
-            # ---- symlink_export mode: just create symlink in target_root, no scraping ----
-            organize_mode = getattr(folder, 'organize_mode', 'move') or 'move' if folder else 'move'
-            if organize_mode == 'symlink_export' and folder:
-                target_root = (folder.target_root or '').strip()
-                if not target_root or not os.path.isdir(target_root):
-                    record.status = "failed"
-                    record.error_msg = "导出软链接模式需要设置有效的归档目标目录"
-                    db.commit()
-                    self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
-                    return
-                rel = os.path.relpath(path, os.path.normpath(folder.path))
-                link = os.path.join(target_root, rel)
-                if os.path.exists(link):
-                    record.status = "success"
-                    record.target_path = link
-                    record.error_msg = "软链接已存在"
-                    db.commit()
-                    self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
-                    return
-                try:
-                    os.makedirs(os.path.dirname(link), exist_ok=True)
-                    os.symlink(os.path.abspath(path), link)
-                    logger.info(f"Symlink export: {link} -> {path}")
-                    record.status = "success"
-                    record.target_path = link
-                    db.commit()
-                    self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
-                except Exception as e:
-                    logger.error(f"Symlink export failed for {path}: {e}")
-                    record.status = "failed"
-                    record.error_msg = f"创建软链接失败: {e}"
-                    db.commit()
-                    self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
-                return
 
             # Build a per-call WorkerContext to avoid concurrent mutation of shared state.
             # Each thread gets its own copy of the config; the global _worker_ctx is only
@@ -497,6 +517,18 @@ def _remove_empty_dirs(start_dir: str, stop_at: Optional[str] = None):
             logger.warning(f"Could not remove dir {current}: {e}")
             break
         current = parent
+
+
+def _symlink_record_to_dict(r: SymlinkRecord) -> dict:
+    return {
+        "id": r.id,
+        "folder_id": r.folder_id,
+        "original_path": r.original_path,
+        "link_path": r.link_path,
+        "status": r.status,
+        "error_msg": r.error_msg,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    }
 
 
 def _record_to_dict(record: ScrapeRecord) -> dict:
