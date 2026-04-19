@@ -70,6 +70,9 @@ const app = Vue.createApp({
     this.loadFolders();
     this.loadRecords();
     this.connectWs();
+    // Load page-specific data on initial mount (handles F5 refresh)
+    if (this.page === 'symlink_records') { this.loadSymlinkRecords(); this.loadSymlinkStats(); }
+    if (this.page === 'symlink_folders') { this.loadFolders(); }
     // Keep hash in sync when page changes, so F5 restores correctly
     this.$watch('page', function(val) {
       location.hash = val;
