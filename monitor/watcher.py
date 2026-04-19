@@ -321,7 +321,7 @@ class FolderWatcher:
                     return
                 rel = os.path.relpath(path, os.path.normpath(folder.path))
                 link = os.path.join(target_root, rel)
-                if os.path.exists(link):
+                if os.path.lexists(link):  # lexists=True even for broken symlinks
                     slr = SymlinkRecord(
                         folder_id=folder.id,
                         original_path=path,
