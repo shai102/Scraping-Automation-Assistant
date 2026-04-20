@@ -23,7 +23,7 @@ from db.tmdb_api import (
     fetch_tmdb_by_id,
     fetch_bgm_by_id,
 )
-from utils.helpers import candidate_to_result
+from utils.helpers import candidate_to_result, invalidate_cache_prefix
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/records", tags=["records"])
@@ -353,6 +353,19 @@ def _archive_file(item, row, folder, ctx, tid, provider, db):
 
     if os.path.normcase(item.path) != os.path.normcase(target):
         if os.path.exists(target):
+            # 目标已存在且不是当前文件本身 —— 若源文件也已消失，说明上次整理已完成，
+            # 直接更新 sidecar 和数据库状态，不视为失败。
+            if not os.path.isfile(item.path):
+                ctx._write_sidecar_files(item, target)
+                row.status = "success"
+                row.matched_title = (item.metadata or {}).get("title")
+                row.matched_id = str(tid)
+                row.matched_provider = provider
+                row.target_path = target
+                row.metadata_json = json.dumps(item.metadata or {}, ensure_ascii=False)
+                row.error_msg = None
+                db.flush()
+                return target
             row.status = "failed"
             row.error_msg = "目标文件已存在"
             db.commit()
@@ -405,6 +418,10 @@ def _process_single_manual(row, body, folder, db):
         row.error_msg = "源文件不存在"
         db.commit()
         raise HTTPException(400, detail="源文件不存在")
+
+    # 手动识别时自动清除该作品所有集数缓存，确保使用最新数据而非错误的旧缓存
+    if body.provider == "tmdb" and body.is_tv:
+        invalidate_cache_prefix(f"tmdb_ep_v3:{body.candidate_id}_")
 
     # Fetch full metadata by ID
     ctx = WorkerContext()
