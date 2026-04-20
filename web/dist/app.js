@@ -134,38 +134,36 @@ const app = Vue.createApp({
     onRecordUpdate(data) {
       var idx = this.records.findIndex(function(r) { return r.id === data.id; });
       if (idx >= 0) {
+        // 已在当前页列表中：原地更新状态，不改变 DOM 结构
         Object.assign(this.records[idx], data);
       } else {
-        // 只在第一页时插入，避免其他页面的记录混入
-        if (this.recordPage === 1) {
-          this.records.unshift(data);
-          // 保持页面条目数不超过 pageSize
-          if (this.records.length > this.recordPageSize) this.records.pop();
-        }
+        // 新记录：只更新总数，不插入列表，避免批量处理时列表条数持续增长
         this.recordTotal++;
       }
-      // 分组视图防抖刷新：2s 内多条消息合并为一次请求
-      if (this.groupedView) {
-        clearTimeout(this._groupedRefreshTimer);
-        var self = this;
-        this._groupedRefreshTimer = setTimeout(function() { self.loadGroupedRecords(); }, 2000);
-      }
+      // 防抖 3s 刷新列表（含分组视图），批量结束后拉取最新分页数据
+      clearTimeout(this._recordRefreshTimer);
+      var self = this;
+      this._recordRefreshTimer = setTimeout(function() {
+        if (self.groupedView) self.loadGroupedRecords();
+        else self.loadRecords();
+      }, 3000);
     },
     onSymlinkUpdate(data) {
       var idx = this.symlinkRecords.findIndex(function(r) { return r.id === data.id; });
       if (idx >= 0) {
+        // 已在当前页列表中：原地更新状态
         Object.assign(this.symlinkRecords[idx], data);
       } else {
-        if (this.symlinkPage === 1) {
-          this.symlinkRecords.unshift(data);
-          if (this.symlinkRecords.length > this.symlinkPageSize) this.symlinkRecords.pop();
-        }
+        // 新记录：只更新总数
         this.symlinkTotal++;
       }
-      // Stats 防抖刷新：2s 内多条消息合并为一次请求
-      clearTimeout(this._symlinkStatsTimer);
+      // 防抖 3s 刷新软链接列表和统计
+      clearTimeout(this._symlinkRefreshTimer);
       var self = this;
-      this._symlinkStatsTimer = setTimeout(function() { self.loadSymlinkStats(); }, 2000);
+      this._symlinkRefreshTimer = setTimeout(function() {
+        self.loadSymlinkRecords();
+        self.loadSymlinkStats();
+      }, 3000);
     },
 
     // --- Folder Browser ---
