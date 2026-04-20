@@ -374,16 +374,38 @@ def build_query_titles(item, query_title, ai_data, g):
         raw_name = getattr(item, "old_name", "") or ""
         item_dir = getattr(item, "dir", "") or ""
 
-    pure, _ = os.path.splitext(raw_name)
+    # 剥离多层扩展名（如 .chs.ass），避免语言标签残留污染搜索标题
+    _known_exts = set(
+        e.strip().lower()
+        for e in (DEFAULT_VIDEO_EXTS + "," + DEFAULT_SUB_AUDIO_EXTS).split(",")
+        if e.strip()
+    )
+    pure = raw_name
+    for _ in range(3):
+        base, ext = os.path.splitext(pure)
+        if ext.lower() in _known_exts:
+            pure = base
+        else:
+            break
+
     dir_title = os.path.basename(item_dir)
     guess_title = clean_search_title((g.get("title") if g else None) or "")
+
+    # 若直接父目录是 Season 文件夹（Season 2 / S02 / 第2季），向上取祖父目录作为剧名
+    show_dir_title = ""
+    if GENERIC_SEASON_TITLE_RE.match(dir_title.strip()):
+        parent_dir = os.path.dirname(item_dir)
+        if parent_dir:
+            show_dir_title = clean_search_title(os.path.basename(parent_dir))
+
     candidates = [
         query_title,
         (ai_data or {}).get("title") if isinstance(ai_data, dict) else None,
         guess_title,
         derive_title_from_filename(pure),
-        clean_search_title(pure),
+        show_dir_title,
         clean_search_title(dir_title),
+        clean_search_title(pure),
     ]
     ordered = unique_keep_order(candidates)
     return [c for c in ordered if is_meaningful_query_title(c)]

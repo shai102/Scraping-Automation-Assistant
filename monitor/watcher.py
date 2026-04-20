@@ -40,6 +40,188 @@ def _has_nfo(filepath: str) -> bool:
     return os.path.isfile(base + ".nfo")
 
 
+def _is_already_scraped(filepath: str, sub_audio_exts: tuple) -> bool:
+    """Return True if this file should be treated as already scraped.
+
+    For video files: check same-name .nfo exists.
+    For subtitle/audio sidecar files (.ass/.srt/.mka etc.): the pipeline never
+    writes a per-file .nfo for them, so instead check whether the containing
+    directory already has evidence of a completed scrape — either a season.nfo
+    or any per-episode .nfo file (excluding season.nfo / tvshow.nfo / folder.nfo).
+    """
+    if sub_audio_exts and filepath.lower().endswith(sub_audio_exts):
+        parent = os.path.dirname(filepath)
+        # Fast path: season.nfo present → Season folder was already scraped
+        if os.path.isfile(os.path.join(parent, "season.nfo")):
+            return True
+        # Fallback: any per-episode .nfo in the same directory
+        _SKIP_NAMES = {"season.nfo", "tvshow.nfo", "folder.nfo"}
+        try:
+            for fn in os.listdir(parent):
+                if fn.lower().endswith(".nfo") and fn.lower() not in _SKIP_NAMES:
+                    return True
+        except OSError:
+            pass
+        return False
+    return _has_nfo(filepath)
+
+
+def _try_nfo_fast_path(item, ctx) -> bool:
+    """Try to resolve subtitle/audio file metadata from an existing tvshow.nfo.
+
+    Searches the file's parent directory and its parent for a tvshow.nfo containing
+    a TMDB or BGM ID. If found, fetches episode metadata directly and populates
+    item.metadata / item.new_name_only / item.full_target without going through the
+    full recognition pipeline.
+
+    Returns True if fast-path succeeded, False if caller should fall back to _process_task.
+    """
+    import xml.etree.ElementTree as ET
+    from guessit import guessit
+    from db.tmdb_api import fetch_tmdb_episode_meta, fetch_tmdb_season_poster, fetch_hybrid_episode_meta
+    from utils.helpers import safe_filename, safe_str, extract_episode_number
+
+    file_dir = os.path.dirname(item.path)
+    # Search current dir then parent dir for tvshow.nfo
+    search_dirs = [file_dir, os.path.dirname(file_dir)]
+    nfo_path = None
+    for d in search_dirs:
+        candidate = os.path.join(d, "tvshow.nfo")
+        if os.path.isfile(candidate):
+            nfo_path = candidate
+            break
+    if not nfo_path:
+        return False
+
+    try:
+        tree = ET.parse(nfo_path)
+        root_el = tree.getroot()
+    except Exception:
+        return False
+
+    # Extract TMDB / BGM id
+    tmdb_id, bgm_id = "", ""
+    for uid in root_el.findall("uniqueid"):
+        uid_type = (uid.get("type") or "").lower()
+        val = (uid.text or "").strip()
+        if not val:
+            continue
+        if uid_type == "tmdb" and not tmdb_id:
+            tmdb_id = val
+        elif uid_type in ("bgm", "bangumi") and not bgm_id:
+            bgm_id = val
+    # Also try <tmdbid> / <id> tags used by some scrapers
+    if not tmdb_id:
+        el = root_el.find("tmdbid")
+        if el is not None and (el.text or "").strip():
+            tmdb_id = el.text.strip()
+
+    tid = tmdb_id or bgm_id
+    if not tid:
+        return False
+
+    use_tmdb = bool(tmdb_id)
+
+    # Extract series title from nfo
+    title_el = root_el.find("title")
+    series_title = (title_el.text or "").strip() if title_el is not None else ""
+    year_el = root_el.find("year")
+    year = (year_el.text or "").strip() if year_el is not None else ""
+
+    # Parse season / episode from file name
+    from utils.helpers import extract_lang_and_ext
+    pure_name, _ = extract_lang_and_ext(item.old_name, ctx.lang_tags.get() if hasattr(ctx, 'lang_tags') else "")
+    g = guessit(pure_name)
+    raw_s = g.get("season") or 1
+    raw_e = g.get("episode")
+    if isinstance(raw_e, list):
+        raw_e = raw_e[0]
+    if raw_e is None:
+        raw_e = extract_episode_number(pure_name, g)
+    if raw_e is None:
+        return False  # Cannot determine episode number
+
+    s = int(raw_s) if str(raw_s).isdigit() else 1
+    e = int(raw_e)
+
+    # Fetch episode meta
+    api_tmdb = ctx.tmdb_api_key.get().strip() if hasattr(ctx, 'tmdb_api_key') else ""
+    api_bgm = ctx.bgm_api_key.get().strip() if hasattr(ctx, 'bgm_api_key') else ""
+
+    ep_n, ep_p, ep_s, s_p = "", "", "", ""
+    try:
+        if use_tmdb:
+            ep_n, ep_p, ep_s = fetch_tmdb_episode_meta(tid, s, e, api_tmdb, series_title, api_bgm)
+            s_p = fetch_tmdb_season_poster(tid, s, api_tmdb)
+        else:
+            ep_n, ep_p, ep_s, s_p = fetch_hybrid_episode_meta(series_title, tid, s, e, api_bgm, api_tmdb, year)
+    except Exception:
+        return False
+
+    # Build sub/audio file new name using the same format as task_runner
+    from utils.helpers import extract_lang_and_ext as _ela
+    _, ext_full = _ela(item.old_name, ctx.lang_tags.get() if hasattr(ctx, 'lang_tags') else "")
+    s_fmt = f"{s:02d}"
+    e_fmt = f"{e:02d}"
+    safe_t = safe_filename(series_title)
+    safe_ep = safe_filename(ep_n or f"第 {e} 集")
+
+    new_fn = (
+        ctx.tv_format.get()
+        .replace("{title}", safe_t)
+        .replace("{year}", safe_str(year))
+        .replace("{s:02d}", s_fmt)
+        .replace("{s}", s_fmt)
+        .replace("{e:02d}", e_fmt)
+        .replace("{e}", e_fmt)
+        .replace("{ep_name}", safe_ep)
+        .replace("{ext}", ext_full)
+    )
+    import re as _re
+    new_fn = _re.sub(r"\s*\(\s*\)", "", new_fn)
+    new_fn = _re.sub(r"\s*-\s*(?=\.)|\s*-\s*$", "", new_fn)
+    new_fn = _re.sub(r"\s+(?=\.)", "", new_fn).strip()
+
+    item.metadata = {
+        "id": tid,
+        "provider": "tmdb" if use_tmdb else "bgm",
+        "title": safe_t,
+        "year": year,
+        "ep_title": ep_n or f"第 {e} 集",
+        "overview": "",
+        "ep_plot": ep_p,
+        "s": s,
+        "e": e,
+        "poster": None,
+        "fanart": None,
+        "still": ep_s,
+        "s_poster": s_p,
+        "type": "episode",
+        "actors": [],
+        "directors": [],
+        "genres": [],
+        "studios": [],
+        "runtime": None,
+        "status": "",
+        "rating": 0,
+        "votes": 0,
+        "release": "",
+        "original_title": "",
+    }
+    item.new_name_only = new_fn
+
+    root_d = ctx.target_root.get().strip() if hasattr(ctx, 'target_root') else ""
+    if root_d:
+        id_tag = f"tmdbid={tid}" if use_tmdb else f"bgmid={tid}"
+        folder_name = safe_filename(f"{safe_t} [{id_tag}]")
+        item.full_target = os.path.join(root_d, folder_name, f"Season {s}", new_fn)
+    else:
+        item.full_target = ""
+
+    logger.info(f"NFO fast-path: {os.path.basename(item.path)} via {os.path.basename(nfo_path)} tid={tid}")
+    return True
+
+
 class _MediaHandler(FileSystemEventHandler):
     """watchdog handler that queues newly created / moved-in media files."""
 
@@ -243,8 +425,9 @@ class FolderWatcher:
                         with self._pending_lock:
                             if full in self._processed or full in self._pending:
                                 continue
-                        # Skip files that already have a sibling .nfo
-                        if skip_scraped and _has_nfo(full):
+                        # Skip files that already have a sibling .nfo (video) or scraped dir marker (sub/audio)
+                        _sub_exts_poll = self._worker_ctx.get_sub_audio_exts() if self._worker_ctx else ()
+                        if skip_scraped and _is_already_scraped(full, _sub_exts_poll):
                             with self._pending_lock:
                                 self._processed.add(full)
                             continue
@@ -293,8 +476,9 @@ class FolderWatcher:
                     if not is_sl_export and not fn.lower().endswith(exts):
                         continue
                     full = os.path.normpath(os.path.join(dirpath, fn))
-                    # Skip files that already have a sibling .nfo
-                    if skip_scraped and _has_nfo(full):
+                    # Skip files that already have a sibling .nfo (video) or scraped dir marker (sub/audio)
+                    _sub_exts_scan = self._worker_ctx.get_sub_audio_exts() if self._worker_ctx else ()
+                    if skip_scraped and _is_already_scraped(full, _sub_exts_scan):
                         with self._pending_lock:
                             self._processed.add(full)
                         # 写 skipped 记录，重启后不会再重复判断
@@ -354,12 +538,13 @@ class FolderWatcher:
             if existing:
                 return
 
-            # skip_if_scraped: 文件旁已有同名 .nfo 则跳过，写一条 skipped 记录避免重复检查
+            # skip_if_scraped: 文件旁已有同名 .nfo（视频）或目录内有 season.nfo/集数 .nfo（字幕/音频）则跳过
             is_sl_export_check = organize_mode_check == 'symlink_export'
+            _sub_exts_skip = self._worker_ctx.get_sub_audio_exts() if self._worker_ctx else ()
             if (not is_sl_export_check
                     and folder
                     and getattr(folder, 'skip_if_scraped', False)
-                    and _has_nfo(path)):
+                    and _is_already_scraped(path, _sub_exts_skip)):
                 logger.info(f"跳过已有元数据（.nfo）的文件: {path}")
                 record = ScrapeRecord(
                     folder_id=folder.id,
@@ -499,16 +684,25 @@ class FolderWatcher:
             )
             ctx.file_list = [item]
 
+            # === NFO fast-path for subtitle/audio sidecar files ===
+            # If the parent Season folder already has a tvshow.nfo with a TMDB ID,
+            # we can skip the full recognition pipeline and directly fetch episode meta.
+            _nfo_fast_path_done = False
+            _sub_exts_fp = ctx.get_sub_audio_exts()
+            if os.path.basename(path).lower().endswith(_sub_exts_fp):
+                _nfo_fast_path_done = _try_nfo_fast_path(item, ctx)
+
             # === Recognition (process_task) ===
-            try:
-                _process_task(ctx, 0)
-            except Exception as e:
-                logger.error(f"Recognition failed for {path}: {e}")
-                record.status = "failed"
-                record.error_msg = str(e)[:500]
-                db.commit()
-                self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
-                return
+            if not _nfo_fast_path_done:
+                try:
+                    _process_task(ctx, 0)
+                except Exception as e:
+                    logger.error(f"Recognition failed for {path}: {e}")
+                    record.status = "failed"
+                    record.error_msg = str(e)[:500]
+                    db.commit()
+                    self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
+                    return
 
             # Check recognition result
             tid = (item.metadata or {}).get("id", "None")

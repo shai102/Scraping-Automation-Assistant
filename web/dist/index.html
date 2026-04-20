@@ -268,6 +268,7 @@
             <td>{{r.matched_provider || '-'}}</td>
             <td class="cell-name">
               <template v-if="r.matched_title">{{r.matched_title}}<span v-if="r.matched_id" style="color:#999;margin-left:4px">(ID:{{r.matched_id}})</span></template>
+              <span v-else-if="r.error_msg" style="color:#999;font-size:12px">{{r.error_msg}}</span>
               <span v-else style="color:#999">-</span>
               <span v-if="r.parse_source==='ai'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#e8f4fd;color:#1a73e8;border:1px solid #90cdf4">AI</span>
               <span v-else-if="r.parse_source==='guessit'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#f0fdf4;color:#16a34a;border:1px solid #86efac">guessit</span>
