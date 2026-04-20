@@ -58,8 +58,8 @@ def send_test_message(token: str, chat_id: str) -> dict:
         "\n"
         "📁 分类：动漫、科幻\n"
         "📂 来源：Downloads\n"
-        "📄 文件：3个\n"
-        "📅 本季：S01 共12集\n"
+        "📄 本次入库：3集\n"
+        "📅 本季：S01 已有10集，缺2集（共12集）\n"
         "🎬 影号：100565\n"
         "\n"
         "✨「又有新片可以看了，快来探索吧。」"
@@ -80,7 +80,7 @@ def send_test_message(token: str, chat_id: str) -> dict:
 # Build caption from a batch of items
 # ------------------------------------------------------------------
 
-def _build_caption(folder_name: str, items: list, total_ep: int, file_count: int = 0) -> str:
+def _build_caption(folder_name: str, items: list, total_ep: int, file_count: int = 0, existing_count: int = 0) -> str:
     """Build the notification caption text matching the screenshot format.
 
     Parameters
@@ -92,7 +92,9 @@ def _build_caption(folder_name: str, items: list, total_ep: int, file_count: int
     total_ep : int
         Total episodes in this season (from TMDB API), 0 if unknown.
     file_count : int
-        Number of files to show in notification (0 = fallback to len(items)).
+        Number of items in this batch (本次入库集数). 0 = fallback to len(items).
+    existing_count : int
+        Current media file count in the season folder (已有集数，用于缺集对比).
     """
     meta = items[0].metadata or {}
     title = meta.get("title", "未知")
@@ -134,14 +136,20 @@ def _build_caption(folder_name: str, items: list, total_ep: int, file_count: int
     if folder_name:
         lines.append(f"📂 来源：{folder_name}")
 
-    # 文件数
-    lines.append(f"📄 文件：{file_count}个")
+    # 本次入库集数
+    lines.append(f"📄 本次入库：{file_count}集")
 
     # 本季信息 (TV only)
     if media_type == "episode" and season is not None:
         s_str = f"S{int(season):02d}"
         if total_ep > 0:
-            lines.append(f"📅 本季：{s_str} 共{total_ep}集")
+            missing = total_ep - existing_count
+            if missing > 0:
+                lines.append(f"📅 本季：{s_str} 已有{existing_count}集，缺{missing}集（共{total_ep}集）")
+            else:
+                lines.append(f"📅 本季：{s_str} 已有{existing_count}集，共{total_ep}集")
+        elif existing_count > 0:
+            lines.append(f"📅 本季：{s_str} 已有{existing_count}集")
         else:
             lines.append(f"📅 本季：{s_str}")
 
@@ -196,16 +204,16 @@ def _send_batch(folder_name: str, items: list, cfg: dict, season_folder: str = "
         except Exception as e:
             logger.debug(f"获取季集数失败: {e}")
 
-    # 统计目标文件夹内实际媒体文件数量，作为通知的「文件」字段
-    file_count = 0
+    # 统计目标文件夹内已有的媒体文件数量（用于「已有/共N集」缺集对比）
+    existing_count = 0
     if season_folder and os.path.isdir(season_folder):
         try:
-            file_count = sum(1 for f in os.listdir(season_folder)
-                             if os.path.splitext(f)[1].lower() in _MEDIA_EXTS)
+            existing_count = sum(1 for f in os.listdir(season_folder)
+                                 if os.path.splitext(f)[1].lower() in _MEDIA_EXTS)
         except Exception:
             pass
 
-    caption = _build_caption(folder_name, items, total_ep, file_count=file_count)
+    caption = _build_caption(folder_name, items, total_ep, file_count=len(items), existing_count=existing_count)
     poster_url = _get_poster_url(items)
 
     try:
@@ -248,7 +256,6 @@ class NotificationBatcher:
         # items is a dict to deduplicate: same episode arriving multiple times
         # (e.g. from sidecar re-detection) overwrites instead of appending.
         self._groups: Dict[Tuple, dict] = {}
-        self._tmdb_total_cache: Dict[Tuple, int] = {}  # (tmdb_id, season) -> total_ep
 
     def add(self, folder_id: int, folder_name: str, item: Any):
         """Add a successfully scraped item. Resets the quiet timer for its group."""
@@ -277,7 +284,6 @@ class NotificationBatcher:
         if item_path:
             season_folder = os.path.dirname(item_path)
 
-        fire_now = False
         with self._lock:
             if key not in self._groups:
                 self._groups[key] = {
@@ -292,48 +298,12 @@ class NotificationBatcher:
             if season_folder and os.path.isdir(season_folder):
                 group["season_folder"] = season_folder
 
-            # 如果 STRM 文件数 >= TMDB 总集数，立即触发，不再等定时器
-            sf = group.get("season_folder", "")
-            if (media_type == "episode"
-                    and tmdb_id != "None"
-                    and sf
-                    and os.path.isdir(sf)):
-                cache_key = (tmdb_id, str(meta.get("s", "0")))
-                if cache_key not in self._tmdb_total_cache:
-                    try:
-                        from db.tmdb_api import fetch_tmdb_season_episode_count
-                        tmdb_key = (cfg.get("tmdb_api_key") or "").strip()
-                        if tmdb_key and meta.get("s") is not None:
-                            cnt = fetch_tmdb_season_episode_count(
-                                tmdb_id, int(meta["s"]), tmdb_key
-                            )
-                            if cnt > 0:
-                                self._tmdb_total_cache[cache_key] = cnt
-                    except Exception as _e:
-                        logger.debug(f"缓存季集数失败: {_e}")
-                tmdb_total = self._tmdb_total_cache.get(cache_key, 0)
-                if tmdb_total > 0:
-                    try:
-                        strm_count = sum(1 for f in os.listdir(sf)
-                                         if os.path.splitext(f)[1].lower() in _MEDIA_EXTS)
-                    except Exception:
-                        strm_count = 0
-                    if strm_count >= tmdb_total:
-                        if group["timer"] is not None:
-                            group["timer"].cancel()
-                            group["timer"] = None
-                        fire_now = True
-
-            if not fire_now:
-                # Reset timer
-                if group["timer"] is not None:
-                    group["timer"].cancel()
-                group["timer"] = threading.Timer(delay, self._fire, args=(key,))
-                group["timer"].daemon = True
-                group["timer"].start()
-
-        if fire_now:
-            self._fire(key)
+            # 始终等待安静期结束后再发送，避免每集单独触发通知
+            if group["timer"] is not None:
+                group["timer"].cancel()
+            group["timer"] = threading.Timer(delay, self._fire, args=(key,))
+            group["timer"].daemon = True
+            group["timer"].start()
 
     def _fire(self, key: Tuple):
         """Timer callback — pop the group and send."""
