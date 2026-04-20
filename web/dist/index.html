@@ -798,14 +798,22 @@
         </tbody>
       </table>
       <div class="empty" v-else>暂无软链接记录</div>
-      <div class="pagination-bar" v-if="symlinkTotal>symlinkPageSize">
+      <div class="pagination-bar">
         <span class="pagination-total">Total {{symlinkTotal}}</span>
-        <div class="pagination-pages">
-          <button class="btn btn-sm" :disabled="symlinkPage<=1" @click="symlinkPage--;loadSymlinkRecords()">&lt;</button>
+        <select v-model.number="symlinkPageSize" @change="symlinkPage=1;loadSymlinkRecords()" class="pagination-size">
+          <option :value="20">20</option>
+          <option :value="50">50</option>
+          <option :value="100">100</option>
+        </select>
+        <div class="pagination-pages" v-if="symlinkTotal > 0">
+          <button class="btn btn-sm" :disabled="symlinkPage<=1" @click="symlinkPage--;symlinkGoPage=symlinkPage;loadSymlinkRecords()">&lt;</button>
           <span class="pagination-current">{{symlinkPage}}</span>
           <span style="color:#aaa;margin:0 2px">/</span>
-          <span style="color:#666">{{Math.ceil(symlinkTotal/symlinkPageSize)||1}}</span>
-          <button class="btn btn-sm" :disabled="symlinkPage*symlinkPageSize>=symlinkTotal" @click="symlinkPage++;loadSymlinkRecords()">&gt;</button>
+          <span class="pagination-total-pages">{{Math.ceil(symlinkTotal/symlinkPageSize)||1}}</span>
+          <button class="btn btn-sm" :disabled="symlinkPage*symlinkPageSize>=symlinkTotal" @click="symlinkPage++;symlinkGoPage=symlinkPage;loadSymlinkRecords()">&gt;</button>
+          <span style="margin-left:8px">跳至</span>
+          <input v-model.number="symlinkGoPage" class="pagination-goto" @keyup.enter="gotoSymlinkPage">
+          <button class="btn btn-sm" @click="gotoSymlinkPage">确定</button>
         </div>
       </div>
     </section>

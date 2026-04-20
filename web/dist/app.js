@@ -19,6 +19,7 @@ const app = Vue.createApp({
       symlinkPage: 1,
       symlinkPageSize: 20,
       symlinkTotal: 0,
+      symlinkGoPage: 1,
       symlinkStats: {},
       // Records
       records: [],
@@ -359,7 +360,17 @@ const app = Vue.createApp({
       if (p < 1) p = 1;
       if (p > max) p = max;
       this.recordPage = p;
+      this.recordGoPage = p;
       this.loadRecords();
+    },
+    gotoSymlinkPage() {
+      var max = Math.ceil(this.symlinkTotal / this.symlinkPageSize) || 1;
+      var p = parseInt(this.symlinkGoPage) || 1;
+      if (p < 1) p = 1;
+      if (p > max) p = max;
+      this.symlinkPage = p;
+      this.symlinkGoPage = p;
+      this.loadSymlinkRecords();
     },
     async deleteRecord(id) {
       if (!confirm('确认删除该记录？')) return;
