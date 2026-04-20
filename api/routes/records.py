@@ -23,7 +23,7 @@ from db.tmdb_api import (
     fetch_tmdb_by_id,
     fetch_bgm_by_id,
 )
-from utils.helpers import candidate_to_result, invalidate_cache_prefix
+from utils.helpers import candidate_to_result, invalidate_cache_prefix, DEFAULT_VIDEO_EXTS, DEFAULT_SUB_AUDIO_EXTS
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/records", tags=["records"])
@@ -281,6 +281,74 @@ def _delete_file_sidecars(file_path: str):
                 logger.warning(f"Failed to delete sidecar {p}: {e}")
 
 
+_MEDIA_EXTS = tuple(
+    e.strip()
+    for e in (DEFAULT_VIDEO_EXTS + "," + DEFAULT_SUB_AUDIO_EXTS).split(",")
+    if e.strip()
+)
+# 目录级 sidecar 文件名（完整匹配）
+_DIR_SIDECAR_EXACT = {
+    "tvshow.nfo", "poster.jpg", "fanart.jpg", "season.nfo", "folder.jpg",
+}
+# 目录级 sidecar 前缀+后缀匹配（如 season01.nfo, season01-poster.jpg）
+_DIR_SIDECAR_PATTERNS = (
+    ("season", (".nfo", "-poster.jpg")),
+)
+
+
+def _cleanup_dir_sidecars(target_file: str, watch_root: Optional[str] = None):
+    """文件移走后，若目录（及其父目录）中不再含有媒体文件，则清理目录级 sidecar。
+
+    处理两层目录：
+      - target_dir（如 Season 1/）— season.nfo, folder.jpg, seasonXX-poster.jpg …
+      - target_parent（如 剧名{tmdbid-X}/）— tvshow.nfo, poster.jpg, fanart.jpg …
+    """
+
+    def _has_media(directory: str) -> bool:
+        for dirpath, _, filenames in os.walk(directory):
+            for fn in filenames:
+                if fn.lower().endswith(_MEDIA_EXTS):
+                    return True
+        return False
+
+    def _delete_dir_level_sidecars(directory: str):
+        try:
+            for fn in os.listdir(directory):
+                fp = os.path.join(directory, fn)
+                if not os.path.isfile(fp):
+                    continue
+                fn_lower = fn.lower()
+                if fn_lower in _DIR_SIDECAR_EXACT:
+                    _safe_remove(fp)
+                else:
+                    for prefix, suffixes in _DIR_SIDECAR_PATTERNS:
+                        if fn_lower.startswith(prefix) and fn_lower.endswith(suffixes):
+                            _safe_remove(fp)
+                            break
+        except Exception as e:
+            logger.warning(f"Failed to list dir for sidecar cleanup {directory}: {e}")
+
+    def _safe_remove(fp: str):
+        try:
+            os.remove(fp)
+            logger.debug(f"Deleted dir sidecar: {fp}")
+        except Exception as e:
+            logger.warning(f"Failed to delete dir sidecar {fp}: {e}")
+
+    tgt_dir = os.path.normpath(os.path.dirname(target_file))
+    tgt_parent = os.path.normpath(os.path.dirname(tgt_dir))
+
+    if not _has_media(tgt_dir):
+        _delete_dir_level_sidecars(tgt_dir)
+
+    if tgt_parent != tgt_dir and (
+        watch_root is None
+        or os.path.normcase(tgt_parent) != os.path.normcase(watch_root)
+    ):
+        if not _has_media(tgt_parent):
+            _delete_dir_level_sidecars(tgt_parent)
+
+
 def _restore_record_file(row: ScrapeRecord, folder, db: Session):
     """Restore an already-archived record back to its original state.
 
@@ -303,23 +371,25 @@ def _restore_record_file(row: ScrapeRecord, folder, db: Session):
 
     # 2. Restore / remove the target file
     if os.path.normcase(os.path.normpath(tgt)) != os.path.normcase(os.path.normpath(row.original_path)):
+        from monitor.watcher import _remove_empty_dirs
+        watch_root = os.path.normpath(folder.path) if folder else None
         if organize_mode in ('move', 'rename'):
             # File was moved — move it back
             orig_dir = os.path.dirname(row.original_path)
             os.makedirs(orig_dir, exist_ok=True)
             shutil.move(tgt, row.original_path)
             logger.info(f"Restored: {tgt} -> {row.original_path}")
+            # Clean up directory-level sidecars if no media files remain
+            _cleanup_dir_sidecars(tgt, watch_root=watch_root)
             # Clean up empty directories left behind
-            from monitor.watcher import _remove_empty_dirs
-            watch_root = os.path.normpath(folder.path) if folder else None
             _remove_empty_dirs(os.path.dirname(tgt), stop_at=watch_root)
         else:
             # copy / symlink / hardlink — original is still in place, just remove target
             try:
                 os.remove(tgt)
                 logger.info(f"Removed target copy/link: {tgt}")
-                from monitor.watcher import _remove_empty_dirs
-                watch_root = os.path.normpath(folder.path) if folder else None
+                # Clean up directory-level sidecars if no media files remain
+                _cleanup_dir_sidecars(tgt, watch_root=watch_root)
                 _remove_empty_dirs(os.path.dirname(tgt), stop_at=watch_root)
             except Exception as e:
                 logger.warning(f"Failed to remove target {tgt}: {e}")
