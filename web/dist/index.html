@@ -437,7 +437,7 @@
           </div>
         </div>
         <div class="candidates" v-if="candidates.length">
-          <div class="candidate-card" v-for="c in candidates" :key="c.id" @click="applyManualMatch(c)">
+          <div class="candidate-card" :class="{selected: selectedCandidate&&selectedCandidate.id===c.id}" v-for="c in candidates" :key="c.id" @click="selectCandidate(c)">
             <img v-if="c.meta&&c.meta.poster" :src="c.meta.poster.startsWith('http')?c.meta.poster:'https://image.tmdb.org/t/p/w300'+c.meta.poster" class="candidate-poster" loading="lazy">
             <div class="candidate-poster placeholder" v-else>无图</div>
             <div class="candidate-info">
@@ -445,7 +445,10 @@
               <span class="candidate-meta">{{c.release}} | ID: {{c.id}}</span>
               <p class="candidate-overview" v-if="c.meta&&c.meta.overview">{{(c.meta.overview||'').slice(0,120)}}{{(c.meta.overview||'').length>120?'...':''}}</p>
             </div>
-            <button class="btn btn-sm btn-primary">选择</button>
+            <button class="btn btn-sm" :class="selectedCandidate&&selectedCandidate.id===c.id?'btn-success':' btn-primary'">
+              <span v-if="selectedCandidate&&selectedCandidate.id===c.id">✓ 已选</span>
+              <span v-else>选择</span>
+            </button>
           </div>
         </div>
         <div class="empty" v-else-if="searchDone">无结果，请尝试其他关键词</div>
@@ -460,7 +463,11 @@
         </div>
         <div class="form-actions" style="margin-top:16px">
           <button class="btn" @click="manualMatchVisible=false">取消</button>
-          <button class="btn btn-primary" @click="searchMode==='id'?applyByTmdbId():searchCandidates()" :disabled="searching">
+          <button v-if="selectedCandidate" class="btn btn-success" @click="confirmManualMatch" :disabled="searching" style="flex:1;font-weight:600">
+            <span v-if="searching">整理中...</span>
+            <span v-else>✅ 确认整理「{{selectedCandidate.title}}」</span>
+          </button>
+          <button v-else class="btn btn-primary" @click="searchMode==='id'?applyByTmdbId():searchCandidates()" :disabled="searching">
             <span v-if="searching">处理中...</span>
             <span v-else-if="searchMode==='id'">应用</span>
             <span v-else>🔍 搜索</span>

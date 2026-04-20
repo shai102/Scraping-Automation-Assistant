@@ -49,6 +49,7 @@ const app = Vue.createApp({
       searching: false,
       searchDone: false,
       candidates: [],
+      selectedCandidate: null,
       // Settings
       cfg: {},
       testResult: null,
@@ -560,6 +561,7 @@ const app = Vue.createApp({
       var ym = /(19|20)\d{2}/.exec(record.original_name);
       this.searchYear = ym ? parseInt(ym[0]) : null;
       this.candidates = [];
+      this.selectedCandidate = null;
       this.searchDone = false;
       this.manualSeason = null;
       this.manualEpOffset = 0;
@@ -587,6 +589,7 @@ const app = Vue.createApp({
           source: (this.cfg && this.cfg.data_source) || 'siliconflow_tmdb',
         });
         this.candidates = data.candidates || [];
+        this.selectedCandidate = null;
       } catch (e) { alert(e.message); }
       this.searching = false;
       this.searchDone = true;
@@ -610,9 +613,14 @@ const app = Vue.createApp({
       } catch (e) { alert('匹配失败: ' + e.message); }
       this.searching = false;
     },
-    async applyManualMatch(candidate) {
-      if (!this.manualRecord) return;
+    selectCandidate(candidate) {
+      this.selectedCandidate = (this.selectedCandidate && this.selectedCandidate.id === candidate.id) ? null : candidate;
+    },
+    async confirmManualMatch() {
+      if (!this.manualRecord || !this.selectedCandidate) return;
+      var candidate = this.selectedCandidate;
       var provider = ((this.cfg && this.cfg.data_source) || 'siliconflow_tmdb') === 'siliconflow_tmdb' ? 'tmdb' : 'bgm';
+      this.searching = true;
       try {
         await this.api('POST', '/api/records/' + this.manualRecord.id + '/manual-match', {
           candidate_id: String(candidate.id),
@@ -626,6 +634,7 @@ const app = Vue.createApp({
         this.manualMatchVisible = false;
         this.loadRecords();
       } catch (e) { alert('匹配失败: ' + e.message); }
+      this.searching = false;
     },
 
     // --- Settings ---

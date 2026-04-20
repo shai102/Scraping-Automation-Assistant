@@ -660,8 +660,11 @@ def fetch_tmdb_episode_meta_raw(
 
         is_placeholder_name = _is_placeholder(name)
 
+        # 仅当 TMDB 也没有 plot 时才用 BGM 补集标题，
+        # 避免同名不同年作品（如 1992/2023 幽游白书）通过 BGM 搜索互相污染集标题。
         if (
-            not plot or not str(plot).strip() or not name or is_placeholder_name
+            not str(plot or "").strip()
+            and (not name or is_placeholder_name)
         ) and series_title:
             try:
                 bgm_candidates = fetch_bgm_candidates(series_title, api_key_bgm)
