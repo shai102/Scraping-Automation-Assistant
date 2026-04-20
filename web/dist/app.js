@@ -53,6 +53,11 @@ const app = Vue.createApp({
       testResult: null,
       tgTestResult: null,
       ollamaModels: [],
+      // API key visibility (default hidden)
+      showTmdbKey: false,
+      showBgmKey: false,
+      showSfKey: false,
+      showTgToken: false,
       // WebSocket
       ws: null,
       // Folder browser

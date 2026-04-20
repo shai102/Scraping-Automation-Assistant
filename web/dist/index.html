@@ -494,11 +494,17 @@
       <div class="card">
         <div class="form-group">
           <label>TMDB API Key</label>
-          <input v-model="cfg.tmdb_api_key" type="text" placeholder="输入 TMDB API Key">
+          <div class="input-with-btn">
+            <input v-model="cfg.tmdb_api_key" :type="showTmdbKey ? 'text' : 'password'" placeholder="输入 TMDB API Key">
+            <button class="btn btn-sm" @click="showTmdbKey=!showTmdbKey">{{showTmdbKey?'隐藏':'显示'}}</button>
+          </div>
         </div>
         <div class="form-group">
           <label>BGM API Key（可选）</label>
-          <input v-model="cfg.bgm_api_key" type="text" placeholder="输入 Bangumi API Key">
+          <div class="input-with-btn">
+            <input v-model="cfg.bgm_api_key" :type="showBgmKey ? 'text' : 'password'" placeholder="输入 Bangumi API Key">
+            <button class="btn btn-sm" @click="showBgmKey=!showBgmKey">{{showBgmKey?'隐藏':'显示'}}</button>
+          </div>
         </div>
         <div class="form-actions">
           <button class="btn btn-primary" @click="saveSettings">保存</button>
@@ -557,7 +563,10 @@
           <legend>OpenAI 兼容（SiliconFlow / DeepSeek 等）</legend>
           <div class="form-group">
             <label>API Key</label>
-            <input v-model="cfg.sf_api_key" type="text">
+            <div class="input-with-btn">
+              <input v-model="cfg.sf_api_key" :type="showSfKey ? 'text' : 'password'">
+              <button class="btn btn-sm" @click="showSfKey=!showSfKey">{{showSfKey?'隐藏':'显示'}}</button>
+            </div>
           </div>
           <div class="form-group">
             <label>API URL</label>
@@ -680,7 +689,10 @@
         </div>
         <div class="form-group">
           <label>Bot Token</label>
-          <input v-model="cfg.tg_bot_token" type="text" placeholder="输入 Telegram Bot Token（从 @BotFather 获取）">
+          <div class="input-with-btn">
+            <input v-model="cfg.tg_bot_token" :type="showTgToken ? 'text' : 'password'" placeholder="输入 Telegram Bot Token（从 @BotFather 获取）">
+            <button class="btn btn-sm" @click="showTgToken=!showTgToken">{{showTgToken?'隐藏':'显示'}}</button>
+          </div>
         </div>
         <div class="form-group">
           <label>Chat ID</label>
