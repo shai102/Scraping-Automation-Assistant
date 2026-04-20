@@ -193,6 +193,7 @@ class FolderWatcher:
                         continue
                     self._processed.add(p)
                 self._pool.submit(self._process_file, p)
+                time.sleep(0.1)  # 避免批量提交瞬间占满线程池队列，降低 CPU 峰值
 
     def _poll_loop(self):
         """Periodically scan all enabled folders for new files not yet recorded.

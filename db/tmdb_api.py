@@ -37,6 +37,32 @@ _tmdb_max_tokens = 8.0
 _tmdb_refill_rate = 4.0     # 每秒补充令牌数（对应 TMDB 4 req/s 限制）
 _tmdb_last_refill = time.monotonic()
 
+# ---------------------------------------------------------------------------
+# BGM API 全局限速器（bgm.tv 建议不超过 5 req/s）
+# ---------------------------------------------------------------------------
+_bgm_lock = threading.Lock()
+_bgm_tokens = 5.0
+_bgm_max_tokens = 5.0
+_bgm_refill_rate = 5.0      # 每秒补充令牌数
+_bgm_last_refill = time.monotonic()
+
+
+def _bgm_throttle():
+    """消耗一个 BGM 令牌；令牌耗尽时阻塞直到补充。"""
+    global _bgm_tokens, _bgm_last_refill
+    while True:
+        with _bgm_lock:
+            now = time.monotonic()
+            _bgm_tokens = min(
+                _bgm_max_tokens,
+                _bgm_tokens + (now - _bgm_last_refill) * _bgm_refill_rate,
+            )
+            _bgm_last_refill = now
+            if _bgm_tokens >= 1.0:
+                _bgm_tokens -= 1.0
+                return
+        time.sleep(0.15)
+
 
 def _tmdb_throttle():
     """消耗一个 TMDB 令牌；令牌耗尽时阻塞直到补充。"""
@@ -192,6 +218,7 @@ def fetch_bgm_candidates_raw(title, year=None, api_key=""):
         return max(scores) if scores else 0.0
 
     def _request_bgm(query):
+        _bgm_throttle()
         resp = session.get(
             f"https://api.bgm.tv/search/subject/{query}?type=2",
             headers=headers,
