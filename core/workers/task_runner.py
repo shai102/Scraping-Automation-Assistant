@@ -23,6 +23,7 @@ from core.workers.execution_runner import (
     run_execution as execution_run_execution,
     run_scrape_execution as execution_run_scrape_execution,
 )
+from core.services.naming_service import extract_season_from_dir
 from utils.helpers import (
     ERROR_CODE_UNKNOWN,
     derive_title_from_filename,
@@ -62,9 +63,11 @@ def bg_update_single_ui(gui, idx, title, t_id, msg, meta):
     """Update single row metadata and naming in background sync flow."""
     item = None
     try:
-        # 搜索路径返回的 meta 可能缺少 genres/runtime/status，用 detail 接口补全
+        # 当 TMDb 无结果回退到 BGM 时，meta 中会有 _provider="bgm" 标记
         mode = gui.source_var.get()
-        if mode == "siliconflow_tmdb" and t_id and t_id != "None" and not meta.get("genres"):
+        _is_bgm_fallback = (meta.get("_provider") == "bgm")
+        _eff_tmdb = (mode == "siliconflow_tmdb" and not _is_bgm_fallback)
+        if _eff_tmdb and t_id and t_id != "None" and not meta.get("genres"):
             _, _, _, detail_meta = fetch_tmdb_by_id(t_id, True, gui.tmdb_api_key.get())
             if not detail_meta:
                 _, _, _, detail_meta = fetch_tmdb_by_id(t_id, False, gui.tmdb_api_key.get())
@@ -95,11 +98,10 @@ def bg_update_single_ui(gui, idx, title, t_id, msg, meta):
         y = g.get("year") or m.get("year")
         media_type = gui._resolve_media_type({"type": m.get("type", "episode")})
         is_tv = media_type == "episode"
-        mode = gui.source_var.get()
 
         ep_n, ep_p, ep_s, s_p = "", "", "", ""
         if is_tv and t_id != "None" and title:
-            if mode == "siliconflow_tmdb":
+            if _eff_tmdb:
                 ep_n, ep_p, ep_s = fetch_tmdb_episode_meta(
                     t_id,
                     s,
@@ -156,14 +158,14 @@ def bg_update_single_ui(gui, idx, title, t_id, msg, meta):
         new_fn = re.sub(r"\s+(?=\.)", "", new_fn).strip()
 
         actors, directors = [], []
-        if mode == "siliconflow_tmdb" and t_id and t_id != "None":
+        if _eff_tmdb and t_id and t_id != "None":
             actors, directors = fetch_tmdb_credits(
                 t_id, is_tv=is_tv, api_key=gui.tmdb_api_key.get()
             )
 
         item.metadata = {
             "id": t_id,
-            "provider": "tmdb" if mode == "siliconflow_tmdb" else "bgm",
+            "provider": "tmdb" if _eff_tmdb else "bgm",
             "title": safe_title,
             "year": y,
             "ep_title": ep_n_final or f"第 {e_calc} 集",
@@ -191,7 +193,7 @@ def bg_update_single_ui(gui, idx, title, t_id, msg, meta):
 
         root_d = gui.target_root.get().strip()
         if root_d:
-            id_tag = f"tmdbid={t_id}" if mode == "siliconflow_tmdb" else f"bgmid={t_id}"
+            id_tag = f"tmdbid={t_id}" if _eff_tmdb else f"bgmid={t_id}"
             folder_name = safe_filename(f"{safe_title} [{id_tag}]")
             season_folder = f"Season {s}"
             if is_tv:
@@ -368,7 +370,8 @@ def process_task(gui, i):
                 # disabled / assist 模式：先用 guessit 解析文件名
                 t = g.get("title") or derive_title_from_filename(pure) or "未知"
                 y = g.get("year")
-                s = gui._pick_season(pure, g, 1)
+                _dir_season = extract_season_from_dir(dir_p)
+                s = gui._pick_season(pure, g, _dir_season if _dir_season is not None else 1)
                 e = extracted_ep or 1
                 ai_msg = "猜测"
                 parse_source = "guessit"
@@ -413,7 +416,8 @@ def process_task(gui, i):
         if forced_o != 0:
             e_calc = max(1, safe_int(e, 1) + forced_o)
 
-        cache_key = f"{t}_{safe_str(y)}_{is_tv}_{mode}"
+        _folder_id_for_cache = extract_db_id_from_path(item.path, mode) or ""
+        cache_key = f"{t}_{safe_str(y)}_{is_tv}_{mode}_{_folder_id_for_cache}"
 
         with gui.cache_lock:
             db_c = gui.manual_locks.get(path_key) or gui.db_cache.get(cache_key)
@@ -502,8 +506,12 @@ def process_task(gui, i):
 
         std_t, tid, db_m, meta = db_c
 
+        # 当 TMDb 无结果回退到 BGM 时，meta 中会有 _provider="bgm" 标记
+        _is_bgm_fallback = (meta.get("_provider") == "bgm")
+        _eff_tmdb = (mode == "siliconflow_tmdb" and not _is_bgm_fallback)
+
         # 搜索路径返回的 meta 缺少 genres/runtime/status/studios，用 detail 接口补全
-        if mode == "siliconflow_tmdb" and tid and tid != "None" and not meta.get("genres"):
+        if _eff_tmdb and tid and tid != "None" and not meta.get("genres"):
             _, _, _, detail_meta = fetch_tmdb_by_id(tid, is_tv, gui.tmdb_api_key.get())
             if detail_meta:
                 meta = {**detail_meta, **{k: v for k, v in meta.items() if v}}
@@ -511,7 +519,7 @@ def process_task(gui, i):
         ep_n, ep_p, ep_s, s_p = "", "", "", ""
 
         if is_tv and tid != "None":
-            if mode == "siliconflow_tmdb":
+            if _eff_tmdb:
                 ep_n, ep_p, ep_s = fetch_tmdb_episode_meta(
                     tid,
                     s,
@@ -570,14 +578,14 @@ def process_task(gui, i):
         new_fn = re.sub(r"\s+(?=\.)", "", new_fn).strip()
 
         actors, directors = [], []
-        if mode == "siliconflow_tmdb" and tid and tid != "None":
+        if _eff_tmdb and tid and tid != "None":
             actors, directors = fetch_tmdb_credits(
                 tid, is_tv=is_tv, api_key=gui.tmdb_api_key.get()
             )
 
         item.metadata = {
             "id": tid,
-            "provider": "tmdb" if mode == "siliconflow_tmdb" else "bgm",
+            "provider": "tmdb" if _eff_tmdb else "bgm",
             "title": safe_std_t,
             "year": y,
             "ep_title": ep_n_final or f"第 {e_calc} 集",
@@ -608,7 +616,7 @@ def process_task(gui, i):
 
         root_d = gui.target_root.get().strip()
         if root_d:
-            id_tag = f"tmdbid={tid}" if mode == "siliconflow_tmdb" else f"bgmid={tid}"
+            id_tag = f"tmdbid={tid}" if _eff_tmdb else f"bgmid={tid}"
             folder_name = safe_filename(f"{safe_std_t} [{id_tag}]")
             season_folder = f"Season {s}"
 

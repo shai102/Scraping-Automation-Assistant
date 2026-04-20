@@ -113,17 +113,13 @@ def list_records(
     if dir:
         # Filter records whose original_path is directly inside the given directory
         norm_dir = os.path.normpath(dir)
-        all_rows = q.all()
-        all_rows = [r for r in all_rows
-                    if os.path.normpath(os.path.dirname(r.original_path)) == norm_dir]
-        total = len(all_rows)
-        # Sort by id desc
-        all_rows.sort(key=lambda r: r.id, reverse=True)
-        start = (page - 1) * page_size
-        rows = all_rows[start:start + page_size]
-    else:
-        total = q.count()
-        rows = q.order_by(ScrapeRecord.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        # 用 SQL LIKE 过滤，避免全表加载到内存
+        q = q.filter(
+            ScrapeRecord.original_path.like(norm_dir.replace('\\', '/') + '/%') |
+            ScrapeRecord.original_path.like(norm_dir + os.sep + '%')
+        )
+    total = q.count()
+    rows = q.order_by(ScrapeRecord.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return {
         "total": total,
         "page": page,

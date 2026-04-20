@@ -4,6 +4,7 @@ a configurable quiet period.
 """
 
 import logging
+import os
 import threading
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -14,6 +15,13 @@ from utils.helpers import TIMEOUT_IMAGE_DOWNLOAD
 logger = logging.getLogger(__name__)
 
 _TG_API = "https://api.telegram.org"
+
+# 统计文件数时认定为媒体的扩展名
+_MEDIA_EXTS = {
+    '.strm', '.mp4', '.mkv', '.ts', '.iso', '.rmvb', '.avi', '.mov',
+    '.mpeg', '.mpg', '.wmv', '.3gp', '.asf', '.m4v', '.flv', '.m2ts',
+    '.tp', '.f4v',
+}
 
 
 # ------------------------------------------------------------------
@@ -72,7 +80,7 @@ def send_test_message(token: str, chat_id: str) -> dict:
 # Build caption from a batch of items
 # ------------------------------------------------------------------
 
-def _build_caption(folder_name: str, items: list, total_ep: int) -> str:
+def _build_caption(folder_name: str, items: list, total_ep: int, file_count: int = 0) -> str:
     """Build the notification caption text matching the screenshot format.
 
     Parameters
@@ -83,6 +91,8 @@ def _build_caption(folder_name: str, items: list, total_ep: int) -> str:
         All successfully scraped items sharing the same (tmdb_id, season).
     total_ep : int
         Total episodes in this season (from TMDB API), 0 if unknown.
+    file_count : int
+        Number of files to show in notification (0 = fallback to len(items)).
     """
     meta = items[0].metadata or {}
     title = meta.get("title", "未知")
@@ -94,7 +104,8 @@ def _build_caption(folder_name: str, items: list, total_ep: int) -> str:
     if isinstance(genres, list):
         genres = "、".join(genres)
 
-    file_count = len(items)
+    if not file_count:
+        file_count = len(items)
 
     # Title line: 标题 (年份) S01 E01-E23
     title_line = f"{title}"
@@ -164,7 +175,7 @@ def _get_poster_url(items: list) -> str:
 # Batch sender (called by the timer)
 # ------------------------------------------------------------------
 
-def _send_batch(folder_name: str, items: list, cfg: dict):
+def _send_batch(folder_name: str, items: list, cfg: dict, season_folder: str = ""):
     """Send one aggregated TG notification for a batch of items."""
     token = (cfg.get("tg_bot_token") or "").strip()
     chat_id = (cfg.get("tg_chat_id") or "").strip()
@@ -185,7 +196,16 @@ def _send_batch(folder_name: str, items: list, cfg: dict):
         except Exception as e:
             logger.debug(f"获取季集数失败: {e}")
 
-    caption = _build_caption(folder_name, items, total_ep)
+    # 统计目标文件夹内实际媒体文件数量，作为通知的「文件」字段
+    file_count = 0
+    if season_folder and os.path.isdir(season_folder):
+        try:
+            file_count = sum(1 for f in os.listdir(season_folder)
+                             if os.path.splitext(f)[1].lower() in _MEDIA_EXTS)
+        except Exception:
+            pass
+
+    caption = _build_caption(folder_name, items, total_ep, file_count=file_count)
     poster_url = _get_poster_url(items)
 
     try:
@@ -212,7 +232,7 @@ class NotificationBatcher:
     after *delay* seconds of inactivity for each group.
     """
 
-    def __init__(self, cfg_getter: Callable[[], dict], delay: float = 60.0):
+    def __init__(self, cfg_getter: Callable[[], dict], delay: float = 300.0):
         """
         Parameters
         ----------
@@ -224,10 +244,11 @@ class NotificationBatcher:
         self._cfg_getter = cfg_getter
         self._default_delay = delay
         self._lock = threading.Lock()
-        # key -> {"folder_name": str, "items": dict[ep_key -> item], "timer": Timer}
+        # key -> {"folder_name": str, "items": dict[ep_key -> item], "timer": Timer, "season_folder": str}
         # items is a dict to deduplicate: same episode arriving multiple times
         # (e.g. from sidecar re-detection) overwrites instead of appending.
         self._groups: Dict[Tuple, dict] = {}
+        self._tmdb_total_cache: Dict[Tuple, int] = {}  # (tmdb_id, season) -> total_ep
 
     def add(self, folder_id: int, folder_name: str, item: Any):
         """Add a successfully scraped item. Resets the quiet timer for its group."""
@@ -250,23 +271,69 @@ class NotificationBatcher:
         else:
             ep_key = getattr(item, "id", id(item))
 
+        # season_folder: 目标 Season 目录，用于统计实际 STRM 数量
+        season_folder = ""
+        item_path = getattr(item, 'path', None)
+        if item_path:
+            season_folder = os.path.dirname(item_path)
+
+        fire_now = False
         with self._lock:
             if key not in self._groups:
                 self._groups[key] = {
                     "folder_name": folder_name,
                     "items": {},
                     "timer": None,
+                    "season_folder": season_folder,
                 }
             group = self._groups[key]
             # Overwrite if same episode arrives again (dedup)
             group["items"][ep_key] = item
+            if season_folder and os.path.isdir(season_folder):
+                group["season_folder"] = season_folder
 
-            # Reset timer
-            if group["timer"] is not None:
-                group["timer"].cancel()
-            group["timer"] = threading.Timer(delay, self._fire, args=(key,))
-            group["timer"].daemon = True
-            group["timer"].start()
+            # 如果 STRM 文件数 >= TMDB 总集数，立即触发，不再等定时器
+            sf = group.get("season_folder", "")
+            if (media_type == "episode"
+                    and tmdb_id != "None"
+                    and sf
+                    and os.path.isdir(sf)):
+                cache_key = (tmdb_id, str(meta.get("s", "0")))
+                if cache_key not in self._tmdb_total_cache:
+                    try:
+                        from db.tmdb_api import fetch_tmdb_season_episode_count
+                        tmdb_key = (cfg.get("tmdb_api_key") or "").strip()
+                        if tmdb_key and meta.get("s") is not None:
+                            cnt = fetch_tmdb_season_episode_count(
+                                tmdb_id, int(meta["s"]), tmdb_key
+                            )
+                            if cnt > 0:
+                                self._tmdb_total_cache[cache_key] = cnt
+                    except Exception as _e:
+                        logger.debug(f"缓存季集数失败: {_e}")
+                tmdb_total = self._tmdb_total_cache.get(cache_key, 0)
+                if tmdb_total > 0:
+                    try:
+                        strm_count = sum(1 for f in os.listdir(sf)
+                                         if os.path.splitext(f)[1].lower() in _MEDIA_EXTS)
+                    except Exception:
+                        strm_count = 0
+                    if strm_count >= tmdb_total:
+                        if group["timer"] is not None:
+                            group["timer"].cancel()
+                            group["timer"] = None
+                        fire_now = True
+
+            if not fire_now:
+                # Reset timer
+                if group["timer"] is not None:
+                    group["timer"].cancel()
+                group["timer"] = threading.Timer(delay, self._fire, args=(key,))
+                group["timer"].daemon = True
+                group["timer"].start()
+
+        if fire_now:
+            self._fire(key)
 
     def _fire(self, key: Tuple):
         """Timer callback — pop the group and send."""
@@ -279,12 +346,13 @@ class NotificationBatcher:
             group["items"].values(),
             key=lambda it: int((it.metadata or {}).get("e") or 0)
         )
+        season_folder = group.get("season_folder", "")
 
         cfg = self._cfg_getter()
         if not cfg.get("tg_notify_enabled"):
             return
 
         try:
-            _send_batch(group["folder_name"], group["items"], cfg)
+            _send_batch(group["folder_name"], group["items"], cfg, season_folder=season_folder)
         except Exception as e:
             logger.debug(f"TG 批量通知失败: {e}")

@@ -98,6 +98,8 @@ def update_settings(body: SettingsModel):
     w = get_watcher()
     if w and w._worker_ctx:
         w._worker_ctx.reload_config()
+        # 清空目录缓存，确保新配置（AI key/模型等）立即生效
+        w._worker_ctx.dir_cache.clear()
 
     return {"ok": True}
 

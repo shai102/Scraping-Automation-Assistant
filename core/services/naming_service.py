@@ -79,6 +79,27 @@ def extract_explicit_season(pure_name):
     return None
 
 
+def extract_season_from_dir(dir_path):
+    """Extract season number from the innermost folder component of dir_path.
+
+    Matches patterns used by Emby/Jellyfin/Kodi library layout:
+      Season 1, Season 01, Season 0 (specials), 第1季, 第01季
+    Returns an int (including 0 for specials) on success, or None if no match.
+    """
+    folder_name = os.path.basename(str(dir_path or ""))
+    patterns = [
+        r"(?i)\bSeason\s*0*(\d{1,2})\b",
+        r"第\s*0*(\d{1,2})\s*季",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, folder_name)
+        if m:
+            n = safe_int(m.group(1), -1)
+            if 0 <= n <= 99:
+                return n
+    return None
+
+
 def pick_season(pure_name, guess_data=None, fallback=1):
     """Prefer explicit season marker, then sane guessed season, then fallback."""
     explicit = extract_explicit_season(pure_name)

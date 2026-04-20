@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 _DEBOUNCE_SECONDS = 5.0
 
 # Polling: scan folders every N seconds to catch network-written files
-_POLL_INTERVAL_SECONDS = 30.0
+_POLL_INTERVAL_SECONDS = 120.0
 
 
 def _has_nfo(filepath: str) -> bool:
@@ -220,6 +220,20 @@ class FolderWatcher:
                     continue
                 is_sl_export = getattr(folder, 'organize_mode', 'move') == 'symlink_export'
                 skip_scraped = getattr(folder, 'skip_if_scraped', False) and not is_sl_export
+                # 批量加载已记录路径，避免逐文件查 DB（N+1 问题）
+                if is_sl_export:
+                    recorded = set(
+                        r.original_path for r in
+                        db.query(SymlinkRecord.original_path)
+                        .filter(SymlinkRecord.folder_id == folder.id).all()
+                    )
+                else:
+                    recorded = set(
+                        r for row in
+                        db.query(ScrapeRecord.original_path, ScrapeRecord.target_path)
+                        .filter(ScrapeRecord.folder_id == folder.id).all()
+                        for r in (row.original_path, row.target_path) if r
+                    )
                 for dirpath, _, filenames in os.walk(folder.path):
                     for fn in filenames:
                         if not is_sl_export and not fn.lower().endswith(exts):
@@ -233,17 +247,8 @@ class FolderWatcher:
                             with self._pending_lock:
                                 self._processed.add(full)
                             continue
-                        # Check DB — already processed?
-                        if is_sl_export:
-                            existing = db.query(SymlinkRecord).filter(
-                                SymlinkRecord.original_path == full
-                            ).first()
-                        else:
-                            existing = db.query(ScrapeRecord).filter(
-                                (ScrapeRecord.original_path == full) |
-                                (ScrapeRecord.target_path == full)
-                            ).first()
-                        if existing:
+                        # Check against pre-loaded set
+                        if full in recorded:
                             with self._pending_lock:
                                 self._processed.add(full)
                             continue
@@ -268,6 +273,20 @@ class FolderWatcher:
             exts = self._worker_ctx.get_media_exts() if self._worker_ctx else ()
             is_sl_export = getattr(folder, 'organize_mode', 'move') == 'symlink_export'
             skip_scraped = getattr(folder, 'skip_if_scraped', False) and not is_sl_export
+            # 批量加载已记录路径，避免逐文件查 DB（N+1 问题）
+            if is_sl_export:
+                recorded = set(
+                    r.original_path for r in
+                    db.query(SymlinkRecord.original_path)
+                    .filter(SymlinkRecord.folder_id == folder.id).all()
+                )
+            else:
+                recorded = set(
+                    r for row in
+                    db.query(ScrapeRecord.original_path)
+                    .filter(ScrapeRecord.folder_id == folder.id).all()
+                    for r in (row.original_path,) if r
+                )
             for dirpath, _, filenames in os.walk(folder.path):
                 for fn in filenames:
                     if not is_sl_export and not fn.lower().endswith(exts):
@@ -277,17 +296,19 @@ class FolderWatcher:
                     if skip_scraped and _has_nfo(full):
                         with self._pending_lock:
                             self._processed.add(full)
+                        # 写 skipped 记录，重启后不会再重复判断
+                        skip_rec = ScrapeRecord(
+                            folder_id=folder.id,
+                            original_path=full,
+                            original_name=os.path.basename(full),
+                            status="skipped",
+                            error_msg="已有元数据（.nfo），跳过刮削",
+                        )
+                        db.add(skip_rec)
+                        db.commit()
                         continue
                     # Skip already-recorded files
-                    if is_sl_export:
-                        existing = db.query(SymlinkRecord).filter(
-                            SymlinkRecord.original_path == full
-                        ).first()
-                    else:
-                        existing = db.query(ScrapeRecord).filter(
-                            ScrapeRecord.original_path == full
-                        ).first()
-                    if existing:
+                    if full in recorded:
                         continue
                     with self._pending_lock:
                         if full not in self._processed:
@@ -332,7 +353,27 @@ class FolderWatcher:
             if existing:
                 return
 
-            # Decimal episode (e.g. 4.5) = \u603b\u96c6\u7bc7 \u2014 skip
+            # skip_if_scraped: 文件旁已有同名 .nfo 则跳过，写一条 skipped 记录避免重复检查
+            is_sl_export_check = organize_mode_check == 'symlink_export'
+            if (not is_sl_export_check
+                    and folder
+                    and getattr(folder, 'skip_if_scraped', False)
+                    and _has_nfo(path)):
+                logger.info(f"跳过已有元数据（.nfo）的文件: {path}")
+                record = ScrapeRecord(
+                    folder_id=folder.id,
+                    original_path=path,
+                    original_name=os.path.basename(path),
+                    status="skipped",
+                    error_msg="已有元数据（.nfo），跳过刮削",
+                )
+                db.add(record)
+                db.commit()
+                db.refresh(record)
+                self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
+                return
+
+            # Decimal episode (e.g. 4.5) = 总集篇 — skip
             from utils.helpers import is_decimal_episode
             pure_name = os.path.splitext(os.path.basename(path))[0]
             # ---- symlink_export mode: write SymlinkRecord, no scraping ----
@@ -427,11 +468,18 @@ class FolderWatcher:
             if not self._worker_ctx:
                 return
             ctx = WorkerContext(config=dict(self._worker_ctx._cfg))
+            # 共享目录缓存：同目录第二个文件可复用 AI 识别结果，避免重复调用 AI
+            ctx.dir_cache = self._worker_ctx.dir_cache
+            ctx.cache_lock = self._worker_ctx.cache_lock
 
             # Apply folder-level overrides onto this thread-local ctx
             if folder:
                 if folder.target_root:
                     ctx.target_root.set(folder.target_root)
+                # rename 模式：以监控目录本身作为归档根目录，必须在 _process_task 之前设置
+                # 否则 _process_task 内 root_d 为空，full_target 不会生成正确的层级结构
+                if getattr(folder, 'organize_mode', 'move') == 'rename':
+                    ctx.target_root.set(folder.path)
                 if folder.data_source:
                     ctx.source_var.set(folder.data_source)
                 if folder.media_type == "movie":
@@ -474,10 +522,6 @@ class FolderWatcher:
             # === Archive (move + sidecar) ===
             try:
                 organize_mode = getattr(folder, 'organize_mode', 'move') or 'move' if folder else 'move'
-
-                # For 'rename' mode, use the monitored folder path as target_root
-                if organize_mode == 'rename' and folder:
-                    ctx.target_root.set(folder.path)
 
                 target = item.full_target or os.path.join(item.dir, item.new_name_only)
                 target_dir = os.path.dirname(target)

@@ -334,6 +334,28 @@ class WorkerContext:
             if len(merged) >= 10:
                 break
 
+        # TMDb 无结果时，以 BGM 作为回退数据源
+        bgm_fallback = False
+        if not merged and mode == "siliconflow_tmdb":
+            for q in query_titles:
+                cur = fetch_bgm_candidates(q, year, self.bgm_api_key.get())
+                if not cur:
+                    continue
+                if not _first_hit:
+                    used_query = q
+                    _first_hit = True
+                for cand in cur:
+                    cid = str(cand.get("id") or "")
+                    if not cid or cid in seen_ids:
+                        continue
+                    seen_ids.add(cid)
+                    merged.append(cand)
+                if len(merged) >= 10:
+                    break
+            if merged:
+                bgm_fallback = True
+                source_name = "BGM(回退)"
+
         if merged:
             t_hit, tid_hit, msg_hit, meta_hit = self._select_best_db_match(
                 item, used_query, year, is_tv, source_name, merged,
@@ -341,6 +363,19 @@ class WorkerContext:
             )
             if tid_hit != "None" and normalize_compare_text(used_query) != normalize_compare_text(query_title):
                 msg_hit += " (备选标题)"
+            if bgm_fallback and tid_hit != "None":
+                meta_hit["_provider"] = "bgm"
+                # 封面/背景图仍从 TMDb 获取
+                if self.tmdb_api_key.get().strip():
+                    _tmdb_cands = fetch_tmdb_candidates(
+                        t_hit or used_query, year, is_tv, self.tmdb_api_key.get()
+                    )
+                    if _tmdb_cands:
+                        _tc_meta = _tmdb_cands[0].get("meta") or {}
+                        if _tc_meta.get("poster"):
+                            meta_hit["poster"] = _tc_meta["poster"]
+                        if _tc_meta.get("fanart"):
+                            meta_hit["fanart"] = _tc_meta["fanart"]
             return t_hit, tid_hit, msg_hit, meta_hit
 
         return query_title, "None", f"{source_name}无结果", {}
