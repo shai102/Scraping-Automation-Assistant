@@ -370,6 +370,19 @@ def process_task(gui, i):
                 # disabled / assist 模式：先用 guessit 解析文件名
                 t = g.get("title") or derive_title_from_filename(pure) or "未知"
                 y = g.get("year")
+                # 若文件名无年份，向上遍历父目录补充（如"幽游白书 (2023)"）
+                if not y:
+                    _dir_for_year = dir_p
+                    for _ in range(3):
+                        _fn = os.path.basename(_dir_for_year)
+                        _ym = re.search(r'\b((?:19|20)\d{2})\b', _fn)
+                        if _ym:
+                            y = int(_ym.group(1))
+                            break
+                        _dp = os.path.dirname(_dir_for_year)
+                        if not _dp or _dp == _dir_for_year:
+                            break
+                        _dir_for_year = _dp
                 _dir_season = extract_season_from_dir(dir_p)
                 s = gui._pick_season(pure, g, _dir_season if _dir_season is not None else 1)
                 e = extracted_ep or 1
