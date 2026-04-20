@@ -136,21 +136,36 @@ const app = Vue.createApp({
       if (idx >= 0) {
         Object.assign(this.records[idx], data);
       } else {
-        this.records.unshift(data);
+        // 只在第一页时插入，避免其他页面的记录混入
+        if (this.recordPage === 1) {
+          this.records.unshift(data);
+          // 保持页面条目数不超过 pageSize
+          if (this.records.length > this.recordPageSize) this.records.pop();
+        }
         this.recordTotal++;
       }
-      // Refresh grouped view in background if active
-      if (this.groupedView) this.loadGroupedRecords();
+      // 分组视图防抖刷新：2s 内多条消息合并为一次请求
+      if (this.groupedView) {
+        clearTimeout(this._groupedRefreshTimer);
+        var self = this;
+        this._groupedRefreshTimer = setTimeout(function() { self.loadGroupedRecords(); }, 2000);
+      }
     },
     onSymlinkUpdate(data) {
       var idx = this.symlinkRecords.findIndex(function(r) { return r.id === data.id; });
       if (idx >= 0) {
         Object.assign(this.symlinkRecords[idx], data);
       } else {
-        this.symlinkRecords.unshift(data);
+        if (this.symlinkPage === 1) {
+          this.symlinkRecords.unshift(data);
+          if (this.symlinkRecords.length > this.symlinkPageSize) this.symlinkRecords.pop();
+        }
         this.symlinkTotal++;
       }
-      this.loadSymlinkStats();
+      // Stats 防抖刷新：2s 内多条消息合并为一次请求
+      clearTimeout(this._symlinkStatsTimer);
+      var self = this;
+      this._symlinkStatsTimer = setTimeout(function() { self.loadSymlinkStats(); }, 2000);
     },
 
     // --- Folder Browser ---
