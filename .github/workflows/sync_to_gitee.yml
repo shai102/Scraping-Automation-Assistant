@@ -1,0 +1,29 @@
+name: Sync to Gitee
+
+on:
+  push:
+    branches:
+      - main  # 确认你的默认分支是 main 还是 master
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.GITEE_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan gitee.com >> ~/.ssh/known_hosts
+
+      - name: Push to Gitee
+        run: |
+          # 【只需改这里】把 shai102asdas/media-renamer-ai 换成你新仓库的名字
+          git remote add gitee git@gitee.com:shai102asdas/Scraping-Automation-Assistant
+          git push -f gitee main

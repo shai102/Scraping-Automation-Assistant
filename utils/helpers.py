@@ -552,6 +552,19 @@ def get_cache_key(api_name, query):
     return f"{api_name}:{str(query)}"
 
 
+def invalidate_cache_prefix(prefix):
+    """Delete all cache entries whose key starts with the given prefix."""
+    global _cache_dirty
+    with _cache_file_lock:
+        _ensure_cache_loaded_unlocked()
+        keys = [k for k in list(_cache_data.keys()) if k.startswith(prefix)]
+        for k in keys:
+            del _cache_data[k]
+        if keys:
+            _cache_dirty = True
+            _flush_cache_to_disk_unlocked(force=True)
+
+
 def cached_request(api_func, cache_key, *args, **kwargs):
     global _cache_dirty, _cache_write_count
     now_ts = datetime.now().timestamp()
