@@ -46,6 +46,7 @@ GENERIC_TITLE_RE = re.compile(
     r"(?i)^(?:unknown|none|null|untitled|na|nan|未知|season\s*\d{1,2}|s\s*\d{1,2}|第\s*\d{1,2}\s*季)$"
 )
 GENERIC_SEASON_DIR_RE = re.compile(r"(?i)^(?:season\s*\d{1,2}|s\s*\d{1,2}|第\s*\d{1,2}\s*季)$")
+STANDARD_EPISODE_RE = re.compile(r"(?i)\bS\d{1,2}E\d{1,3}\b")
 
 
 def _is_meaningful_title(title):
@@ -150,8 +151,18 @@ def _guessit_needs_assist(pure, dir_p, g, title, extracted_ep):
     ):
         return True
 
+    looks_like_clean_standard_episode = (
+        extracted_ep is not None
+        and _is_meaningful_title(title)
+        and str((g or {}).get("type") or "").strip().lower() == "episode"
+        and (
+            STANDARD_EPISODE_RE.search(str(pure or ""))
+            or safe_int((g or {}).get("season"), 0) > 0
+        )
+    )
+
     dir_name = os.path.basename(dir_p or "").strip()
-    if GENERIC_SEASON_DIR_RE.match(dir_name):
+    if GENERIC_SEASON_DIR_RE.match(dir_name) and not looks_like_clean_standard_episode:
         parent_title = os.path.basename(os.path.dirname(dir_p or "")).strip()
         if _is_meaningful_title(parent_title):
             if normalize_compare_text(parent_title) != title_norm:
@@ -160,7 +171,22 @@ def _guessit_needs_assist(pure, dir_p, g, title, extracted_ep):
     return False
 
 
-def _build_dir_cache_entry(ai_data, title, year, season, episode, parse_source):
+def _collect_cache_title_aliases(primary_title, aliases=None):
+    seen = set()
+    values = []
+    for raw in [primary_title, *(aliases or [])]:
+        text = str(raw or "").strip()
+        key = normalize_compare_text(text)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        values.append(text)
+    return values
+
+
+def _build_dir_cache_entry(
+    ai_data, title, year, season, episode, parse_source, aliases=None
+):
     cache_data = dict(ai_data or {})
     cache_data.update(
         {
@@ -169,6 +195,7 @@ def _build_dir_cache_entry(ai_data, title, year, season, episode, parse_source):
             "season": season,
             "episode": episode,
             "parse_source": parse_source,
+            "title_aliases": _collect_cache_title_aliases(title, aliases),
         }
     )
     return cache_data
@@ -498,6 +525,11 @@ def process_task(gui, i):
             pure, dir_p, g, guess_title, extracted_ep
         )
         guessit_confident = not guessit_needs_assist
+        cache_title_aliases = [
+            guess_title,
+            derive_title_from_filename(pure),
+            os.path.basename(os.path.dirname(dir_p or "")),
+        ]
 
         # 读取 AI 模式（在缓存判断前确定，后续 is_resolver 块也可访问）
         _ai_mode_obj = getattr(gui, "ai_mode", None)
@@ -542,7 +574,7 @@ def process_task(gui, i):
                     parse_source = "ai"
                     with gui.cache_lock:
                         gui.dir_cache[dir_p] = _build_dir_cache_entry(
-                            ai_data, t, y, s, e, "ai"
+                            ai_data, t, y, s, e, "ai", cache_title_aliases
                         )
                 else:
                     # AI 失败 → 直接待手动，不猜测
@@ -573,12 +605,12 @@ def process_task(gui, i):
                     with gui.cache_lock:
                         if dir_p not in gui.dir_cache:
                             gui.dir_cache[dir_p] = _build_dir_cache_entry(
-                                None, t, y, s, e, "guessit"
+                                None, t, y, s, e, "guessit", cache_title_aliases
                             )
                 elif parse_source != "guessit":
                     with gui.cache_lock:
                         gui.dir_cache[dir_p] = _build_dir_cache_entry(
-                            ai_data, t, y, s, e, parse_source
+                            ai_data, t, y, s, e, parse_source, cache_title_aliases
                         )
 
         if SPECIAL_TAG_RE.search(pure):
@@ -670,7 +702,13 @@ def process_task(gui, i):
                                     ai_msg = "AI识别"
                                 with gui.cache_lock:
                                     gui.dir_cache[dir_p] = _build_dir_cache_entry(
-                                        ai_data, t, y, s, e, parse_source
+                                        ai_data,
+                                        t,
+                                        y,
+                                        s,
+                                        e,
+                                        parse_source,
+                                        cache_title_aliases,
                                     )
                         if ai_data:
                             _db_retry = gui._resolve_db_match(item, t, y, is_tv, mode, ai_data, g)
