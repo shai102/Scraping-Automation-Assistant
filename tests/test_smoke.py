@@ -3,7 +3,11 @@ import unittest
 from ai.ollama_ai import _extract_siliconflow_content
 from core.services.matcher_service import extract_ollama_model_names
 from core.services.naming_service import extract_explicit_season, pick_season
-from core.workers.task_runner import SPECIAL_TAG_RE
+from core.workers.task_runner import (
+    SPECIAL_TAG_RE,
+    _guessit_needs_assist,
+    _is_meaningful_title,
+)
 from utils.helpers import (
     build_query_titles,
     format_error_message,
@@ -99,6 +103,35 @@ class SmokeTests(unittest.TestCase):
     def test_special_tag_regex_matches_real_special_marker(self):
         name = "Anime.Title.S01E01.[NC.Ver].1080p"
         self.assertIsNotNone(SPECIAL_TAG_RE.search(name))
+
+    def test_guessit_assist_detects_group_release_style(self):
+        g = {"title": "Dungeon Meshi"}
+        self.assertTrue(
+            _guessit_needs_assist(
+                "[KTXP][Dungeon Meshi][01][CHS][1080P][AVC]",
+                r"D:\Anime\Dungeon Meshi",
+                g,
+                "Dungeon Meshi",
+                1,
+            )
+        )
+
+    def test_guessit_assist_skips_clean_standard_name(self):
+        g = {"title": "The Mandalorian", "episode": 4}
+        self.assertFalse(
+            _guessit_needs_assist(
+                "The.Mandalorian.S03E04.2023.WEB-DL",
+                r"D:\TV\The Mandalorian\Season 3",
+                g,
+                "The Mandalorian",
+                4,
+            )
+        )
+
+    def test_is_meaningful_title_rejects_generic_values(self):
+        self.assertFalse(_is_meaningful_title("未知"))
+        self.assertFalse(_is_meaningful_title("Season 1"))
+        self.assertTrue(_is_meaningful_title("Violet Evergarden"))
 
 
 if __name__ == "__main__":

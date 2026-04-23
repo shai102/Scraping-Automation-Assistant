@@ -2,9 +2,20 @@ import logging
 import os
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from tkinter import messagebox
 
 from utils.helpers import ERROR_CODE_UNKNOWN, format_error_message
+
+
+def _notify_error(gui, title, message):
+    """Report a worker error without depending on Tkinter."""
+    handler = getattr(gui, "show_error", None)
+    if callable(handler):
+        try:
+            handler(title, message)
+            return
+        except Exception:
+            pass
+    logging.error("%s: %s", title, message)
 
 
 def run_execution(gui, is_archive):
@@ -34,10 +45,7 @@ def run_execution(gui, is_archive):
     except Exception as err:
         logging.error(f"执行线程池失败: {err}")
         err_msg = f"执行失败: {err}"
-        gui.root.after(
-            0,
-            lambda msg=err_msg: messagebox.showerror("错误", msg, parent=gui.root),
-        )
+        gui.root.after(0, lambda msg=err_msg: _notify_error(gui, "错误", msg))
 
     gui.root.after(0, lambda: gui.status.config(text="任务全部完成"))
 
@@ -140,10 +148,7 @@ def run_scrape_execution(gui):
     except Exception as err:
         logging.error(f"刮削线程池失败: {err}")
         err_msg = f"刮削失败: {err}"
-        gui.root.after(
-            0,
-            lambda msg=err_msg: messagebox.showerror("错误", msg, parent=gui.root),
-        )
+        gui.root.after(0, lambda msg=err_msg: _notify_error(gui, "错误", msg))
 
     gui.root.after(0, lambda: gui.status.config(text="刮削全部完成"))
 
@@ -193,4 +198,3 @@ def process_one_file_scrape(gui, item):
                 id_val, "st", gui._friendly_status_text(msg)
             ),
         )
-

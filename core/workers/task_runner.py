@@ -1,10 +1,7 @@
 ﻿import logging
 import os
 import re
-import tkinter as tk
-
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from tkinter import messagebox
 
 from guessit import guessit
 
@@ -44,6 +41,196 @@ SPECIAL_EPISODE_RE = re.compile(
     r"(?i)(?<![A-Z0-9])(?:SP|OVA|OAD|SPECIAL|EXTRA)(?![A-Z0-9])\s*(?:BD)?\s*0*(\d+)"
 )
 PROLOGUE_RE = re.compile(r"(?i)(?<![A-Z0-9])PROLOGUE(?![A-Z0-9])")
+GROUP_RELEASE_RE = re.compile(r"^(?:\[[^\]]+\]\s*){2,}")
+GENERIC_TITLE_RE = re.compile(
+    r"(?i)^(?:unknown|none|null|untitled|na|nan|未知|season\s*\d{1,2}|s\s*\d{1,2}|第\s*\d{1,2}\s*季)$"
+)
+GENERIC_SEASON_DIR_RE = re.compile(r"(?i)^(?:season\s*\d{1,2}|s\s*\d{1,2}|第\s*\d{1,2}\s*季)$")
+
+
+def _is_meaningful_title(title):
+    raw = str(title or "").strip()
+    if not raw:
+        return False
+    if GENERIC_TITLE_RE.match(raw):
+        return False
+    return bool(normalize_compare_text(raw))
+
+
+def _notify_error(gui, title, message):
+    """Report a worker error without depending on Tkinter."""
+    handler = getattr(gui, "show_error", None)
+    if callable(handler):
+        try:
+            handler(title, message)
+            return
+        except Exception:
+            pass
+    logging.error("%s: %s", title, message)
+
+
+def _fetch_ai_parse(gui, pure_for_parse):
+    """Fetch parse result from the configured AI backend."""
+    if gui.prefer_ollama.get():
+        if gui.ollama_url.get().strip() and gui.ollama_model.get().strip():
+            ai_data, ai_msg = gui._parse_with_ollama(pure_for_parse)
+            if ai_data is None and gui.sf_api_key.get().strip():
+                ai_data, ai_msg = fetch_siliconflow_info(
+                    pure_for_parse,
+                    gui.sf_api_key.get(),
+                    gui.sf_api_url.get(),
+                    gui.sf_model.get(),
+                    gui._get_ai_temperature(),
+                    gui._get_ai_top_p(),
+                )
+            return ai_data, ai_msg
+        if gui.sf_api_key.get().strip():
+            return fetch_siliconflow_info(
+                pure_for_parse,
+                gui.sf_api_key.get(),
+                gui.sf_api_url.get(),
+                gui.sf_model.get(),
+                gui._get_ai_temperature(),
+                gui._get_ai_top_p(),
+            )
+        return None, ""
+
+    if gui.sf_api_key.get().strip():
+        return fetch_siliconflow_info(
+            pure_for_parse,
+            gui.sf_api_key.get(),
+            gui.sf_api_url.get(),
+            gui.sf_model.get(),
+            gui._get_ai_temperature(),
+            gui._get_ai_top_p(),
+        )
+    return None, ""
+
+
+def _derive_guessit_fields(gui, pure, dir_p, g, extracted_ep):
+    """Build the baseline parse result from guessit and directory hints."""
+    title = g.get("title") or derive_title_from_filename(pure) or "未知"
+    year = g.get("year")
+    if not year:
+        dir_for_year = dir_p
+        for _ in range(3):
+            folder_name = os.path.basename(dir_for_year)
+            year_match = re.search(r"\b((?:19|20)\d{2})\b", folder_name)
+            if year_match:
+                year = int(year_match.group(1))
+                break
+            parent_dir = os.path.dirname(dir_for_year)
+            if not parent_dir or parent_dir == dir_for_year:
+                break
+            dir_for_year = parent_dir
+    dir_season = extract_season_from_dir(dir_p)
+    season = gui._pick_season(pure, g, dir_season if dir_season is not None else 1)
+    episode = extracted_ep or 1
+    return title, year, season, episode
+
+
+def _guessit_needs_assist(pure, dir_p, g, title, extracted_ep):
+    """Heuristics for deciding whether assist mode should invoke AI early."""
+    title_norm = normalize_compare_text(title)
+    if not _is_meaningful_title(title):
+        return True
+    if len(title_norm) <= 2:
+        return True
+    if extracted_ep is None:
+        return True
+    if GROUP_RELEASE_RE.search(str(pure or "")):
+        return True
+
+    guess_title = str(g.get("title") or "").strip()
+    derived_title = derive_title_from_filename(pure)
+    if (
+        guess_title
+        and _is_meaningful_title(derived_title)
+        and normalize_compare_text(guess_title) != normalize_compare_text(derived_title)
+    ):
+        return True
+
+    dir_name = os.path.basename(dir_p or "").strip()
+    if GENERIC_SEASON_DIR_RE.match(dir_name):
+        parent_title = os.path.basename(os.path.dirname(dir_p or "")).strip()
+        if _is_meaningful_title(parent_title):
+            if normalize_compare_text(parent_title) != title_norm:
+                return True
+
+    return False
+
+
+def _build_dir_cache_entry(ai_data, title, year, season, episode, parse_source):
+    cache_data = dict(ai_data or {})
+    cache_data.update(
+        {
+            "title": title,
+            "year": year,
+            "season": season,
+            "episode": episode,
+            "parse_source": parse_source,
+        }
+    )
+    return cache_data
+
+
+def _merge_assist_parse(
+    gui,
+    pure,
+    dir_p,
+    g,
+    guess_title,
+    guess_year,
+    guess_season,
+    guess_episode,
+    extracted_ep,
+    ai_data,
+):
+    """Merge guessit baseline with AI output in assist mode."""
+    title = guess_title
+    year = guess_year
+    season = guess_season
+    episode = guess_episode
+    used_fields = set()
+
+    ai_title = str((ai_data or {}).get("title") or "").strip()
+    ai_year = (ai_data or {}).get("year")
+    ai_season = safe_int((ai_data or {}).get("season"), 1)
+    ai_episode = extract_episode_number(pure, None, ai_data) or safe_int(
+        (ai_data or {}).get("episode"), 1
+    )
+
+    if _is_meaningful_title(ai_title):
+        if not _is_meaningful_title(title):
+            title = ai_title
+            used_fields.add("title")
+        elif normalize_compare_text(ai_title) != normalize_compare_text(title):
+            title = ai_title
+            used_fields.add("title")
+
+    if ai_year and (not year or "title" in used_fields):
+        year = ai_year
+        used_fields.add("year")
+
+    explicit_season = gui._extract_explicit_season(pure)
+    dir_season = extract_season_from_dir(dir_p)
+    if explicit_season is None and dir_season is None and ai_season >= 1:
+        if ai_season != safe_int(season, 1):
+            season = gui._pick_season(pure, g, ai_season)
+            used_fields.add("season")
+
+    if extracted_ep is None and ai_episode:
+        if ai_episode != safe_int(episode, 1):
+            episode = ai_episode
+            used_fields.add("episode")
+
+    guessit_reliable = _is_meaningful_title(guess_title) and extracted_ep is not None
+    if used_fields:
+        parse_source = "hybrid" if guessit_reliable else "ai"
+    else:
+        parse_source = "guessit"
+
+    return title, year, season, episode, parse_source
 
 
 def async_batch_runner(gui, indices, title, t_id, msg, meta):
@@ -255,13 +442,10 @@ def run_preview_pool(gui):
     except Exception as err:
         logging.error(f"预览处理失败: {err}")
         err_msg = format_error_message(ERROR_CODE_UNKNOWN, f"处理失败: {str(err)[:30]}")
-        gui.root.after(
-            0,
-            lambda msg=err_msg: messagebox.showerror("错误", msg, parent=gui.root),
-        )
+        gui.root.after(0, lambda msg=err_msg: _notify_error(gui, "错误", msg))
 
     def _finish_preview_ui():
-        gui.btn_pre.config(state=tk.NORMAL)
+        gui.btn_pre.config(state="normal")
         if gui.preview_skip_all_event.is_set():
             gui.status.config(text="已终止本轮剩余识别")
         else:
@@ -307,6 +491,13 @@ def process_task(gui, i):
         g = guessit(pure_for_parse)
 
         extracted_ep = extract_episode_number(pure, g)
+        guess_title, guess_year, guess_season, guess_episode = _derive_guessit_fields(
+            gui, pure, dir_p, g, extracted_ep
+        )
+        guessit_needs_assist = _guessit_needs_assist(
+            pure, dir_p, g, guess_title, extracted_ep
+        )
+        guessit_confident = not guessit_needs_assist
 
         # 读取 AI 模式（在缓存判断前确定，后续 is_resolver 块也可访问）
         _ai_mode_obj = getattr(gui, "ai_mode", None)
@@ -321,34 +512,21 @@ def process_task(gui, i):
             t = cached_ai["title"]
             y = cached_ai.get("year")
             s = gui._pick_season(pure, g, cached_ai.get("season") or 1)
-            e = extracted_ep or 1
+            e = extracted_ep or cached_ai.get("episode") or 1
             ai_msg = "复用"
             ai_data = cached_ai
             parse_source = cached_ai.get("parse_source", "guessit")
         else:
             ai_data = None
-            ai_msg = ""
+            t = guess_title
+            y = guess_year
+            s = guess_season
+            e = guess_episode
+            ai_msg = "猜测"
 
             if ai_mode_val == "force":
                 # 强制使用 AI：只调 AI，失败则直接待手动
-                if gui.prefer_ollama.get():
-                    if gui.ollama_url.get().strip() and gui.ollama_model.get().strip():
-                        ai_data, ai_msg = gui._parse_with_ollama(pure_for_parse)
-                        if ai_data is None and gui.sf_api_key.get().strip():
-                            ai_data, ai_msg = fetch_siliconflow_info(
-                                pure_for_parse, gui.sf_api_key.get(), gui.sf_api_url.get(),
-                                gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
-                            )
-                    elif gui.sf_api_key.get().strip():
-                        ai_data, ai_msg = fetch_siliconflow_info(
-                            pure_for_parse, gui.sf_api_key.get(), gui.sf_api_url.get(),
-                            gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
-                        )
-                elif gui.sf_api_key.get().strip():
-                    ai_data, ai_msg = fetch_siliconflow_info(
-                        pure_for_parse, gui.sf_api_key.get(), gui.sf_api_url.get(),
-                        gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
-                    )
+                ai_data, ai_msg = _fetch_ai_parse(gui, pure_for_parse)
                 if ai_data:
                     t = ai_data.get("title", "未知")
                     y = ai_data.get("year")
@@ -356,48 +534,52 @@ def process_task(gui, i):
                     if ai_season < 1:
                         ai_season = 1
                     s = gui._pick_season(pure, g, ai_season)
-                    e = extracted_ep or safe_int(ai_data.get("episode"), 1)
+                    e = (
+                        extracted_ep
+                        or extract_episode_number(pure, None, ai_data)
+                        or safe_int(ai_data.get("episode"), 1)
+                    )
                     parse_source = "ai"
                     with gui.cache_lock:
-                        ai_data["parse_source"] = "ai"
-                        gui.dir_cache[dir_p] = ai_data
+                        gui.dir_cache[dir_p] = _build_dir_cache_entry(
+                            ai_data, t, y, s, e, "ai"
+                        )
                 else:
                     # AI 失败 → 直接待手动，不猜测
                     item.metadata = {"id": "None"}
                     item.new_name_only = ""
                     return
             else:
-                # disabled / assist 模式：先用 guessit 解析文件名
-                t = g.get("title") or derive_title_from_filename(pure) or "未知"
-                y = g.get("year")
-                # 若文件名无年份，向上遍历父目录补充（如"幽游白书 (2023)"）
-                if not y:
-                    _dir_for_year = dir_p
-                    for _ in range(3):
-                        _fn = os.path.basename(_dir_for_year)
-                        _ym = re.search(r'\b((?:19|20)\d{2})\b', _fn)
-                        if _ym:
-                            y = int(_ym.group(1))
-                            break
-                        _dp = os.path.dirname(_dir_for_year)
-                        if not _dp or _dp == _dir_for_year:
-                            break
-                        _dir_for_year = _dp
-                _dir_season = extract_season_from_dir(dir_p)
-                s = gui._pick_season(pure, g, _dir_season if _dir_season is not None else 1)
-                e = extracted_ep or 1
-                ai_msg = "猜测"
-                parse_source = "guessit"
-                if t and normalize_compare_text(t) not in ("", "未知"):
+                if ai_mode_val == "assist" and guessit_needs_assist:
+                    ai_data, ai_msg = _fetch_ai_parse(gui, pure_for_parse)
+                    if ai_data:
+                        t, y, s, e, parse_source = _merge_assist_parse(
+                            gui,
+                            pure,
+                            dir_p,
+                            g,
+                            guess_title,
+                            guess_year,
+                            guess_season,
+                            guess_episode,
+                            extracted_ep,
+                            ai_data,
+                        )
+                        if parse_source == "hybrid":
+                            ai_msg = "AI辅助"
+                        elif parse_source == "ai":
+                            ai_msg = "AI识别"
+                if parse_source == "guessit" and guessit_confident:
                     with gui.cache_lock:
                         if dir_p not in gui.dir_cache:
-                            gui.dir_cache[dir_p] = {
-                                "title": t,
-                                "year": y,
-                                "season": s,
-                                "episode": e,
-                                "parse_source": "guessit",
-                            }
+                            gui.dir_cache[dir_p] = _build_dir_cache_entry(
+                                None, t, y, s, e, "guessit"
+                            )
+                elif parse_source != "guessit":
+                    with gui.cache_lock:
+                        gui.dir_cache[dir_p] = _build_dir_cache_entry(
+                            ai_data, t, y, s, e, parse_source
+                        )
 
         if SPECIAL_TAG_RE.search(pure):
             # 若文件名已有显式 S\d+E\d+ 标记（如 S01E01），尊重该标记，
@@ -464,45 +646,42 @@ def process_task(gui, i):
                             db_c = (_ft, _fid, "文件夹ID锁定", _fmeta)
                     if not db_c:
                         db_c = gui._resolve_db_match(item, t, y, is_tv, mode, ai_data, g)
-                    # 辅助识别模式：TMDB 搜索无结果时，用 AI 重新提取标题再搜一次
+                    # 辅助识别模式：数据库无结果时，再让 AI 参与一次重试。
                     if (ai_mode_val == "assist"
                             and (not db_c or (len(db_c) >= 2 and db_c[1] == "None"))):
-                        _ai_r = None
-                        if gui.prefer_ollama.get():
-                            if gui.ollama_url.get().strip() and gui.ollama_model.get().strip():
-                                _ai_r, _ = gui._parse_with_ollama(pure_for_parse)
-                                if _ai_r is None and gui.sf_api_key.get().strip():
-                                    _ai_r, _ = fetch_siliconflow_info(
-                                        pure_for_parse, gui.sf_api_key.get(), gui.sf_api_url.get(),
-                                        gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
-                                    )
-                            elif gui.sf_api_key.get().strip():
-                                _ai_r, _ = fetch_siliconflow_info(
-                                    pure_for_parse, gui.sf_api_key.get(), gui.sf_api_url.get(),
-                                    gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
+                        if not ai_data:
+                            ai_data, _ = _fetch_ai_parse(gui, pure_for_parse)
+                            if ai_data:
+                                t, y, s, e, parse_source = _merge_assist_parse(
+                                    gui,
+                                    pure,
+                                    dir_p,
+                                    g,
+                                    guess_title,
+                                    guess_year,
+                                    guess_season,
+                                    guess_episode,
+                                    extracted_ep,
+                                    ai_data,
                                 )
-                        elif gui.sf_api_key.get().strip():
-                            _ai_r, _ = fetch_siliconflow_info(
-                                pure_for_parse, gui.sf_api_key.get(), gui.sf_api_url.get(),
-                                gui.sf_model.get(), gui._get_ai_temperature(), gui._get_ai_top_p(),
-                            )
-                        if _ai_r:
-                            _t_ai = _ai_r.get("title", "")
-                            _y_ai = _ai_r.get("year")
-                            if _t_ai and normalize_compare_text(_t_ai) != normalize_compare_text(t):
-                                t = _t_ai
-                                y = _y_ai
-                                ai_data = _ai_r
-                                parse_source = "ai"
+                                if parse_source == "hybrid":
+                                    ai_msg = "AI辅助"
+                                elif parse_source == "ai":
+                                    ai_msg = "AI识别"
                                 with gui.cache_lock:
-                                    _ai_r["parse_source"] = "ai"
-                                    gui.dir_cache[dir_p] = _ai_r
-                                _db_retry = gui._resolve_db_match(item, t, y, is_tv, mode, ai_data, g)
-                                if _db_retry and len(_db_retry) >= 2 and _db_retry[1] != "None":
-                                    db_c = _db_retry
+                                    gui.dir_cache[dir_p] = _build_dir_cache_entry(
+                                        ai_data, t, y, s, e, parse_source
+                                    )
+                        if ai_data:
+                            _db_retry = gui._resolve_db_match(item, t, y, is_tv, mode, ai_data, g)
+                            if _db_retry and len(_db_retry) >= 2 and _db_retry[1] != "None":
+                                db_c = _db_retry
                     with gui.cache_lock:
                         if db_c and len(db_c) >= 2 and db_c[1] != "None":
                             gui.db_cache[cache_key] = db_c
+                            final_cache_key = f"{t}_{safe_str(y)}_{is_tv}_{mode}_{_folder_id_for_cache}"
+                            if final_cache_key != cache_key:
+                                gui.db_cache[final_cache_key] = db_c
                 finally:
                     with gui.cache_lock:
                         waiter = gui.db_resolution_events.pop(cache_key, None)

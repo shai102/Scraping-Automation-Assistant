@@ -97,6 +97,7 @@ def list_records(
     status: Optional[str] = None,
     keyword: Optional[str] = None,
     media_type: Optional[str] = None,
+    parse_source: Optional[str] = None,
     dir: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
@@ -110,6 +111,12 @@ def list_records(
     if media_type:
         q = q.join(MonitorFolder, ScrapeRecord.folder_id == MonitorFolder.id, isouter=True)
         q = q.filter(MonitorFolder.media_type == media_type)
+    if parse_source:
+        parse_source = str(parse_source).strip().lower()
+        q = q.filter(
+            ScrapeRecord.metadata_json.like(f'%\"parse_source\": \"{parse_source}\"%')
+            | ScrapeRecord.metadata_json.like(f'%\"parse_source\":\"{parse_source}\"%')
+        )
     if dir:
         # Filter records whose original_path is directly inside the given directory
         norm_dir = os.path.normpath(dir)
@@ -133,6 +140,7 @@ def list_records_grouped(
     status: Optional[str] = None,
     keyword: Optional[str] = None,
     media_type: Optional[str] = None,
+    parse_source: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """Return records grouped by source directory (summary only, no full records)."""
@@ -144,6 +152,12 @@ def list_records_grouped(
     if media_type:
         q = q.join(MonitorFolder, ScrapeRecord.folder_id == MonitorFolder.id, isouter=True)
         q = q.filter(MonitorFolder.media_type == media_type)
+    if parse_source:
+        parse_source = str(parse_source).strip().lower()
+        q = q.filter(
+            ScrapeRecord.metadata_json.like(f'%\"parse_source\": \"{parse_source}\"%')
+            | ScrapeRecord.metadata_json.like(f'%\"parse_source\":\"{parse_source}\"%')
+        )
     rows = q.order_by(ScrapeRecord.id.desc()).all()
 
     groups: dict = {}

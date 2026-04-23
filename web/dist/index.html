@@ -239,6 +239,12 @@
           <option value="tv">电视剧</option>
           <option value="auto">自动</option>
         </select>
+        <select v-model="recordParseFilter" class="filter-select">
+          <option value="">识别来源</option>
+          <option value="guessit">guessit</option>
+          <option value="ai">AI</option>
+          <option value="hybrid">混合</option>
+        </select>
         <button class="btn btn-primary btn-sm" @click="recordPage=1;groupedView?loadGroupedRecords():loadRecords()">筛选</button>
         <button class="btn btn-sm" @click="resetRecordFilter">重置</button>
       </div>
@@ -271,6 +277,7 @@
               <span v-else-if="r.error_msg" style="color:#999;font-size:12px">{{r.error_msg}}</span>
               <span v-else style="color:#999">-</span>
               <span v-if="r.parse_source==='ai'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#e8f4fd;color:#1a73e8;border:1px solid #90cdf4">AI</span>
+              <span v-else-if="r.parse_source==='hybrid'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#fff7ed;color:#c2410c;border:1px solid #fdba74">混合</span>
               <span v-else-if="r.parse_source==='guessit'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#f0fdf4;color:#16a34a;border:1px solid #86efac">guessit</span>
             </td>
             <td class="cell-path">
@@ -359,6 +366,9 @@
                 <td class="cell-name">
                   <template v-if="r.matched_title">{{r.matched_title}}<span v-if="r.matched_id" style="color:#999;margin-left:4px;font-size:11px">({{r.matched_id}})</span></template>
                   <span v-else style="color:#999">-</span>
+                  <span v-if="r.parse_source==='ai'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#e8f4fd;color:#1a73e8;border:1px solid #90cdf4">AI</span>
+                  <span v-else-if="r.parse_source==='hybrid'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#fff7ed;color:#c2410c;border:1px solid #fdba74">混合</span>
+                  <span v-else-if="r.parse_source==='guessit'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#f0fdf4;color:#16a34a;border:1px solid #86efac">guessit</span>
                 </td>
                 <td style="white-space:nowrap;font-size:12px;color:#999">{{formatTime(r.updated_at || r.created_at)}}</td>
                 <td class="actions">

@@ -1,5 +1,5 @@
-"""WorkerContext — A GUI-free replacement for MediaRenamerGUI that task_runner / execution_runner
-can consume directly.  It reads configuration from renamer_config.json and exposes
+"""WorkerContext — A GUI-free runtime context that task_runner / execution_runner
+can consume directly. It reads configuration from renamer_config.json and exposes
 the same attribute/method surface that the worker modules access on the ``gui`` parameter.
 
 All UI-bound callbacks (tree updates, progress bar, messagebox) are replaced with
@@ -73,7 +73,7 @@ class _SimpleVar:
 
 
 class WorkerContext:
-    """Drop-in replacement for ``gui`` parameter consumed by task_runner / execution_runner.
+    """Runtime context for the worker modules.
 
     All tkinter-specific concepts (root.after, tree, pbar, etc.) are replaced with
     no-ops or callback hooks.
@@ -101,7 +101,7 @@ class WorkerContext:
         self._cfg = config
         self._on_status = on_status
 
-        # --- Locks & caches (same names as MediaRenamerGUI) ---
+        # --- Locks & caches expected by the worker modules ---
         self.cache_lock = threading.Lock()
         self.file_write_lock = threading.Lock()
         self.popup_lock = threading.Lock()
@@ -158,7 +158,7 @@ class WorkerContext:
         self.btn_pre = _DummyButton()
 
     # ------------------------------------------------------------------
-    # Config helpers  (same signatures as ConfigMixin / MediaRenamerGUI)
+    # Config helpers used by the worker modules
     # ------------------------------------------------------------------
 
     @staticmethod

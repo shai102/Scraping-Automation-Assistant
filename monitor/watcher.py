@@ -999,6 +999,8 @@ class FolderWatcher:
             if tid == "None" or not item.new_name_only:
                 record.status = "pending_manual"
                 record.matched_title = (item.metadata or {}).get("title")
+                record.matched_provider = (item.metadata or {}).get("provider")
+                record.metadata_json = json.dumps(item.metadata or {}, ensure_ascii=False)
                 record.error_msg = "无法自动识别"
                 db.commit()
                 self._broadcast({"type": "record_update", "data": _record_to_dict(record)})

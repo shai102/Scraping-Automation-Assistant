@@ -29,6 +29,7 @@ const app = Vue.createApp({
       recordFilter: '',
       recordKeyword: '',
       recordTypeFilter: '',
+      recordParseFilter: '',
       recordPage: 1,
       recordPageSize: 20,
       recordTotal: 0,
@@ -375,6 +376,7 @@ const app = Vue.createApp({
         if (this.recordFilter) params.set('status', this.recordFilter);
         if (this.recordKeyword) params.set('keyword', this.recordKeyword);
         if (this.recordTypeFilter) params.set('media_type', this.recordTypeFilter);
+        if (this.recordParseFilter) params.set('parse_source', this.recordParseFilter);
         var data = await this.api('GET', '/api/records?' + params.toString());
         this.records = data.items || [];
         this.recordTotal = data.total || 0;
@@ -389,6 +391,7 @@ const app = Vue.createApp({
       this.recordFilter = '';
       this.recordKeyword = '';
       this.recordTypeFilter = '';
+      this.recordParseFilter = '';
       this.recordPage = 1;
       if (this.groupedView) this.loadGroupedRecords();
       else this.loadRecords();
@@ -518,6 +521,7 @@ const app = Vue.createApp({
         if (this.recordFilter) params.set('status', this.recordFilter);
         if (this.recordKeyword) params.set('keyword', this.recordKeyword);
         if (this.recordTypeFilter) params.set('media_type', this.recordTypeFilter);
+        if (this.recordParseFilter) params.set('parse_source', this.recordParseFilter);
         var data = await this.api('GET', '/api/records/grouped?' + params.toString());
         this.groupedRecords = data.groups || [];
       } catch (ex) {}
@@ -543,6 +547,7 @@ const app = Vue.createApp({
         var params = new URLSearchParams({ page: state.page, page_size: 50, dir: g.dir_path });
         if (this.recordFilter) params.set('status', this.recordFilter);
         if (this.recordKeyword) params.set('keyword', this.recordKeyword);
+        if (this.recordParseFilter) params.set('parse_source', this.recordParseFilter);
         var data = await this.api('GET', '/api/records?' + params.toString());
         state.records = data.items || [];
         state.total = data.total || 0;
