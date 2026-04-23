@@ -1,5 +1,7 @@
 """Symlink record API — query / delete symlink_export records."""
 
+import os
+import threading
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -100,3 +102,41 @@ def clear_failed(db: Session = Depends(get_db)):
     deleted = db.query(SymlinkRecord).filter(SymlinkRecord.status == "failed").delete(synchronize_session=False)
     db.commit()
     return {"ok": True, "deleted": deleted}
+
+
+@router.post("/{record_id}/retry")
+def retry_symlink(record_id: int, db: Session = Depends(get_db)):
+    """Retry a single failed symlink record."""
+    row = db.query(SymlinkRecord).get(record_id)
+    if not row:
+        raise HTTPException(404, detail="记录不存在")
+    if not os.path.isfile(row.original_path):
+        raise HTTPException(400, detail="源文件不存在")
+    path = row.original_path
+    db.delete(row)
+    db.commit()
+    from server import get_watcher
+    w = get_watcher()
+    def _run():
+        if w:
+            w._process_file(path)
+    threading.Thread(target=_run, daemon=True).start()
+    return {"ok": True}
+
+
+@router.post("/retry-failed")
+def retry_all_failed(db: Session = Depends(get_db)):
+    """Retry all failed symlink records."""
+    rows = db.query(SymlinkRecord).filter(SymlinkRecord.status == "failed").all()
+    paths = [r.original_path for r in rows if os.path.isfile(r.original_path)]
+    for r in rows:
+        db.delete(r)
+    db.commit()
+    from server import get_watcher
+    w = get_watcher()
+    def _run():
+        if w:
+            for p in paths:
+                w._process_file(p)
+    threading.Thread(target=_run, daemon=True).start()
+    return {"ok": True, "queued": len(paths)}

@@ -775,17 +775,26 @@
       <div class="page-header"><h1>软链接记录</h1></div>
       <div class="toolbar">
         <div class="toolbar-left">
-          <span class="toolbar-hint" v-if="symlinkStats.total">共 {{symlinkStats.total}} 条，成功 {{symlinkStats.success || 0}}，失败 {{symlinkStats.failed || 0}}</span>
+          <button class="btn-grad btn-grad-red btn-sm" @click="batchDeleteSymlinkSelected" :disabled="!symlinkSelectedIds.length">删除所选记录</button>
+          <button class="btn-grad btn-grad-yellow btn-sm" @click="retrySymlinkFailed" :disabled="!symlinkStats.failed">重试失败</button>
+          <span class="toolbar-hint">已选择 {{symlinkSelectedIds.length}} 条记录</span>
+          <span class="toolbar-hint" v-if="symlinkStats.total" style="margin-left:12px">共 {{symlinkStats.total}} 条，成功 {{symlinkStats.success || 0}}，失败 {{symlinkStats.failed || 0}}</span>
         </div>
-        <div class="toolbar-right">
-          <button class="btn-grad btn-grad-blue btn-sm" @click="loadSymlinkRecords">刷新</button>
-          <button class="btn-grad btn-grad-orange btn-sm" @click="clearSymlinkFailed">清除失败记录</button>
-          <button class="btn-grad btn-grad-red btn-sm" @click="clearSymlinkAll">清空记录</button>
-        </div>
+      </div>
+      <div class="filter-row">
+        <input v-model="symlinkKeyword" placeholder="按文件名模糊搜索" class="filter-input">
+        <select v-model="symlinkFilter" class="filter-select">
+          <option value="">筛选状态</option>
+          <option value="success">成功</option>
+          <option value="failed">失败</option>
+        </select>
+        <button class="btn btn-primary btn-sm" @click="symlinkPage=1;loadSymlinkRecords()">筛选</button>
+        <button class="btn btn-sm" @click="resetSymlinkFilter">重置</button>
       </div>
       <table class="table" v-if="symlinkRecords.length">
         <thead>
           <tr>
+            <th style="width:36px"><input type="checkbox" @change="toggleSymlinkSelectAll" :checked="symlinkAllSelected"></th>
             <th>状态</th>
             <th>原始文件</th>
             <th>软链接路径</th>
@@ -795,8 +804,12 @@
         </thead>
         <tbody>
           <tr v-for="r in symlinkRecords" :key="r.id">
+            <td><input type="checkbox" :value="r.id" v-model="symlinkSelectedIds"></td>
             <td><span :class="['badge', r.status==='success'?'badge-success':'badge-danger']">{{r.status==='success'?'成功':'失败'}}</span></td>
-            <td class="cell-path">{{r.original_path}}</td>
+            <td class="cell-path">
+              <div>{{r.original_path}}</div>
+              <div v-if="r.error_msg" style="color:#e53935;font-size:12px;margin-top:2px">⚠ {{r.error_msg}}</div>
+            </td>
             <td class="cell-path">{{r.link_path || '-'}}</td>
             <td style="white-space:nowrap;font-size:12px;color:#999">{{formatTime(r.created_at)}}</td>
             <td class="actions">

@@ -16,11 +16,14 @@ const app = Vue.createApp({
       showAddSymlink: false,
       newSymlinkFolder: { path: '', target_root: '' },
       symlinkRecords: [],
+      symlinkSelectedIds: [],
       symlinkPage: 1,
       symlinkPageSize: 20,
       symlinkTotal: 0,
       symlinkGoPage: 1,
       symlinkStats: {},
+      symlinkFilter: '',
+      symlinkKeyword: '',
       // Records
       records: [],
       recordFilter: '',
@@ -90,6 +93,9 @@ const app = Vue.createApp({
   computed: {
     allSelected: function() {
       return this.records.length > 0 && this.selectedIds.length === this.records.length;
+    },
+    symlinkAllSelected: function() {
+      return this.symlinkRecords.length > 0 && this.symlinkSelectedIds.length === this.symlinkRecords.length;
     },
     scrapeFolders: function() {
       return this.folders.filter(function(f) { return f.organize_mode !== 'symlink_export'; });
@@ -309,17 +315,49 @@ const app = Vue.createApp({
     async loadSymlinkRecords() {
       try {
         var params = new URLSearchParams({ page: this.symlinkPage, page_size: this.symlinkPageSize });
+        if (this.symlinkFilter) params.set('status', this.symlinkFilter);
+        if (this.symlinkKeyword) params.set('keyword', this.symlinkKeyword);
         var data = await this.api('GET', '/api/symlinks?' + params.toString());
         this.symlinkRecords = data.items || [];
         this.symlinkTotal = data.total || 0;
+        this.symlinkSelectedIds = [];
       } catch (ex) {}
     },
     async loadSymlinkStats() {
       try { this.symlinkStats = await this.api('GET', '/api/symlinks/stats'); } catch (ex) {}
     },
+    resetSymlinkFilter() {
+      this.symlinkFilter = '';
+      this.symlinkKeyword = '';
+      this.symlinkPage = 1;
+      this.loadSymlinkRecords();
+    },
     async deleteSymlinkRecord(id) {
       if (!confirm('确认删除该记录？')) return;
       try { await this.api('DELETE', '/api/symlinks/' + id); this.loadSymlinkRecords(); this.loadSymlinkStats(); } catch (e) { alert(e.message); }
+    },
+    toggleSymlinkSelectAll(e) {
+      if (e.target.checked) {
+        this.symlinkSelectedIds = this.symlinkRecords.map(function(r) { return r.id; });
+      } else {
+        this.symlinkSelectedIds = [];
+      }
+    },
+    async batchDeleteSymlinkSelected() {
+      if (!this.symlinkSelectedIds.length) return;
+      if (!confirm('确认删除选中的 ' + this.symlinkSelectedIds.length + ' 条记录？')) return;
+      try {
+        await this.api('POST', '/api/symlinks/batch-delete', { ids: this.symlinkSelectedIds });
+        this.loadSymlinkRecords(); this.loadSymlinkStats();
+      } catch (e) { alert(e.message); }
+    },
+    async retrySymlinkFailed() {
+      if (!confirm('确认重试所有失败的软链接记录？')) return;
+      try {
+        var res = await this.api('POST', '/api/symlinks/retry-failed');
+        alert('已将 ' + (res.queued || 0) + ' 条失败记录加入重试队列，请稍候刷新查看结果。');
+        this.loadSymlinkRecords(); this.loadSymlinkStats();
+      } catch (e) { alert(e.message); }
     },
     async clearSymlinkFailed() {
       if (!confirm('确认清除所有失败的软链接记录？')) return;

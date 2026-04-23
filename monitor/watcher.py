@@ -875,12 +875,36 @@ class FolderWatcher:
                     return
                 try:
                     os.makedirs(os.path.dirname(link), exist_ok=True)
-                    try:
-                        os.symlink(os.path.abspath(path), link)
-                        logger.info(f"Symlink export: {link} -> {path}")
-                    except OSError as _sym_err:
-                        shutil.copy2(path, link)
-                        logger.warning(f"Symlink failed ({_sym_err}), copied instead: {link}")
+                    # Retry up to 5 times (10 s total) for WinError 32 (file locked by another process)
+                    _last_err: Optional[Exception] = None
+                    for _attempt in range(5):
+                        try:
+                            os.symlink(os.path.abspath(path), link)
+                            logger.info(f"Symlink export: {link} -> {path}")
+                            _last_err = None
+                            break
+                        except OSError as _sym_err:
+                            if getattr(_sym_err, 'winerror', None) == 32:
+                                _last_err = _sym_err
+                                time.sleep(2)
+                                continue
+                            # Not a locking error — fall back to copy once
+                            try:
+                                shutil.copy2(path, link)
+                                logger.warning(f"Symlink failed ({_sym_err}), copied instead: {link}")
+                            except OSError as _copy_err:
+                                if getattr(_copy_err, 'winerror', None) == 32:
+                                    _last_err = _copy_err
+                                    time.sleep(2)
+                                    continue
+                                raise
+                            _last_err = None
+                            break
+                    else:
+                        # All retries exhausted
+                        raise _last_err  # type: ignore[misc]
+                    if _last_err is not None:
+                        raise _last_err
                     slr = SymlinkRecord(
                         folder_id=folder.id,
                         original_path=path,
