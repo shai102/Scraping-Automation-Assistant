@@ -237,6 +237,12 @@ class _MediaHandler(FileSystemEventHandler):
         if not event.is_directory:
             self.watcher.enqueue(event.dest_path)
 
+    def on_deleted(self, event):
+        if event.is_directory:
+            self.watcher.on_dir_deleted(event.src_path)
+        else:
+            self.watcher.on_file_deleted(event.src_path)
+
 
 class FolderWatcher:
     """Manages watchdog observers for all enabled MonitorFolder rows and
@@ -335,6 +341,266 @@ class FolderWatcher:
     def refresh(self):
         """Called after monitor folder CRUD to resync watches."""
         self._sync_watches()
+
+    # ------------------------------------------------------------------
+    # Deletion sync
+    # ------------------------------------------------------------------
+
+    def on_file_deleted(self, path: str):
+        """watchdog 回调：监控路径内有文件被删除时触发，提交到线程池处理。"""
+        norm = os.path.normpath(path)
+        self._pool.submit(self._handle_deleted, norm)
+
+    def on_dir_deleted(self, path: str):
+        """watchdog 回调：监控路径内有目录被删除时触发，提交到线程池处理。"""
+        norm = os.path.normpath(path)
+        self._pool.submit(self._handle_dir_deleted, norm)
+
+    def _handle_dir_deleted(self, dir_path: str):
+        """同步删除导出目标目录中该目录下所有对应文件及其伴随文件，并清理空目录。
+
+        支持的整理模式：
+        - symlink_export : 删除目标目录中的软链接/复制文件，清理空目录
+        - copy / symlink / hardlink : 删除目标文件及同名 NFO/图片，清理空目录
+        - move / rename : 源文件已被移走，忽略
+        """
+        db = SessionLocal()
+        try:
+            folder = self._find_folder(dir_path, db)
+            if not folder:
+                return
+
+            organize_mode = getattr(folder, 'organize_mode', 'move') or 'move'
+            stop_root = (folder.target_root or '').strip() or None
+
+            # 匹配前缀：dir_path\ 下的所有文件（含子目录）
+            prefix = dir_path + os.sep
+
+            if organize_mode == 'symlink_export':
+                slrs = db.query(SymlinkRecord).filter(
+                    SymlinkRecord.folder_id == folder.id
+                ).all()
+                slrs_matched = [r for r in slrs if r.original_path and
+                        os.path.normpath(r.original_path).startswith(prefix)]
+
+                # ── 文件系统兑备：若 DB 无匹配记录，直接按 target_root+相对路径推算并删除 ──
+                target_root_fs = (folder.target_root or '').strip()
+                folder_norm = os.path.normpath(folder.path)
+                if not slrs_matched and target_root_fs and os.path.isdir(target_root_fs):
+                    rel = os.path.relpath(dir_path, folder_norm)
+                    link_dir_fs = os.path.normpath(os.path.join(target_root_fs, rel))
+                    if os.path.isdir(link_dir_fs):
+                        try:
+                            import shutil as _shutil
+                            _shutil.rmtree(link_dir_fs)
+                            logger.info(f"文件系统兑备删除软链接目录: {link_dir_fs} (DB 无记录)")
+                        except Exception as e:
+                            logger.warning(f"兑备删除软链接目录失败 {link_dir_fs}: {e}")
+                    self._broadcast({
+                        "type": "dir_deleted",
+                        "data": {"original_path": dir_path, "mode": organize_mode},
+                    })
+                    return
+
+                deleted_dirs: Set[str] = set()
+                link_paths: list = []  # 收集所有软链接路径，用于链式追查
+                for slr in slrs_matched:
+                    link = slr.link_path
+                    if link and os.path.lexists(link):
+                        try:
+                            os.remove(link)
+                            logger.info(f"同步删除软链接: {link} (源目录已删除: {dir_path})")
+                        except Exception as e:
+                            logger.warning(f"删除软链接失败 {link}: {e}")
+                    if link:
+                        deleted_dirs.add(os.path.dirname(link))
+                        link_paths.append(link)
+                    with self._pending_lock:
+                        self._processed.discard(os.path.normpath(slr.original_path))
+                    db.delete(slr)
+                db.commit()
+
+                # ── 链式追查：软链接若已被第二级监控目录刮削整理，同步删除刮削后的目标文件 ──
+                for link in link_paths:
+                    scraped = db.query(ScrapeRecord).filter(
+                        ScrapeRecord.original_path == link,
+                        ScrapeRecord.status == 'success',
+                    ).first()
+                    if scraped and scraped.target_path:
+                        s_target = scraped.target_path
+                        s_folder = db.query(MonitorFolder).get(scraped.folder_id) if scraped.folder_id else None
+                        s_stop = (s_folder.target_root or '').strip() or None if s_folder else None
+                        if os.path.exists(s_target) or os.path.lexists(s_target):
+                            try:
+                                os.remove(s_target)
+                                logger.info(f"链式删除刮削目标: {s_target} (源目录软链接: {link})")
+                            except Exception as e:
+                                logger.warning(f"链式删除刮削目标失败 {s_target}: {e}")
+                        _delete_per_file_sidecars(s_target)
+                        deleted_dirs.add((os.path.dirname(s_target), s_stop))
+                        db.delete(scraped)
+                db.commit()
+
+                # 清理空目录（兼容两种 entry：纯路径字符串 或 (路径, stop) 元组）
+                for entry in sorted(deleted_dirs, key=lambda x: len(x[0]) if isinstance(x, tuple) else len(x), reverse=True):
+                    if isinstance(entry, tuple):
+                        _remove_empty_dirs(entry[0], stop_at=entry[1])
+                    else:
+                        _remove_empty_dirs(entry, stop_at=stop_root)
+                self._broadcast({
+                    "type": "dir_deleted",
+                    "data": {"original_path": dir_path, "mode": organize_mode},
+                })
+
+            elif organize_mode in ('copy', 'symlink', 'hardlink'):
+                recs = db.query(ScrapeRecord).filter(
+                    ScrapeRecord.folder_id == folder.id,
+                    ScrapeRecord.status == 'success',
+                ).all()
+                recs = [r for r in recs if r.original_path and
+                        os.path.normpath(r.original_path).startswith(prefix)]
+                deleted_dirs: Set[str] = set()
+                for rec in recs:
+                    target = rec.target_path
+                    if target and (os.path.exists(target) or os.path.lexists(target)):
+                        try:
+                            os.remove(target)
+                            logger.info(f"同步删除目标文件: {target} (源目录已删除: {dir_path})")
+                        except Exception as e:
+                            logger.warning(f"删除目标文件失败 {target}: {e}")
+                        _delete_per_file_sidecars(target)
+                        deleted_dirs.add(os.path.dirname(target))
+                    with self._pending_lock:
+                        self._processed.discard(os.path.normpath(rec.original_path))
+                    db.delete(rec)
+                db.commit()
+                for d in sorted(deleted_dirs, key=len, reverse=True):
+                    _remove_empty_dirs(d, stop_at=stop_root)
+                self._broadcast({
+                    "type": "dir_deleted",
+                    "data": {"original_path": dir_path, "mode": organize_mode},
+                })
+
+            # move / rename 模式：源文件已被移走，整理完成后不再监听原路径的删除事件
+
+        except Exception as e:
+            logger.error(f"处理目录删除事件失败 {dir_path}: {e}")
+        finally:
+            db.close()
+
+    def _handle_deleted(self, path: str):
+        """同步删除导出目标目录中对应的文件及其伴随文件。
+
+        支持的整理模式：
+        - symlink_export : 删除目标目录中的软链接/复制文件
+        - copy / symlink / hardlink : 删除目标目录中的归档文件及同名 NFO/图片
+        - move / rename : 源文件已被移走，忽略删除事件
+        """
+        db = SessionLocal()
+        try:
+            folder = self._find_folder(path, db)
+            if not folder:
+                return
+
+            organize_mode = getattr(folder, 'organize_mode', 'move') or 'move'
+            stop_root = (folder.target_root or '').strip() or None
+
+            if organize_mode == 'symlink_export':
+                slr = db.query(SymlinkRecord).filter(
+                    SymlinkRecord.original_path == path
+                ).first()
+
+                # ── 推算软链接路径：DB 有记录用记录，无记录用文件系统兼容逻辑推算 ──
+                if slr:
+                    link = slr.link_path
+                else:
+                    # DB 记录已被清空：根据 target_root + 相对路径直接推算
+                    target_root = (folder.target_root or '').strip()
+                    folder_path = os.path.normpath(folder.path)
+                    if target_root and path.startswith(folder_path):
+                        rel = os.path.relpath(path, folder_path)
+                        link = os.path.join(target_root, rel)
+                    else:
+                        link = None
+
+                if link and os.path.lexists(link):
+                    try:
+                        os.remove(link)
+                        logger.info(f"同步删除软链接: {link} (源文件已删除: {path})")
+                    except Exception as e:
+                        logger.warning(f"删除软链接失败 {link}: {e}")
+                link_dir = os.path.dirname(link) if link else None
+                if slr:
+                    db.delete(slr)
+                    db.commit()
+
+                # ── 链式追查：软链接若已被第二级监控目录刮削整理，同步删除刮削后的目标文件 ──
+                if link:
+                    scraped = db.query(ScrapeRecord).filter(
+                        ScrapeRecord.original_path == link,
+                        ScrapeRecord.status == 'success',
+                    ).first()
+                    if scraped and scraped.target_path:
+                        s_target = scraped.target_path
+                        s_folder = db.query(MonitorFolder).get(scraped.folder_id) if scraped.folder_id else None
+                        s_stop = (s_folder.target_root or '').strip() or None if s_folder else None
+                        if os.path.exists(s_target) or os.path.lexists(s_target):
+                            try:
+                                os.remove(s_target)
+                                logger.info(f"链式删除刮削目标: {s_target} (源软链接: {link})")
+                            except Exception as e:
+                                logger.warning(f"链式删除刮削目标失败 {s_target}: {e}")
+                        _delete_per_file_sidecars(s_target)
+                        s_dir = os.path.dirname(s_target)
+                        db.delete(scraped)
+                        db.commit()
+                        _remove_empty_dirs(s_dir, stop_at=s_stop)
+                    elif not scraped:
+                        logger.debug(f"链式追查：未找到刮削记录 (软链接已删除或记录已清空): {link}")
+
+                if link_dir:
+                    _remove_empty_dirs(link_dir, stop_at=stop_root)
+                self._broadcast({
+                    "type": "symlink_deleted",
+                    "data": {"original_path": path, "link_path": link},
+                })
+
+                if not slr and not link:
+                    return
+
+            elif organize_mode in ('copy', 'symlink', 'hardlink'):
+                rec = db.query(ScrapeRecord).filter(
+                    ScrapeRecord.original_path == path,
+                    ScrapeRecord.status == 'success',
+                ).first()
+                if not rec or not rec.target_path:
+                    return
+                target = rec.target_path
+                if os.path.exists(target) or os.path.lexists(target):
+                    try:
+                        os.remove(target)
+                        logger.info(f"同步删除目标文件: {target} (源文件已删除: {path})")
+                    except Exception as e:
+                        logger.warning(f"删除目标文件失败 {target}: {e}")
+                _delete_per_file_sidecars(target)
+                target_dir = os.path.dirname(target)
+                db.delete(rec)
+                db.commit()
+                _remove_empty_dirs(target_dir, stop_at=stop_root)
+                self._broadcast({
+                    "type": "record_deleted",
+                    "data": {"original_path": path, "target_path": target},
+                })
+
+            # move / rename 模式：源文件已被移走，整理完成后不再监听原路径的删除事件
+
+        except Exception as e:
+            logger.error(f"处理文件删除事件失败 {path}: {e}")
+        finally:
+            # 从已处理集合中移除，允许将来同路径新文件重新入队
+            with self._pending_lock:
+                self._processed.discard(path)
+            db.close()
 
     # ------------------------------------------------------------------
     # Enqueue / debounce
@@ -785,6 +1051,21 @@ class FolderWatcher:
             logger.error(f"Unexpected error processing {path}: {e}")
         finally:
             db.close()
+
+
+def _delete_per_file_sidecars(file_path: str):
+    """删除与媒体文件同名的伴随文件（NFO、缩略图等）。"""
+    if not file_path:
+        return
+    base = os.path.splitext(file_path)[0]
+    for suffix in ('.nfo', '-thumb.jpg', '-poster.jpg', '-fanart.jpg'):
+        sidecar = base + suffix
+        if os.path.isfile(sidecar):
+            try:
+                os.remove(sidecar)
+                logger.debug(f"删除伴随文件: {sidecar}")
+            except Exception as e:
+                logger.warning(f"删除伴随文件失败 {sidecar}: {e}")
 
 
 def _remove_empty_dirs(start_dir: str, stop_at: Optional[str] = None):
