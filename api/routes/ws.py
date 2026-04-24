@@ -29,6 +29,7 @@ class ConnectionManager:
             try:
                 await ws.send_text(data)
             except Exception:
+                # Silently remove disconnected clients
                 self.disconnect(ws)
 
     def broadcast_sync(self, message: dict):
@@ -61,5 +62,11 @@ async def websocket_endpoint(ws: WebSocket):
                 await ws.send_text("pong")
     except WebSocketDisconnect:
         manager.disconnect(ws)
-    except Exception:
+    except ConnectionResetError:
+        # Windows-specific: client forcibly closed connection
+        manager.disconnect(ws)
+    except Exception as e:
+        # Log unexpected errors only
+        if not isinstance(e, (WebSocketDisconnect, ConnectionResetError)):
+            logger.error(f"WebSocket error: {e}")
         manager.disconnect(ws)
