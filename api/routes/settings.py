@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from utils.helpers import CONFIG_FILE
+from ai.ollama_ai import test_silicon_api
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -143,20 +144,12 @@ def test_ai():
     else:
         api_key = cfg.get("sf_api_key", "")
         api_url = cfg.get("sf_api_url", "https://api.siliconflow.cn/v1")
+        model_name = cfg.get("sf_model", "deepseek-ai/DeepSeek-V3")
         if not api_key:
             raise HTTPException(400, detail="AI API Key 未配置")
-        import requests as req
-        try:
-            resp = req.get(
-                f"{api_url}/models",
-                headers={"Authorization": f"Bearer {api_key}"},
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                return {"ok": True, "message": "AI API 连接成功"}
-            return {"ok": False, "message": f"HTTP {resp.status_code}"}
-        except Exception as e:
-            return {"ok": False, "message": str(e)[:200]}
+
+        success, message = test_silicon_api(api_url, api_key, model_name)
+        return {"ok": success, "message": message}
 
 
 @router.get("/ollama-models")

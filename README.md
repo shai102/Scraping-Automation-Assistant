@@ -1,10 +1,10 @@
-﻿# 刮削助手 v2.1
+﻿# 刮削助手 v2.2
 
 媒体文件自动归档与刮削工具，Web 管理界面版本。
 
-置顶反馈群：<https://t.me/+Wx34NdYY_x1iNjg1>
+TG 问题反馈群：<https://t.me/+Wx34NdYY_x1iNjg1>
 
-支持监控多个源文件夹，AI 自动识别文件名，通过 TMDB / Bangumi 匹配元数据，将媒体文件归档到目标目录并生成 NFO + 海报封面，供 Kodi / Jellyfin / Emby 直接读取。
+支持监控多个源文件夹，AI 自动识别文件名，通过 TMDB / Bangumi 匹配元数据，将媒体文件归档到目标目录并生成 NFO + 海报封面，供 Kodi / Jellyfin / Emby 直接读取。AIkey如果不是收费的情况下，推荐是使用本地AI+Embedding 模型使用效果最佳！以免限速导致的识别问题！模型推荐qwen3.5 9B+nomic-embed-text或者 bge-m3 Embedding 模型！
 
 <div align="center">
 
@@ -22,7 +22,7 @@
 
 | 模块 | 说明 |
 |---|---|
-| AI 识别 | 支持 OpenAI 兼容 API 与本地 Ollama；`辅助识别` 为 guessit + AI 混合模式，番组风格命名时会自动拉起 AI 修正标题/季集 |
+| AI 识别 | 支持 OpenAI 兼容 API 与本地 Ollama；`辅助识别` 为 guessit + AI 混合模式，番组风格命名时会自动拉起 AI 修正标题/季集；测试连接时自动检测并显示深思模式状态 |
 | 自动整理 | 支持移动、复制、软链接、硬链接、原地整理、导出软链接等多种落盘方式 |
 | 元数据生成 | 自动写入 NFO，下载 poster、fanart、still，并补充演员、导演、类型等字段 |
 | Web 管理 | 内置 FastAPI + Vue Web 界面，支持目录配置、记录查询、手动识别与实时推送 |
@@ -213,7 +213,7 @@ python -m uvicorn server:app --host 0.0.0.0 --port 8090
 | TMDb API Key | 从 themoviedb.org 获取 |
 | BGM API Key | 可选，用于 Bangumi 查询 |
 | Ollama API 地址 / 模型 | 本地大模型识别 |
-| OpenAI 兼容 API Key / URL / 模型 | SiliconFlow / DeepSeek 等 |
+| OpenAI 兼容 API Key / URL / 模型 | SiliconFlow / DeepSeek 等，测试连接时会显示深思模式状态 |
 | Temperature / Top-P | AI 推理参数，默认 0.20 / 0.85 |
 | TV / 电影命名格式 | 支持 `{title}`, `{year}`, `{s:02d}`, `{e:02d}` 等占位符 |
 | 预览/同步/执行线程数 | 各阶段并发数 |

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"Y:/test/Test_05_Unusual_Separators\")",
+      "Read(//y/test/**)",
+      "Bash(touch \"败犬女主太多了！_MakeHeroineGaOosugiru_EP01_BDRip_1080p.mkv\" \"败犬女主太多了！_MakeHeroineGaOosugiru_EP02_BDRip_1080p.mkv\" \"败犬女主太多了！_MakeHeroineGaOosugiru_EP03_BDRip_1080p.mkv\" \"败犬女主太多了！_MakeHeroineGaOosugiru_EP04_BDRip_1080p.mkv\" \"败犬女主太多了！_MakeHeroineGaOosugiru_EP05_BDRip_1080p.mkv\")"
+    ]
+  }
+}

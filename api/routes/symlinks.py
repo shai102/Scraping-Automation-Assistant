@@ -73,6 +73,8 @@ def clear_all(db: Session = Depends(get_db)):
     """Delete all symlink records."""
     deleted = db.query(SymlinkRecord).delete(synchronize_session=False)
     db.commit()
+    # 执行 VACUUM 来回收数据库空间
+    db.execute("VACUUM")
     return {"ok": True, "deleted": deleted}
 
 

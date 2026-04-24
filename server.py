@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
     logger.info("Server stopped")
 
 
-app = FastAPI(title="刮削助手", version="2.1", lifespan=lifespan)
+app = FastAPI(title="刮削助手", version="2.2", lifespan=lifespan)
 
 # CORS — allow local dev frontend (Vite on :5173)
 app.add_middleware(

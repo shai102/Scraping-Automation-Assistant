@@ -6,17 +6,20 @@ import webbrowser
 
 
 # When frozen with --windowed, sys.stdout/stderr are None, which causes
-# uvicorn's logging to crash on sys.stdout.isatty().  Redirect them to the
-# log file so everything is captured and the crash is avoided.
+# uvicorn's logging to crash on sys.stdout.isatty().  Create dummy streams
+# to avoid the crash, but don't write to the log file.
 def _fix_frozen_stdio():
     if not getattr(sys, "frozen", False):
         return
-    log_path = _resolve_log_path()
-    _fh = open(log_path, "a", encoding="utf-8", buffering=1)
+    import io
+    # Create a dummy stream that discards all output
+    class NullWriter(io.StringIO):
+        def write(self, s):
+            pass
     if sys.stdout is None:
-        sys.stdout = _fh
+        sys.stdout = NullWriter()
     if sys.stderr is None:
-        sys.stderr = _fh
+        sys.stderr = NullWriter()
 
 
 def _resolve_log_path():
@@ -29,15 +32,33 @@ def _resolve_log_path():
 
 def _setup_logging():
     log_path = _resolve_log_path()
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.FileHandler(log_path, encoding="utf-8"),
-            logging.StreamHandler(),
-        ],
-        force=True,
-    )
+
+    # 创建一个自定义过滤器，只允许 ERROR 及以上级别通过
+    class ErrorOnlyFilter(logging.Filter):
+        def filter(self, record):
+            return record.levelno >= logging.ERROR
+
+    # 获取根日志记录器
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    # 清除现有处理器
+    root_logger.handlers.clear()
+
+    # 创建文件处理器，只记录ERROR及以上级别
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setLevel(logging.ERROR)
+    file_handler.addFilter(ErrorOnlyFilter())
+    file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+
+    # 创建控制台处理器，记录INFO及以上级别
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+
+    # 添加处理器到根日志记录器
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
 
 
 HOST = "0.0.0.0"
@@ -73,23 +94,78 @@ def _build_tray_icon():
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("退出", on_quit),
     )
-    return pystray.Icon("刮削助手", img, "刮削助手 v2.1", menu)
+    return pystray.Icon("刮削助手", img, "刮削助手 v2.2", menu)
 
 
 def _run_server():
     import uvicorn
+
+    # 创建一个自定义过滤器，只允许 ERROR 及以上级别写入文件
+    class ErrorOnlyFilter(logging.Filter):
+        def filter(self, record):
+            return record.levelno >= logging.ERROR
+
+    log_path = _resolve_log_path()
+
+    # 创建自定义日志配置字典
+    log_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "format": "%(asctime)s - %(levelname)s - %(message)s",
+            },
+        },
+        "filters": {
+            "error_only": {
+                "()": lambda: ErrorOnlyFilter(),
+            },
+        },
+        "handlers": {
+            "file": {
+                "class": "logging.FileHandler",
+                "level": "ERROR",
+                "formatter": "default",
+                "filename": log_path,
+                "encoding": "utf-8",
+                "filters": ["error_only"],
+            },
+        },
+        "loggers": {
+            "uvicorn": {
+                "handlers": ["file"],
+                "level": "INFO",
+                "propagate": False,
+            },
+            "uvicorn.access": {
+                "handlers": ["file"],
+                "level": "INFO",
+                "propagate": False,
+            },
+            "uvicorn.error": {
+                "handlers": ["file"],
+                "level": "INFO",
+                "propagate": False,
+            },
+        },
+        "root": {
+            "handlers": ["file"],
+            "level": "INFO",
+        },
+    }
+
     if getattr(sys, "frozen", False):
         from server import app as _app
-        uvicorn.run(_app, host=HOST, port=PORT, log_level="info")
+        uvicorn.run(_app, host=HOST, port=PORT, log_config=log_config)
     else:
-        uvicorn.run("server:app", host=HOST, port=PORT, log_level="info", reload=False)
+        uvicorn.run("server:app", host=HOST, port=PORT, reload=False, log_config=log_config)
 
 
 def main():
     _fix_frozen_stdio()   # must be first, before any uvicorn import
     _setup_logging()
 
-    print(f"\n  刮削助手 v2.1")
+    print(f"\n  刮削助手 v2.2")
     print(f"  Web 管理界面: http://127.0.0.1:{PORT}\n")
 
     # Start uvicorn in a daemon thread so the main thread is free for the tray

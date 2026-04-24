@@ -1,6 +1,7 @@
 ﻿import logging
 import os
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from guessit import guessit
@@ -27,7 +28,6 @@ from utils.helpers import (
     extract_db_id_from_path,
     extract_episode_number,
     format_error_message,
-    normalize_parse_source,
     normalize_compare_text,
     safe_filename,
     safe_int,
@@ -48,6 +48,7 @@ GENERIC_TITLE_RE = re.compile(
 )
 GENERIC_SEASON_DIR_RE = re.compile(r"(?i)^(?:season\s*\d{1,2}|s\s*\d{1,2}|第\s*\d{1,2}\s*季)$")
 STANDARD_EPISODE_RE = re.compile(r"(?i)\bS\d{1,2}E\d{1,3}\b")
+AI_RATE_LIMIT_COOLDOWN_SECONDS = 60.0
 
 
 def _is_meaningful_title(title):
@@ -71,34 +72,80 @@ def _notify_error(gui, title, message):
     logging.error("%s: %s", title, message)
 
 
+def _mark_ai_rate_limited(item):
+    item.metadata = {
+        "id": "None",
+        "parse_source": "ai",
+        "error_code": "rate_limited",
+        "error_msg": "AI接口限流，请稍后重试",
+    }
+    item.parse_source = "ai"
+    item.new_name_only = ""
+    item.full_target = ""
+
+
+def _is_ai_rate_limited_item(item):
+    status_text = str(getattr(item, "status_text", "") or "")
+    return "AI限流" in status_text and str((getattr(item, "metadata", {}) or {}).get("id") or "None") == "None"
+
+
+def _cache_reuse_status(parse_source):
+    source = str(parse_source or "guessit").strip().lower()
+    if source == "ai":
+        return "AI复用"
+    if source == "hybrid":
+        return "AI辅助复用"
+    return "guessit复用"
+
+
+def _retry_rate_limited_siblings(gui, current_index, dir_p):
+    retry_indices = []
+    with gui.cache_lock:
+        inflight = getattr(gui, "ai_retry_inflight", None)
+        if inflight is None:
+            inflight = set()
+            gui.ai_retry_inflight = inflight
+
+        for idx, other in enumerate(gui.file_list):
+            if idx == current_index or other.dir != dir_p:
+                continue
+            if not _is_ai_rate_limited_item(other):
+                continue
+            if other.id in inflight:
+                continue
+            inflight.add(other.id)
+            retry_indices.append((idx, other.id))
+
+    for idx, item_id in retry_indices:
+        try:
+            gui.process_task(idx, advance_progress=False)
+        finally:
+            with gui.cache_lock:
+                gui.ai_retry_inflight.discard(item_id)
+
+
 def _fetch_ai_parse(gui, pure_for_parse):
     """Fetch parse result from the configured AI backend."""
-    if gui.prefer_ollama.get():
-        if gui.ollama_url.get().strip() and gui.ollama_model.get().strip():
-            ai_data, ai_msg = gui._parse_with_ollama(pure_for_parse)
-            if ai_data is None and gui.sf_api_key.get().strip():
-                ai_data, ai_msg = fetch_siliconflow_info(
-                    pure_for_parse,
-                    gui.sf_api_key.get(),
-                    gui.sf_api_url.get(),
-                    gui.sf_model.get(),
-                    gui._get_ai_temperature(),
-                    gui._get_ai_top_p(),
-                )
-            return ai_data, ai_msg
-        if gui.sf_api_key.get().strip():
-            return fetch_siliconflow_info(
-                pure_for_parse,
-                gui.sf_api_key.get(),
-                gui.sf_api_url.get(),
-                gui.sf_model.get(),
-                gui._get_ai_temperature(),
-                gui._get_ai_top_p(),
-            )
-        return None, ""
+    def _remaining_remote_ai_cooldown():
+        until = float(getattr(gui, "remote_ai_cooldown_until", 0.0) or 0.0)
+        return max(0.0, until - time.monotonic())
 
-    if gui.sf_api_key.get().strip():
-        return fetch_siliconflow_info(
+    def _wait_remote_ai_cooldown():
+        while True:
+            remaining = _remaining_remote_ai_cooldown()
+            if remaining <= 0:
+                return
+            time.sleep(min(remaining, 1.0))
+
+    def _set_remote_ai_cooldown():
+        until = time.monotonic() + AI_RATE_LIMIT_COOLDOWN_SECONDS
+        with gui.cache_lock:
+            current = float(getattr(gui, "remote_ai_cooldown_until", 0.0) or 0.0)
+            gui.remote_ai_cooldown_until = max(current, until)
+
+    def _fetch_remote():
+        _wait_remote_ai_cooldown()
+        result = fetch_siliconflow_info(
             pure_for_parse,
             gui.sf_api_key.get(),
             gui.sf_api_url.get(),
@@ -106,6 +153,22 @@ def _fetch_ai_parse(gui, pure_for_parse):
             gui._get_ai_temperature(),
             gui._get_ai_top_p(),
         )
+        if not result[0] and is_ai_rate_limited_error(result[1]):
+            _set_remote_ai_cooldown()
+        return result
+
+    if gui.prefer_ollama.get():
+        if gui.ollama_url.get().strip() and gui.ollama_model.get().strip():
+            ai_data, ai_msg = gui._parse_with_ollama(pure_for_parse)
+            if ai_data is None and gui.sf_api_key.get().strip():
+                ai_data, ai_msg = _fetch_remote()
+            return ai_data, ai_msg
+        if gui.sf_api_key.get().strip():
+            return _fetch_remote()
+        return None, ""
+
+    if gui.sf_api_key.get().strip():
+        return _fetch_remote()
     return None, ""
 
 
@@ -195,7 +258,7 @@ def _build_dir_cache_entry(
             "year": year,
             "season": season,
             "episode": episode,
-            "parse_source": normalize_parse_source(parse_source),
+            "parse_source": parse_source,
             "title_aliases": _collect_cache_title_aliases(title, aliases),
         }
     )
@@ -264,8 +327,9 @@ def _merge_assist_parse(
             episode = ai_episode
             used_fields.add("episode")
 
+    guessit_reliable = _is_meaningful_title(guess_title) and extracted_ep is not None
     if used_fields:
-        parse_source = "ai"
+        parse_source = "hybrid" if guessit_reliable else "ai"
     else:
         parse_source = "guessit"
 
@@ -547,6 +611,10 @@ def process_task(gui, i):
         _ai_mode_obj = getattr(gui, "ai_mode", None)
         ai_mode_val = _ai_mode_obj.get() if _ai_mode_obj else "assist"
 
+        # Check for folder ID early to skip AI recognition if folder ID exists
+        mode = gui.source_var.get() if hasattr(gui, 'source_var') else "siliconflow_tmdb"
+        has_folder_id = bool(extract_db_id_from_path(item.path, mode))
+
         with gui.cache_lock:
             cached_ai = gui.dir_cache.get(dir_p)
 
@@ -559,9 +627,7 @@ def process_task(gui, i):
             e = extracted_ep or cached_ai.get("episode") or 1
             ai_msg = "复用"
             ai_data = cached_ai
-            parse_source = normalize_parse_source(
-                cached_ai.get("parse_source", "guessit")
-            )
+            parse_source = cached_ai.get("parse_source", "guessit")
         else:
             ai_data = None
             t = guess_title
@@ -599,7 +665,8 @@ def process_task(gui, i):
                         item.new_name_only = ""
                     return
             else:
-                if ai_mode_val == "assist" and guessit_needs_assist:
+                # Skip AI recognition if folder has TMDB/BGM ID
+                if ai_mode_val == "assist" and guessit_needs_assist and not has_folder_id:
                     ai_data, ai_msg = _fetch_ai_parse(gui, pure_for_parse)
                     if not ai_data and is_ai_rate_limited_error(ai_msg):
                         _mark_ai_rate_limited(item)
@@ -832,8 +899,6 @@ def process_task(gui, i):
                 tid, is_tv=is_tv, api_key=gui.tmdb_api_key.get()
             )
 
-        parse_source = normalize_parse_source(parse_source)
-
         item.metadata = {
             "id": tid,
             "provider": "tmdb" if _eff_tmdb else "bgm",
@@ -900,6 +965,8 @@ def process_task(gui, i):
                 ),
             ),
         )
+        if str(item.metadata.get("id") or "None") != "None":
+            _retry_rate_limited_siblings(gui, i, dir_p)
     except Exception as ex:
         logging.error(f"处理文件 {item.old_name} 时出错: {ex}")
         err_msg = format_error_message(ERROR_CODE_UNKNOWN, f"异常: {str(ex)[:50]}")

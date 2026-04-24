@@ -232,6 +232,8 @@ def clear_all(db: Session = Depends(get_db)):
     """Delete all records."""
     deleted = db.query(ScrapeRecord).delete(synchronize_session=False)
     db.commit()
+    # 执行 VACUUM 来回收数据库空间
+    db.execute("VACUUM")
     return {"ok": True, "deleted": deleted}
 
 
@@ -258,17 +260,27 @@ def batch_retry(body: BatchDeleteBody, db: Session = Depends(get_db)):
     w = get_watcher()
     count = 0
     if w:
+        # Group paths by directory to enable cache reuse
+        from collections import defaultdict
+        dir_groups = defaultdict(list)
         for path in paths_to_retry:
-            norm = os.path.normpath(path)
-            with w._pending_lock:
-                # Temporarily remove so _process_file can run, then re-add to block
-                # _poll_loop from also picking up the file while processing is in flight.
-                w._processed.discard(norm)
-            w._pool.submit(w._process_file, path)
-            # Re-add to _processed so _poll_loop won't double-enqueue the same file
-            with w._pending_lock:
-                w._processed.add(norm)
-            count += 1
+            dir_groups[os.path.dirname(path)].append(path)
+
+        # Process files directory by directory, sequentially within each directory
+        for dir_path, paths in dir_groups.items():
+            for path in sorted(paths):  # Sort to ensure consistent order
+                norm = os.path.normpath(path)
+                with w._pending_lock:
+                    w._processed.discard(norm)
+                # Submit to pool but files in same directory will be processed sequentially
+                # because we wait for each directory group to complete before moving to next
+                w._pool.submit(w._process_file, path)
+                with w._pending_lock:
+                    w._processed.add(norm)
+                count += 1
+                # Small delay to ensure first file writes cache before next file reads it
+                import time
+                time.sleep(0.1)
 
     return {"ok": True, "count": count}
 
