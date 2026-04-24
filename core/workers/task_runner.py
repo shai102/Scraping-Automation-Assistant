@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from guessit import guessit
 
-from ai.ollama_ai import fetch_siliconflow_info
+from ai.ollama_ai import fetch_siliconflow_info, is_ai_rate_limited_error
 from db.tmdb_api import (
     fetch_bgm_by_id,
     fetch_hybrid_episode_meta,
@@ -27,6 +27,7 @@ from utils.helpers import (
     extract_db_id_from_path,
     extract_episode_number,
     format_error_message,
+    normalize_parse_source,
     normalize_compare_text,
     safe_filename,
     safe_int,
@@ -194,11 +195,23 @@ def _build_dir_cache_entry(
             "year": year,
             "season": season,
             "episode": episode,
-            "parse_source": parse_source,
+            "parse_source": normalize_parse_source(parse_source),
             "title_aliases": _collect_cache_title_aliases(title, aliases),
         }
     )
     return cache_data
+
+
+def _mark_ai_rate_limited(item):
+    item.metadata = {
+        "id": "None",
+        "parse_source": "ai",
+        "error_code": "rate_limited",
+        "error_msg": "AI接口限流，请稍后重试",
+    }
+    item.parse_source = "ai"
+    item.new_name_only = ""
+    item.full_target = ""
 
 
 def _merge_assist_parse(
@@ -251,9 +264,8 @@ def _merge_assist_parse(
             episode = ai_episode
             used_fields.add("episode")
 
-    guessit_reliable = _is_meaningful_title(guess_title) and extracted_ep is not None
     if used_fields:
-        parse_source = "hybrid" if guessit_reliable else "ai"
+        parse_source = "ai"
     else:
         parse_source = "guessit"
 
@@ -547,7 +559,9 @@ def process_task(gui, i):
             e = extracted_ep or cached_ai.get("episode") or 1
             ai_msg = "复用"
             ai_data = cached_ai
-            parse_source = cached_ai.get("parse_source", "guessit")
+            parse_source = normalize_parse_source(
+                cached_ai.get("parse_source", "guessit")
+            )
         else:
             ai_data = None
             t = guess_title
@@ -577,13 +591,19 @@ def process_task(gui, i):
                             ai_data, t, y, s, e, "ai", cache_title_aliases
                         )
                 else:
-                    # AI 失败 → 直接待手动，不猜测
-                    item.metadata = {"id": "None"}
-                    item.new_name_only = ""
+                    if is_ai_rate_limited_error(ai_msg):
+                        _mark_ai_rate_limited(item)
+                    else:
+                        # AI 失败 → 直接待手动，不猜测
+                        item.metadata = {"id": "None", "parse_source": "ai"}
+                        item.new_name_only = ""
                     return
             else:
                 if ai_mode_val == "assist" and guessit_needs_assist:
                     ai_data, ai_msg = _fetch_ai_parse(gui, pure_for_parse)
+                    if not ai_data and is_ai_rate_limited_error(ai_msg):
+                        _mark_ai_rate_limited(item)
+                        return
                     if ai_data:
                         t, y, s, e, parse_source = _merge_assist_parse(
                             gui,
@@ -597,9 +617,7 @@ def process_task(gui, i):
                             extracted_ep,
                             ai_data,
                         )
-                        if parse_source == "hybrid":
-                            ai_msg = "AI辅助"
-                        elif parse_source == "ai":
+                        if parse_source == "ai":
                             ai_msg = "AI识别"
                 if parse_source == "guessit" and guessit_confident:
                     with gui.cache_lock:
@@ -682,7 +700,10 @@ def process_task(gui, i):
                     if (ai_mode_val == "assist"
                             and (not db_c or (len(db_c) >= 2 and db_c[1] == "None"))):
                         if not ai_data:
-                            ai_data, _ = _fetch_ai_parse(gui, pure_for_parse)
+                            ai_data, retry_ai_msg = _fetch_ai_parse(gui, pure_for_parse)
+                            if not ai_data and is_ai_rate_limited_error(retry_ai_msg):
+                                _mark_ai_rate_limited(item)
+                                return
                             if ai_data:
                                 t, y, s, e, parse_source = _merge_assist_parse(
                                     gui,
@@ -696,9 +717,7 @@ def process_task(gui, i):
                                     extracted_ep,
                                     ai_data,
                                 )
-                                if parse_source == "hybrid":
-                                    ai_msg = "AI辅助"
-                                elif parse_source == "ai":
+                                if parse_source == "ai":
                                     ai_msg = "AI识别"
                                 with gui.cache_lock:
                                     gui.dir_cache[dir_p] = _build_dir_cache_entry(
@@ -812,6 +831,8 @@ def process_task(gui, i):
             actors, directors = fetch_tmdb_credits(
                 tid, is_tv=is_tv, api_key=gui.tmdb_api_key.get()
             )
+
+        parse_source = normalize_parse_source(parse_source)
 
         item.metadata = {
             "id": tid,

@@ -97,7 +97,7 @@ def update_settings(body: SettingsModel):
     from server import get_watcher
     w = get_watcher()
     if w and w._worker_ctx:
-        w._worker_ctx.reload_config()
+        w.reload_runtime_config()
         # 清空目录缓存，确保新配置（AI key/模型等）立即生效
         w._worker_ctx.dir_cache.clear()
 

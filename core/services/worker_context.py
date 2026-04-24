@@ -14,7 +14,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from ai.ollama_ai import fetch_siliconflow_info
+from ai.ollama_ai import fetch_siliconflow_info, is_ai_rate_limited_error
 from core.services.matcher_service import (
     get_embedding,
     parse_with_ollama,
@@ -47,9 +47,11 @@ from utils.helpers import (
     DEFAULT_SUB_AUDIO_EXTS,
     DEFAULT_TV_FORMAT,
     DEFAULT_VIDEO_EXTS,
+    build_db_query_plan,
     build_query_titles,
     candidate_to_result,
     extract_year_from_release,
+    normalize_parse_source,
     normalize_compare_text,
     safe_filename,
     safe_int,
@@ -311,34 +313,15 @@ class WorkerContext:
 
     def _resolve_db_match(self, item, query_title, year, is_tv, mode, ai_data, g):
         source_name = "TMDb" if mode == "siliconflow_tmdb" else "BGM"
-        query_titles = build_query_titles(item, query_title, ai_data, g)
+        query_groups = build_db_query_plan(item, query_title, ai_data, g)
         merged, seen_ids = [], set()
         used_query, _first_hit = query_title, False
 
-        for q in query_titles:
-            if mode == "siliconflow_tmdb":
-                cur = fetch_tmdb_candidates(q, year, is_tv, self.tmdb_api_key.get())
-            else:
-                cur = fetch_bgm_candidates(q, year, self.bgm_api_key.get())
-            if not cur:
-                continue
-            if not _first_hit:
-                used_query = q
-                _first_hit = True
-            for cand in cur:
-                cid = str(cand.get("id") or "")
-                if not cid or cid in seen_ids:
-                    continue
-                seen_ids.add(cid)
-                merged.append(cand)
-            if len(merged) >= 10:
-                break
-
-        # TMDb 无结果时，以 BGM 作为回退数据源
-        bgm_fallback = False
-        if not merged and mode == "siliconflow_tmdb":
+        def _search_queries(query_titles, fetch_func, limit=10):
+            nonlocal used_query, _first_hit
+            found = []
             for q in query_titles:
-                cur = fetch_bgm_candidates(q, year, self.bgm_api_key.get())
+                cur = fetch_func(q)
                 if not cur:
                     continue
                 if not _first_hit:
@@ -349,8 +332,38 @@ class WorkerContext:
                     if not cid or cid in seen_ids:
                         continue
                     seen_ids.add(cid)
-                    merged.append(cand)
-                if len(merged) >= 10:
+                    found.append(cand)
+                if len(found) >= limit:
+                    break
+            return found
+
+        for query_titles in query_groups:
+            if mode == "siliconflow_tmdb":
+                current = _search_queries(
+                    query_titles,
+                    lambda q: fetch_tmdb_candidates(
+                        q, year, is_tv, self.tmdb_api_key.get()
+                    ),
+                )
+            else:
+                current = _search_queries(
+                    query_titles,
+                    lambda q: fetch_bgm_candidates(q, year, self.bgm_api_key.get()),
+                )
+            if current:
+                merged.extend(current)
+                break
+
+        # TMDb 无结果时，以 BGM 作为回退数据源
+        bgm_fallback = False
+        if not merged and mode == "siliconflow_tmdb":
+            for query_titles in query_groups:
+                current = _search_queries(
+                    query_titles,
+                    lambda q: fetch_bgm_candidates(q, year, self.bgm_api_key.get()),
+                )
+                if current:
+                    merged.extend(current)
                     break
             if merged:
                 bgm_fallback = True

@@ -73,7 +73,7 @@ def _build_tray_icon():
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("退出", on_quit),
     )
-    return pystray.Icon("刮削助手", img, "刮削助手 v2.0", menu)
+    return pystray.Icon("刮削助手", img, "刮削助手 v2.1", menu)
 
 
 def _run_server():
@@ -89,7 +89,7 @@ def main():
     _fix_frozen_stdio()   # must be first, before any uvicorn import
     _setup_logging()
 
-    print(f"\n  刮削助手 v2.0")
+    print(f"\n  刮削助手 v2.1")
     print(f"  Web 管理界面: http://127.0.0.1:{PORT}\n")
 
     # Start uvicorn in a daemon thread so the main thread is free for the tray

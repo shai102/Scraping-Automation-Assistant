@@ -23,10 +23,30 @@ from db.tmdb_api import (
     fetch_tmdb_by_id,
     fetch_bgm_by_id,
 )
-from utils.helpers import candidate_to_result, invalidate_cache_prefix, DEFAULT_VIDEO_EXTS, DEFAULT_SUB_AUDIO_EXTS
+from utils.helpers import (
+    candidate_to_result,
+    invalidate_cache_prefix,
+    DEFAULT_VIDEO_EXTS,
+    DEFAULT_SUB_AUDIO_EXTS,
+    normalize_parse_source,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/records", tags=["records"])
+
+
+def _apply_parse_source_filter(q, parse_source: Optional[str]):
+    if not parse_source:
+        return q
+    parse_source = str(parse_source).strip().lower()
+    patterns = ("ai", "hybrid") if parse_source == "ai" else (parse_source,)
+    from sqlalchemy import or_
+
+    clauses = []
+    for value in patterns:
+        clauses.append(ScrapeRecord.metadata_json.like(f'%\"parse_source\": \"{value}\"%'))
+        clauses.append(ScrapeRecord.metadata_json.like(f'%\"parse_source\":\"{value}\"%'))
+    return q.filter(or_(*clauses))
 
 
 class RecordOut(BaseModel):
@@ -71,7 +91,7 @@ def _row_to_out(r: ScrapeRecord) -> RecordOut:
         try:
             _meta = json.loads(r.metadata_json)
             _media_type = _meta.get("type")  # "episode" or "movie"
-            _parse_source = _meta.get("parse_source")  # "guessit" or "ai"
+            _parse_source = normalize_parse_source(_meta.get("parse_source"))
         except Exception:
             pass
     return RecordOut(
@@ -111,12 +131,7 @@ def list_records(
     if media_type:
         q = q.join(MonitorFolder, ScrapeRecord.folder_id == MonitorFolder.id, isouter=True)
         q = q.filter(MonitorFolder.media_type == media_type)
-    if parse_source:
-        parse_source = str(parse_source).strip().lower()
-        q = q.filter(
-            ScrapeRecord.metadata_json.like(f'%\"parse_source\": \"{parse_source}\"%')
-            | ScrapeRecord.metadata_json.like(f'%\"parse_source\":\"{parse_source}\"%')
-        )
+    q = _apply_parse_source_filter(q, parse_source)
     if dir:
         # Filter records whose original_path is directly inside the given directory
         norm_dir = os.path.normpath(dir)
@@ -152,12 +167,7 @@ def list_records_grouped(
     if media_type:
         q = q.join(MonitorFolder, ScrapeRecord.folder_id == MonitorFolder.id, isouter=True)
         q = q.filter(MonitorFolder.media_type == media_type)
-    if parse_source:
-        parse_source = str(parse_source).strip().lower()
-        q = q.filter(
-            ScrapeRecord.metadata_json.like(f'%\"parse_source\": \"{parse_source}\"%')
-            | ScrapeRecord.metadata_json.like(f'%\"parse_source\":\"{parse_source}\"%')
-        )
+    q = _apply_parse_source_filter(q, parse_source)
     rows = q.order_by(ScrapeRecord.id.desc()).all()
 
     groups: dict = {}

@@ -1,6 +1,9 @@
+import threading
+import time
 import unittest
 
-from ai.ollama_ai import _extract_siliconflow_content
+from ai.ollama_ai import _extract_siliconflow_content, is_ai_rate_limited_error
+from monitor.watcher import FolderWatcher
 from core.services.matcher_service import extract_ollama_model_names
 from core.services.naming_service import (
     can_reuse_dir_ai,
@@ -13,8 +16,10 @@ from core.workers.task_runner import (
     _is_meaningful_title,
 )
 from utils.helpers import (
+    build_db_query_plan,
     build_query_titles,
     format_error_message,
+    normalize_parse_source,
     parse_error_message,
     safe_filename,
 )
@@ -43,6 +48,39 @@ class SmokeTests(unittest.TestCase):
     def test_extract_siliconflow_content_rejects_invalid_shape(self):
         with self.assertRaises(ValueError):
             _extract_siliconflow_content({"choices": []})
+
+    def test_extract_siliconflow_content_accepts_content_parts(self):
+        payload = {
+            "choices": [
+                {
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": '{"title":"Frieren","episode":1}'}
+                        ]
+                    }
+                }
+            ]
+        }
+        self.assertEqual(
+            _extract_siliconflow_content(payload),
+            '{"title":"Frieren","episode":1}',
+        )
+
+    def test_extract_siliconflow_content_falls_back_to_reasoning(self):
+        payload = {
+            "choices": [
+                {
+                    "message": {
+                        "content": [],
+                        "reasoning": '{"title":"Frieren","episode":1}',
+                    }
+                }
+            ]
+        }
+        self.assertEqual(
+            _extract_siliconflow_content(payload),
+            '{"title":"Frieren","episode":1}',
+        )
 
     def test_extract_ollama_model_names_success(self):
         payload = {
@@ -87,6 +125,18 @@ class SmokeTests(unittest.TestCase):
         g = {"title": "Extracurricular"}
         titles = build_query_titles(item, "Extracurricular", None, g)
         self.assertIn("Extracurricular", titles)
+
+    def test_build_db_query_plan_prefers_ai_only_when_guessit_title_missing(self):
+        item = {
+            "old_name": "[Lilith-Raws][Sousou no Frieren] - 01 [Baha][WEB-DL][1080p][AVC AAC][CHT].mkv",
+            "dir": r"Y:\test\AI_Assist_01_Sousou_no_Frieren",
+        }
+        ai_data = {"title": "Sousou no Frieren"}
+        g = {"title": "Baha"}
+        self.assertEqual(
+            build_db_query_plan(item, "Baha", ai_data, g),
+            [["Sousou no Frieren"]],
+        )
 
     def test_extract_explicit_season_from_sxxeyy(self):
         name = "Extracurricular.S01E01.2020.NF.WEB-DL.1080p.HEVC.strm"
@@ -137,6 +187,15 @@ class SmokeTests(unittest.TestCase):
         self.assertFalse(_is_meaningful_title("Season 1"))
         self.assertTrue(_is_meaningful_title("Violet Evergarden"))
 
+    def test_is_ai_rate_limited_error_detects_429(self):
+        self.assertTrue(is_ai_rate_limited_error("429 Too Many Requests"))
+        self.assertTrue(is_ai_rate_limited_error("temporarily rate-limited upstream"))
+        self.assertFalse(is_ai_rate_limited_error("network timeout"))
+
+    def test_normalize_parse_source_maps_hybrid_to_ai(self):
+        self.assertEqual(normalize_parse_source("hybrid"), "ai")
+        self.assertEqual(normalize_parse_source("guessit"), "guessit")
+
 
     def test_guessit_assist_skips_clean_standard_name_in_localized_season_dir(self):
         g = {
@@ -169,6 +228,25 @@ class SmokeTests(unittest.TestCase):
                 guess_data,
             )
         )
+
+    def test_folder_watcher_serializes_same_directory(self):
+        watcher = FolderWatcher()
+        first = watcher._acquire_dir_slot(r"Y:\test\show\S01E01.mkv")
+        acquired_second = threading.Event()
+        second_holder = {}
+
+        def worker():
+            second_holder["slot"] = watcher._acquire_dir_slot(r"Y:\test\show\S01E02.mkv")
+            acquired_second.set()
+
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        time.sleep(0.2)
+        self.assertFalse(acquired_second.is_set())
+        watcher._release_dir_slot(first)
+        t.join(timeout=2)
+        self.assertTrue(acquired_second.is_set())
+        watcher._release_dir_slot(second_holder["slot"])
 
 
 if __name__ == "__main__":

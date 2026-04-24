@@ -411,6 +411,40 @@ def build_query_titles(item, query_title, ai_data, g):
     return [c for c in ordered if is_meaningful_query_title(c)]
 
 
+def build_db_query_plan(item, query_title, ai_data, g):
+    """Build staged DB query titles for headless matching.
+
+    When guessit failed to produce a meaningful title but AI did, search the
+    database with the AI title alone to avoid noisy filename tokens polluting
+    TMDb/BGM candidates.
+    """
+    query_titles = build_query_titles(item, query_title, ai_data, g)
+    if not query_titles:
+        return []
+
+    ai_title = clean_search_title(
+        (ai_data or {}).get("title") if isinstance(ai_data, dict) else ""
+    )
+    guess_title = clean_search_title((g.get("title") if g else None) or "")
+
+    if ai_title and (
+        not is_meaningful_query_title(guess_title)
+        or normalize_compare_text(guess_title) != normalize_compare_text(ai_title)
+    ):
+        return [[ai_title]]
+
+    return [query_titles]
+
+
+def normalize_parse_source(parse_source):
+    raw = str(parse_source or "").strip().lower()
+    if raw == "guessit":
+        return "guessit"
+    if raw in {"ai", "hybrid"}:
+        return "ai"
+    return raw
+
+
 def safe_str(val):
     if val is None:
         return ""

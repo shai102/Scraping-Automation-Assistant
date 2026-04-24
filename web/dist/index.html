@@ -41,7 +41,7 @@
       </li>
     </ul>
     <div class="sidebar-footer">
-      <span class="version">v2.0</span>
+      <span class="version">v2.1</span>
     </div>
   </nav>
 
@@ -243,7 +243,6 @@
           <option value="">识别来源</option>
           <option value="guessit">guessit</option>
           <option value="ai">AI</option>
-          <option value="hybrid">混合</option>
         </select>
         <button class="btn btn-primary btn-sm" @click="recordPage=1;groupedView?loadGroupedRecords():loadRecords()">筛选</button>
         <button class="btn btn-sm" @click="resetRecordFilter">重置</button>
@@ -277,7 +276,6 @@
               <span v-else-if="r.error_msg" style="color:#999;font-size:12px">{{r.error_msg}}</span>
               <span v-else style="color:#999">-</span>
               <span v-if="r.parse_source==='ai'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#e8f4fd;color:#1a73e8;border:1px solid #90cdf4">AI</span>
-              <span v-else-if="r.parse_source==='hybrid'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#fff7ed;color:#c2410c;border:1px solid #fdba74">混合</span>
               <span v-else-if="r.parse_source==='guessit'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#f0fdf4;color:#16a34a;border:1px solid #86efac">guessit</span>
             </td>
             <td class="cell-path">
@@ -367,7 +365,6 @@
                   <template v-if="r.matched_title">{{r.matched_title}}<span v-if="r.matched_id" style="color:#999;margin-left:4px;font-size:11px">({{r.matched_id}})</span></template>
                   <span v-else style="color:#999">-</span>
                   <span v-if="r.parse_source==='ai'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#e8f4fd;color:#1a73e8;border:1px solid #90cdf4">AI</span>
-                  <span v-else-if="r.parse_source==='hybrid'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#fff7ed;color:#c2410c;border:1px solid #fdba74">混合</span>
                   <span v-else-if="r.parse_source==='guessit'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#f0fdf4;color:#16a34a;border:1px solid #86efac">guessit</span>
                 </td>
                 <td style="white-space:nowrap;font-size:12px;color:#999">{{formatTime(r.updated_at || r.created_at)}}</td>
@@ -544,9 +541,9 @@
             <button :class="['btn', (!cfg.ai_mode||cfg.ai_mode==='assist')?'btn-primary':'']" style="border-radius:0;min-width:80px" @click="cfg.ai_mode='assist'">辅助识别</button>
             <button :class="['btn', cfg.ai_mode==='force'?'btn-primary':'']" style="border-radius:0 6px 6px 0;min-width:80px" @click="cfg.ai_mode='force'">强制使用</button>
           </div>
-          <small style="color:#888;display:block;margin-top:6px" v-if="cfg.ai_mode==='disabled'">禁用：只使用 guessit 解析文件名 → TMDB 搜索，不调用任何 AI 接口。</small>
-          <small style="color:#888;display:block;margin-top:6px" v-else-if="!cfg.ai_mode||cfg.ai_mode==='assist'">辅助识别：先用 guessit 解析文件名搜索 TMDB，若无结果再调用 AI 重新提取标题后重搜。</small>
-          <small style="color:#888;display:block;margin-top:6px" v-else>强制使用：只使用 AI 识别，AI 失败则进入「待手动」，必须配置自己的 API Key。</small>
+          <small style="color:#888;display:block;margin-top:6px" v-if="cfg.ai_mode==='disabled'">禁用：只使用 guessit 解析文件名并搜索资料库，不调用 AI。</small>
+          <small style="color:#888;display:block;margin-top:6px" v-else-if="!cfg.ai_mode||cfg.ai_mode==='assist'">辅助识别：标准命名优先走 guessit；遇到标题不可靠、番组命名或季集不清晰时自动调用 AI。记录来源只显示 guessit 或 AI，不显示混合。</small>
+          <small style="color:#888;display:block;margin-top:6px" v-else>强制使用：始终由 AI 解析标题与季集；AI 失败时会直接记为失败或待处理。</small>
         </div>
         <div class="form-group">
           <label><input type="checkbox" v-model="cfg.prefer_ollama"> 优先使用本地 Ollama</label>

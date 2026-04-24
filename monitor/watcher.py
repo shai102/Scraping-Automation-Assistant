@@ -23,6 +23,7 @@ from core.services.worker_context import WorkerContext
 from core.workers.task_runner import process_task as _process_task
 from db.database import SessionLocal
 from db.scrape_models import MonitorFolder, ScrapeRecord, SymlinkRecord
+from utils.helpers import normalize_parse_source
 from utils.telegram_notify import NotificationBatcher
 
 logger = logging.getLogger(__name__)
@@ -264,7 +265,9 @@ class FolderWatcher:
         self._pending: Dict[str, float] = {}  # path -> last event time
         self._pending_lock = threading.Lock()
         self._processed: Set[str] = set()
-        self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="scrape")
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="scrape")
+        self._dir_gate = threading.Condition()
+        self._active_dirs: Set[str] = set()
         self._running = False
         self._worker_ctx: Optional[WorkerContext] = None
         self._debounce_thread: Optional[threading.Thread] = None
@@ -283,6 +286,7 @@ class FolderWatcher:
             return
         self._running = True
         self._worker_ctx = WorkerContext()
+        self._refresh_pool_workers()
         self._observer = Observer()
         self._observer.daemon = True
         self._observer.start()
@@ -303,6 +307,41 @@ class FolderWatcher:
         self._watches.clear()
         self._pool.shutdown(wait=False)
         logger.info("FolderWatcher stopped")
+
+    def _desired_pool_workers(self) -> int:
+        if self._worker_ctx:
+            return self._worker_ctx._get_preview_workers()
+        return 1
+
+    def _refresh_pool_workers(self):
+        desired = self._desired_pool_workers()
+        current = getattr(self._pool, "_max_workers", None)
+        if current == desired:
+            return
+        old_pool = self._pool
+        self._pool = ThreadPoolExecutor(max_workers=desired, thread_name_prefix="scrape")
+        try:
+            old_pool.shutdown(wait=False)
+        except Exception:
+            pass
+
+    def reload_runtime_config(self):
+        if self._worker_ctx:
+            self._worker_ctx.reload_config()
+            self._refresh_pool_workers()
+
+    def _acquire_dir_slot(self, path: str) -> str:
+        dir_key = os.path.normcase(os.path.normpath(os.path.dirname(path) or path))
+        with self._dir_gate:
+            while dir_key in self._active_dirs:
+                self._dir_gate.wait(timeout=0.5)
+            self._active_dirs.add(dir_key)
+        return dir_key
+
+    def _release_dir_slot(self, dir_key: str):
+        with self._dir_gate:
+            self._active_dirs.discard(dir_key)
+            self._dir_gate.notify_all()
 
     def _sync_watches(self):
         """Synchronize watchdog watches with the database."""
@@ -790,6 +829,7 @@ class FolderWatcher:
         if not os.path.isfile(path):
             return
 
+        dir_slot = self._acquire_dir_slot(path)
         db = SessionLocal()
         try:
             # Check for duplicate
@@ -997,11 +1037,16 @@ class FolderWatcher:
             # Check recognition result
             tid = (item.metadata or {}).get("id", "None")
             if tid == "None" or not item.new_name_only:
-                record.status = "pending_manual"
-                record.matched_title = (item.metadata or {}).get("title")
-                record.matched_provider = (item.metadata or {}).get("provider")
-                record.metadata_json = json.dumps(item.metadata or {}, ensure_ascii=False)
-                record.error_msg = "无法自动识别"
+                meta = item.metadata or {}
+                record.matched_title = meta.get("title")
+                record.matched_provider = meta.get("provider")
+                record.metadata_json = json.dumps(meta, ensure_ascii=False)
+                if meta.get("error_code") == "rate_limited":
+                    record.status = "failed"
+                    record.error_msg = meta.get("error_msg") or "AI接口限流，请稍后重试"
+                else:
+                    record.status = "pending_manual"
+                    record.error_msg = "无法自动识别"
                 db.commit()
                 self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
                 return
@@ -1077,6 +1122,7 @@ class FolderWatcher:
             logger.error(f"Unexpected error processing {path}: {e}")
         finally:
             db.close()
+            self._release_dir_slot(dir_slot)
 
 
 def _delete_per_file_sidecars(file_path: str):
@@ -1134,7 +1180,9 @@ def _record_to_dict(record: ScrapeRecord) -> dict:
     if record.metadata_json:
         try:
             import json as _json
-            _parse_source = _json.loads(record.metadata_json).get("parse_source")
+            _parse_source = normalize_parse_source(
+                _json.loads(record.metadata_json).get("parse_source")
+            )
         except Exception:
             pass
     return {
