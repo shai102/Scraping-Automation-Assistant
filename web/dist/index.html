@@ -41,7 +41,7 @@
       </li>
     </ul>
     <div class="sidebar-footer">
-      <span class="version">v2.3</span>
+      <span class="version">v2.4</span>
     </div>
   </nav>
 
@@ -569,6 +569,13 @@
             </div>
           </div>
           <div class="form-group">
+            <label>Embedding 来源</label>
+            <select v-model="cfg.embedding_source">
+              <option value="local">本地 Ollama / LM Studio</option>
+              <option value="online">在线 OpenAI 兼容</option>
+            </select>
+          </div>
+          <div class="form-group" v-if="!cfg.embedding_source || cfg.embedding_source==='local'">
             <label>Embedding 模型</label>
             <select v-model="cfg.embedding_model">
               <option value="">请选择 Embedding 模型</option>
@@ -596,6 +603,11 @@
           <div class="form-group">
             <label>模型名称</label>
             <input v-model="cfg.sf_model">
+          </div>
+          <div class="form-group" v-if="cfg.embedding_source==='online'">
+            <label>在线 Embedding 模型</label>
+            <input v-model="cfg.online_embedding_model" placeholder="例如 BAAI/bge-m3 或 openai/text-embedding-3-small">
+            <small style="color:#888;display:block;margin-top:6px">复用本区域的 API URL 和 API Key，通过 /embeddings 接口进行候选重排。</small>
           </div>
         </fieldset>
         <div class="form-row">

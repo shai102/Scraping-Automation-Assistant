@@ -682,7 +682,11 @@ const app = Vue.createApp({
 
     // --- Settings ---
     async loadSettings() {
-      try { this.cfg = await this.api('GET', '/api/settings/raw'); } catch (ex) {}
+      try {
+        this.cfg = await this.api('GET', '/api/settings/raw');
+        if (!this.cfg.embedding_source) this.cfg.embedding_source = 'local';
+        if (this.cfg.online_embedding_model === undefined) this.cfg.online_embedding_model = '';
+      } catch (ex) {}
     },
     async saveSettings() {
       this.testResult = null;

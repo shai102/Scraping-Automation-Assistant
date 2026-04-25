@@ -31,6 +31,8 @@ class SettingsModel(BaseModel):
     ollama_url: Optional[str] = None
     ollama_model: Optional[str] = None
     embedding_model: Optional[str] = None
+    embedding_source: Optional[str] = None  # local / online
+    online_embedding_model: Optional[str] = None
     prefer_ollama: Optional[bool] = None
     use_embedding_rank: Optional[bool] = None
     ai_mode: Optional[str] = None  # disabled / assist / force

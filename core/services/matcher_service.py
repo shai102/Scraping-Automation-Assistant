@@ -286,6 +286,54 @@ def get_embedding(base_url, embedding_model, text, cache, cache_lock, preferred_
     return None, preferred_endpoint
 
 
+def get_online_embedding(api_url, api_key, embedding_model, text, cache, cache_lock):
+    """Get embeddings from an OpenAI-compatible /embeddings endpoint."""
+    clean_text = str(text or "").strip()
+    model = str(embedding_model or "").strip()
+    normalized = str(api_url or "").strip().rstrip("/")
+    key = str(api_key or "").strip()
+    if not normalized or not key or not model or not clean_text:
+        return None
+
+    endpoint = normalized if normalized.endswith("/embeddings") else normalized + "/embeddings"
+    cache_key = f"online::{endpoint}::{model}::{clean_text}"
+    with cache_lock:
+        cached = cache.get(cache_key)
+    if cached:
+        return cached
+
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "input": clean_text,
+        "encoding_format": "float",
+    }
+
+    try:
+        response = requests.post(endpoint, headers=headers, json=payload, timeout=TIMEOUT_OLLAMA_EMBED)
+        response.raise_for_status()
+        data = response.json()
+        rows = data.get("data")
+        if not isinstance(rows, list) or not rows:
+            logging.error("在线 Embedding 返回格式无效: 缺少 data")
+            return None
+        emb = rows[0].get("embedding") if isinstance(rows[0], dict) else None
+        if isinstance(emb, list) and emb:
+            with cache_lock:
+                cache[cache_key] = emb
+            return emb
+        logging.error("在线 Embedding 返回格式无效: 缺少 embedding")
+        return None
+    except requests.exceptions.Timeout:
+        logging.warning("在线 Embedding 请求超时")
+    except Exception as err:
+        logging.error(f"在线 Embedding 请求失败: {err}")
+    return None
+
+
 def rerank_candidates_with_embedding(item, query_title, year, is_tv, source_name, candidates, get_embedding_func):
     if not candidates:
         return candidates, None, ""
@@ -327,6 +375,81 @@ def rerank_candidates_with_embedding(item, query_title, year, is_tv, source_name
     return ranked, None, rank_msg
 
 
+def _build_candidate_pick_prompt(item, query_title, year, is_tv, source_name, candidates):
+    prompt_lines = []
+    for idx, candidate in enumerate(candidates, 1):
+        prompt_lines.append(
+            f"{idx}. 标题={candidate.get('title', '')}; 原名={candidate.get('alt_title', '')}; 年份={extract_year_from_release(candidate.get('release')) or '-'}; ID={candidate.get('id')}; 评分={candidate.get('rating', 0)}"
+        )
+
+    clean_name = os.path.splitext(_extract_item_old_name(item))[0]
+    return f"""你是媒体数据库匹配助手。请根据文件名、解析出的标题和年份，从候选中选出最可能匹配的一项。
+如果无法确定，必须返回 pick 为 0。只允许输出 JSON，不要输出额外说明。
+JSON 格式: {{"pick": 0或候选序号, "reason": "简短原因"}}
+文件名: {clean_name}
+解析标题: {query_title}
+年份: {safe_str(year)}
+类型: {"剧集" if is_tv else "电影"}
+来源: {source_name}
+候选列表:
+{chr(10).join(prompt_lines)}"""
+
+
+def _extract_openai_message_content(payload):
+    choices = payload.get("choices") if isinstance(payload, dict) else None
+    if not isinstance(choices, list) or not choices:
+        return ""
+    message = choices[0].get("message") if isinstance(choices[0], dict) else None
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content", "")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "\n".join(parts).strip()
+    return ""
+
+
+def _pick_candidate_from_content(content, candidates, source_label):
+    content = re.sub(r"^```(?:json)?\s*|\s*```$", "", str(content or "").strip(), flags=re.IGNORECASE)
+    parsed = None
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", content, re.DOTALL)
+        if match:
+            parsed = json.loads(match.group())
+        elif re.fullmatch(r"\d+", content):
+            parsed = {"pick": int(content), "reason": "纯数字返回"}
+
+    if not isinstance(parsed, dict):
+        return None, f"{source_label}返回格式无效"
+
+    pick = parsed.get("pick", parsed.get("index", parsed.get("candidate")))
+    picked_id = parsed.get("id")
+    reason = parsed.get("reason", "")
+
+    if isinstance(pick, str) and pick.strip().isdigit():
+        pick = int(pick.strip())
+
+    if picked_id is not None:
+        picked_id = str(picked_id).strip()
+        for candidate in candidates:
+            if str(candidate.get("id")) == picked_id:
+                return candidate, reason or f"{source_label}按 ID 选中"
+
+    if isinstance(pick, int) and 1 <= pick <= len(candidates):
+        return candidates[pick - 1], reason or f"{source_label}已选择候选"
+
+    return None, reason or f"{source_label}无法确定"
+
+
 def pick_candidate_with_ollama(
     base_url,
     model,
@@ -341,23 +464,7 @@ def pick_candidate_with_ollama(
     if not str(base_url or "").strip() or not str(model or "").strip():
         return None, "未配置本地模型"
 
-    prompt_lines = []
-    for idx, candidate in enumerate(candidates, 1):
-        prompt_lines.append(
-            f"{idx}. 标题={candidate.get('title', '')}; 原名={candidate.get('alt_title', '')}; 年份={extract_year_from_release(candidate.get('release')) or '-'}; ID={candidate.get('id')}; 评分={candidate.get('rating', 0)}"
-        )
-
-    clean_name = os.path.splitext(_extract_item_old_name(item))[0]
-    prompt = f"""你是媒体数据库匹配助手。请根据文件名、解析出的标题和年份，从候选中选出最可能匹配的一项。
-如果无法确定，必须返回 pick 为 0。只允许输出 JSON，不要输出额外说明。
-JSON 格式: {{"pick": 0或候选序号, "reason": "简短原因"}}
-文件名: {clean_name}
-解析标题: {query_title}
-年份: {safe_str(year)}
-类型: {"剧集" if is_tv else "电影"}
-来源: {source_name}
-候选列表:
-{chr(10).join(prompt_lines)}"""
+    prompt = _build_candidate_pick_prompt(item, query_title, year, is_tv, source_name, candidates)
 
     payload = {
         "model": str(model).strip(),
@@ -383,43 +490,60 @@ JSON 格式: {{"pick": 0或候选序号, "reason": "简短原因"}}
         if not content:
             return None, "本地模型返回空内容"
 
-        content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.IGNORECASE).strip()
-
-        parsed = None
-        try:
-            parsed = json.loads(content)
-        except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", content, re.DOTALL)
-            if match:
-                parsed = json.loads(match.group())
-            elif re.fullmatch(r"\d+", content):
-                parsed = {"pick": int(content), "reason": "纯数字返回"}
-
-        if not isinstance(parsed, dict):
-            return None, "本地模型返回格式无效"
-
-        pick = parsed.get("pick", parsed.get("index", parsed.get("candidate")))
-        picked_id = parsed.get("id")
-        reason = parsed.get("reason", "")
-
-        if isinstance(pick, str) and pick.strip().isdigit():
-            pick = int(pick.strip())
-
-        if picked_id is not None:
-            picked_id = str(picked_id).strip()
-            for candidate in candidates:
-                if str(candidate.get("id")) == picked_id:
-                    return candidate, reason or "本地模型按 ID 选中"
-
-        if isinstance(pick, int) and 1 <= pick <= len(candidates):
-            return candidates[pick - 1], reason or "本地模型已选择候选"
-
-        return None, reason or "本地模型无法确定"
+        return _pick_candidate_from_content(content, candidates, "本地模型")
     except requests.exceptions.Timeout:
         return None, "本地模型判定超时"
     except Exception as err:
         logging.error(f"Ollama候选判定失败: {err}")
         return None, f"本地模型判定失败: {err}"
+
+
+def pick_candidate_with_openai_compatible(
+    api_url,
+    api_key,
+    model,
+    item,
+    query_title,
+    year,
+    is_tv,
+    source_name,
+    candidates,
+    temperature=0.2,
+):
+    normalized = str(api_url or "").strip().rstrip("/")
+    key = str(api_key or "").strip()
+    model_name = str(model or "").strip()
+    if not normalized or not key or not model_name:
+        return None, "未配置在线模型"
+
+    endpoint = normalized if normalized.endswith("/chat/completions") else normalized + "/chat/completions"
+    prompt = _build_candidate_pick_prompt(item, query_title, year, is_tv, source_name, candidates)
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": "你只输出 JSON。拿不准时 pick 必须返回 0。"},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": _normalize_temperature(temperature),
+        "max_tokens": 256,
+    }
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(endpoint, headers=headers, json=payload, timeout=TIMEOUT_OLLAMA_CHAT)
+        response.raise_for_status()
+        content = _extract_openai_message_content(response.json())
+        if not content:
+            return None, "在线模型返回空内容"
+        return _pick_candidate_from_content(content, candidates, "在线模型")
+    except requests.exceptions.Timeout:
+        return None, "在线模型判定超时"
+    except Exception as err:
+        logging.error(f"在线模型候选判定失败: {err}")
+        return None, f"在线模型判定失败: {err}"
 
 
 def populate_candidate_listbox(lb, candidates):

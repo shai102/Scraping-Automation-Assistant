@@ -984,8 +984,13 @@ class FolderWatcher:
             if not self._worker_ctx:
                 return
             ctx = WorkerContext(config=dict(self._worker_ctx._cfg))
-            # 共享目录缓存：同目录第二个文件可复用 AI 识别结果，避免重复调用 AI
+            # Share recognition caches across per-file contexts so files in the
+            # same folder can reuse both title parsing and DB candidate picks.
             ctx.dir_cache = self._worker_ctx.dir_cache
+            ctx.db_cache = self._worker_ctx.db_cache
+            ctx.db_resolution_events = self._worker_ctx.db_resolution_events
+            ctx.embedding_cache = self._worker_ctx.embedding_cache
+            ctx.ollama_embed_endpoint = self._worker_ctx.ollama_embed_endpoint
             ctx.cache_lock = self._worker_ctx.cache_lock
 
             # Apply folder-level overrides onto this thread-local ctx

@@ -3,12 +3,18 @@ import sys
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from ai.ollama_ai import _extract_siliconflow_content, is_ai_rate_limited_error
 from api.routes.settings import _extract_local_model_names
+from core.services.worker_context import WorkerContext
 from main import _is_ignorable_connection_reset
 from monitor.watcher import FolderWatcher
-from core.services.matcher_service import extract_ollama_model_names
+from core.services.matcher_service import (
+    extract_ollama_model_names,
+    get_online_embedding,
+    pick_candidate_with_openai_compatible,
+)
 from core.services.naming_service import (
     can_reuse_dir_ai,
     extract_explicit_season,
@@ -126,6 +132,79 @@ class SmokeTests(unittest.TestCase):
             _extract_local_model_names(payload),
             ["qwen3:8b", "nomic-embed-text"],
         )
+
+    def test_get_online_embedding_uses_openai_compatible_endpoint(self):
+        class FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"data": [{"embedding": [0.1, 0.2, 0.3]}]}
+
+        cache = {}
+        lock = threading.Lock()
+        with patch("core.services.matcher_service.requests.post", return_value=FakeResponse()) as post:
+            emb = get_online_embedding(
+                "https://api.example.com/v1",
+                "sk-test",
+                "provider/embed-model",
+                "hello",
+                cache,
+                lock,
+            )
+
+        self.assertEqual(emb, [0.1, 0.2, 0.3])
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], "https://api.example.com/v1/embeddings")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer sk-test")
+        self.assertEqual(kwargs["json"]["model"], "provider/embed-model")
+        self.assertEqual(kwargs["json"]["input"], "hello")
+
+    def test_worker_context_can_use_online_embedding_rank(self):
+        ctx = WorkerContext(config={
+            "use_embedding_rank": True,
+            "embedding_source": "online",
+            "sf_api_url": "https://api.example.com/v1",
+            "sf_api_key": "sk-test",
+            "online_embedding_model": "provider/embed-model",
+        })
+        self.assertTrue(ctx._can_use_embedding_rank())
+
+    def test_pick_candidate_with_openai_compatible_selects_candidate(self):
+        class FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {
+                    "choices": [
+                        {"message": {"content": '{"pick": 2, "reason": "标题和年份匹配"}'}}
+                    ]
+                }
+
+        candidates = [
+            {"id": "1", "title": "Wrong", "release": "2024-01-01"},
+            {"id": "2", "title": "Right", "release": "2024-01-01"},
+        ]
+        item = {"old_name": "Right.S01E01.2024.mkv"}
+        with patch("core.services.matcher_service.requests.post", return_value=FakeResponse()) as post:
+            chosen, reason = pick_candidate_with_openai_compatible(
+                "https://openrouter.ai/api/v1",
+                "sk-test",
+                "provider/chat-model",
+                item,
+                "Right",
+                2024,
+                True,
+                "TMDb",
+                candidates,
+            )
+
+        self.assertEqual(chosen["id"], "2")
+        self.assertIn("匹配", reason)
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], "https://openrouter.ai/api/v1/chat/completions")
+        self.assertEqual(kwargs["json"]["model"], "provider/chat-model")
 
     def test_extract_ollama_model_names_rejects_invalid_shape(self):
         with self.assertRaises(ValueError):

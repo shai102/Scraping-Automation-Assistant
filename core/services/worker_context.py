@@ -17,6 +17,8 @@ from typing import Any, Callable, Dict, List, Optional
 from ai.ollama_ai import fetch_siliconflow_info, is_ai_rate_limited_error
 from core.services.matcher_service import (
     get_embedding,
+    get_online_embedding,
+    pick_candidate_with_openai_compatible,
     parse_with_ollama,
     pick_candidate_with_ollama,
     rerank_candidates_with_embedding,
@@ -134,6 +136,8 @@ class WorkerContext:
         self.ollama_url = _SimpleVar(config.get("ollama_url", "http://localhost:11434"))
         self.ollama_model = _SimpleVar(config.get("ollama_model", ""))
         self.embedding_model = _SimpleVar(config.get("embedding_model", ""))
+        self.embedding_source = _SimpleVar(config.get("embedding_source", "local"))
+        self.online_embedding_model = _SimpleVar(config.get("online_embedding_model", ""))
         self.prefer_ollama = _SimpleVar(config.get("prefer_ollama", False))
         self.use_embedding_rank = _SimpleVar(config.get("use_embedding_rank", True))
         self.ai_mode = _SimpleVar(config.get("ai_mode", "assist"))  # disabled / assist / force
@@ -178,7 +182,8 @@ class WorkerContext:
         self._cfg = cfg
         for attr in ("sf_api_key", "sf_api_url", "sf_model", "bgm_api_key",
                       "tmdb_api_key", "ollama_url", "ollama_model",
-                      "embedding_model", "tv_format", "movie_format",
+                      "embedding_model", "embedding_source", "online_embedding_model",
+                      "tv_format", "movie_format",
                       "video_exts", "sub_audio_exts", "lang_tags"):
             var = getattr(self, attr, None)
             if var is not None:
@@ -287,15 +292,28 @@ class WorkerContext:
         return bool(self.ollama_url.get().strip() and self.ollama_model.get().strip())
 
     def _can_use_embedding_rank(self):
-        return bool(
-            self.use_embedding_rank.get()
-            and self.ollama_url.get().strip()
-            and self.embedding_model.get().strip()
-        )
+        if not self.use_embedding_rank.get():
+            return False
+        if str(self.embedding_source.get() or "local").strip().lower() == "online":
+            return bool(
+                self.sf_api_url.get().strip()
+                and self.sf_api_key.get().strip()
+                and self.online_embedding_model.get().strip()
+            )
+        return bool(self.ollama_url.get().strip() and self.embedding_model.get().strip())
 
     def _get_embedding(self, text):
         if not self._can_use_embedding_rank():
             return None
+        if str(self.embedding_source.get() or "local").strip().lower() == "online":
+            return get_online_embedding(
+                self.sf_api_url.get().strip(),
+                self.sf_api_key.get().strip(),
+                self.online_embedding_model.get().strip(),
+                text,
+                self.embedding_cache,
+                self.cache_lock,
+            )
         emb, endpoint = get_embedding(
             self.ollama_url.get().strip(),
             self.embedding_model.get().strip(),
@@ -448,6 +466,13 @@ class WorkerContext:
         if chosen:
             return candidate_to_result(chosen, f"Ollama判定/{source_name}命中")
 
+        # OpenAI-compatible online model pick
+        chosen, reason = self._pick_candidate_with_online_model(
+            item, query_title, year, is_tv, source_name, ranked
+        )
+        if chosen:
+            return candidate_to_result(chosen, f"在线模型判定/{source_name}命中")
+
         # --- Headless mode: no manual popup, return pending ---
         return query_title, "None", "待手动确认", {}
 
@@ -464,6 +489,16 @@ class WorkerContext:
         return pick_candidate_with_ollama(
             self.ollama_url.get().strip(),
             self.ollama_model.get().strip(),
+            item, query_title, year, is_tv, source_name, candidates,
+            self._get_ai_temperature(),
+        )
+
+    def _pick_candidate_with_online_model(self, item, query_title, year, is_tv,
+                                          source_name, candidates):
+        return pick_candidate_with_openai_compatible(
+            self.sf_api_url.get().strip(),
+            self.sf_api_key.get().strip(),
+            self.sf_model.get().strip(),
             item, query_title, year, is_tv, source_name, candidates,
             self._get_ai_temperature(),
         )
