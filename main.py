@@ -30,13 +30,41 @@ def _resolve_log_path():
     return os.path.join(base_dir, "media_renamer.log")
 
 
+def _is_ignorable_connection_reset(record):
+    """Filter noisy Windows asyncio disconnect logs from the error log."""
+    message = record.getMessage()
+    exc = record.exc_info[1] if record.exc_info else None
+    is_proactor_disconnect = (
+        "_ProactorBasePipeTransport._call_connection_lost" in message
+        or "_call_connection_lost" in message
+        or record.name == "asyncio"
+    )
+
+    if isinstance(exc, ConnectionResetError):
+        winerror = getattr(exc, "winerror", None)
+        text = str(exc)
+        return is_proactor_disconnect and (
+            winerror == 10054
+            or "WinError 10054" in text
+            or "远程主机强迫关闭" in text
+        )
+
+    return (
+        is_proactor_disconnect
+        and "ConnectionResetError" in message
+        and ("WinError 10054" in message or "远程主机强迫关闭" in message)
+    )
+
+
+class ErrorLogFilter(logging.Filter):
+    """Only keep real errors in media_renamer.log."""
+
+    def filter(self, record):
+        return record.levelno >= logging.ERROR and not _is_ignorable_connection_reset(record)
+
+
 def _setup_logging():
     log_path = _resolve_log_path()
-
-    # 创建一个自定义过滤器，只允许 ERROR 及以上级别通过
-    class ErrorOnlyFilter(logging.Filter):
-        def filter(self, record):
-            return record.levelno >= logging.ERROR
 
     # 获取根日志记录器
     root_logger = logging.getLogger()
@@ -48,7 +76,7 @@ def _setup_logging():
     # 创建文件处理器，只记录ERROR及以上级别
     file_handler = logging.FileHandler(log_path, encoding="utf-8")
     file_handler.setLevel(logging.ERROR)
-    file_handler.addFilter(ErrorOnlyFilter())
+    file_handler.addFilter(ErrorLogFilter())
     file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 
     # 创建控制台处理器，记录INFO及以上级别
@@ -94,16 +122,11 @@ def _build_tray_icon():
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("退出", on_quit),
     )
-    return pystray.Icon("刮削助手", img, "刮削助手 v2.2", menu)
+    return pystray.Icon("刮削助手", img, "刮削助手", menu)
 
 
 def _run_server():
     import uvicorn
-
-    # 创建一个自定义过滤器，只允许 ERROR 及以上级别写入文件
-    class ErrorOnlyFilter(logging.Filter):
-        def filter(self, record):
-            return record.levelno >= logging.ERROR
 
     log_path = _resolve_log_path()
 
@@ -118,7 +141,7 @@ def _run_server():
         },
         "filters": {
             "error_only": {
-                "()": lambda: ErrorOnlyFilter(),
+                "()": lambda: ErrorLogFilter(),
             },
         },
         "handlers": {
@@ -165,7 +188,7 @@ def main():
     _fix_frozen_stdio()   # must be first, before any uvicorn import
     _setup_logging()
 
-    print(f"\n  刮削助手 v2.2")
+    print(f"\n  刮削助手")
     print(f"  Web 管理界面: http://127.0.0.1:{PORT}\n")
 
     # Start uvicorn in a daemon thread so the main thread is free for the tray

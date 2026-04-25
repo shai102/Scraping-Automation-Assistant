@@ -15,7 +15,7 @@ from typing import Optional
 from core.models.media_item import MediaItem
 from core.services.worker_context import WorkerContext
 from core.workers.task_runner import process_task as _process_task
-from db.database import get_db
+from db.database import get_db, vacuum_db
 from db.scrape_models import ScrapeRecord, MonitorFolder
 from db.tmdb_api import (
     fetch_bgm_candidates,
@@ -232,8 +232,8 @@ def clear_all(db: Session = Depends(get_db)):
     """Delete all records."""
     deleted = db.query(ScrapeRecord).delete(synchronize_session=False)
     db.commit()
-    # 执行 VACUUM 来回收数据库空间
-    db.execute("VACUUM")
+    db.close()
+    vacuum_db()
     return {"ok": True, "deleted": deleted}
 
 

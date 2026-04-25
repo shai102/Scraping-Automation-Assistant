@@ -703,10 +703,18 @@ const app = Vue.createApp({
       } catch (e) { this.testResult = { ok: false, message: e.message }; }
     },
     async refreshOllamaModels() {
+      this.testResult = null;
       try {
-        var data = await this.api('GET', '/api/settings/ollama-models');
+        var params = new URLSearchParams();
+        if (this.cfg.ollama_url) params.set('ollama_url', this.cfg.ollama_url);
+        var suffix = params.toString() ? '?' + params.toString() : '';
+        var data = await this.api('GET', '/api/settings/ollama-models' + suffix);
         this.ollamaModels = data.models || [];
-      } catch (ex) {}
+        this.testResult = {
+          ok: this.ollamaModels.length > 0,
+          message: data.message || (this.ollamaModels.length ? '已获取本地模型列表' : '未获取到本地模型')
+        };
+      } catch (ex) { this.testResult = { ok: false, message: ex.message }; }
     },
     async clearCache() {
       if (!confirm('确认清除 API 缓存？\n清除后所有识别结果将重新向 API 请求，不会影响已归档的文件。')) return;

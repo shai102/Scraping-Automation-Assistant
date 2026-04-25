@@ -4,7 +4,7 @@ import json
 import logging
 import os
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -59,6 +59,62 @@ def _load() -> dict:
 def _save(data: dict):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+def _extract_local_model_names(payload: dict) -> list[str]:
+    """Support both Ollama /api/tags and OpenAI-compatible /v1/models."""
+    if not isinstance(payload, dict):
+        return []
+
+    names = []
+    for key, fields in (("models", ("name", "model", "id")), ("data", ("id", "name"))):
+        items = payload.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = ""
+            for field in fields:
+                name = str(item.get(field) or "").strip()
+                if name:
+                    break
+            if name and name not in names:
+                names.append(name)
+        if names:
+            return names
+    return names
+
+
+def _list_local_ai_models(base_url: str) -> tuple[list[str], str]:
+    import requests as req
+
+    normalized = str(base_url or "").strip().rstrip("/")
+    if not normalized:
+        return [], "本地 AI 地址未配置"
+
+    endpoints = ["/api/tags"]
+    endpoints.append("/models" if normalized.endswith("/v1") else "/v1/models")
+
+    errors = []
+    for endpoint in endpoints:
+        try:
+            resp = req.get(normalized + endpoint, timeout=8)
+            if resp.status_code != 200:
+                errors.append(f"{endpoint}: HTTP {resp.status_code}")
+                continue
+            try:
+                models = _extract_local_model_names(resp.json())
+            except ValueError:
+                errors.append(f"{endpoint}: 返回内容不是 JSON")
+                continue
+            if models:
+                return models, "已获取本地模型列表"
+            errors.append(f"{endpoint}: 未发现模型")
+        except Exception as e:
+            errors.append(f"{endpoint}: {str(e)[:120]}")
+
+    return [], "；".join(errors) or "读取本地模型失败"
 
 
 @router.get("")
@@ -132,15 +188,10 @@ def test_ai():
 
     if prefer_ollama:
         ollama_url = cfg.get("ollama_url", "http://localhost:11434")
-        import requests as req
-        try:
-            resp = req.get(f"{ollama_url}/api/tags", timeout=8)
-            if resp.status_code == 200:
-                models = [m.get("name", "") for m in resp.json().get("models", [])]
-                return {"ok": True, "message": f"Ollama 连接成功，{len(models)} 个模型可用", "models": models}
-            return {"ok": False, "message": f"HTTP {resp.status_code}"}
-        except Exception as e:
-            return {"ok": False, "message": str(e)[:200]}
+        models, message = _list_local_ai_models(ollama_url)
+        if models:
+            return {"ok": True, "message": f"本地 AI 连接成功，{len(models)} 个模型可用", "models": models}
+        return {"ok": False, "message": message[:300], "models": []}
     else:
         api_key = cfg.get("sf_api_key", "")
         api_url = cfg.get("sf_api_url", "https://api.siliconflow.cn/v1")
@@ -153,18 +204,11 @@ def test_ai():
 
 
 @router.get("/ollama-models")
-def list_ollama_models():
+def list_ollama_models(ollama_url: Optional[str] = Query(default=None)):
     cfg = _load()
-    ollama_url = cfg.get("ollama_url", "http://localhost:11434")
-    import requests as req
-    try:
-        resp = req.get(f"{ollama_url}/api/tags", timeout=8)
-        if resp.status_code == 200:
-            models = [m.get("name", "") for m in resp.json().get("models", [])]
-            return {"models": models}
-        return {"models": []}
-    except Exception:
-        return {"models": []}
+    effective_url = ollama_url if ollama_url is not None else cfg.get("ollama_url", "http://localhost:11434")
+    models, message = _list_local_ai_models(effective_url)
+    return {"models": models, "message": message}
 
 
 @router.post("/test-telegram")

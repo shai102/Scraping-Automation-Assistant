@@ -41,7 +41,7 @@
       </li>
     </ul>
     <div class="sidebar-footer">
-      <span class="version">v2.2</span>
+      <span class="version">v2.3</span>
     </div>
   </nav>
 
@@ -557,19 +557,24 @@
           <div class="form-row">
             <div class="form-group" style="flex:1">
               <label>模型</label>
-              <input v-model="cfg.ollama_model">
+              <select v-model="cfg.ollama_model">
+                <option value="">请选择模型</option>
+                <option v-if="cfg.ollama_model && ollamaModels.indexOf(cfg.ollama_model)===-1" :value="cfg.ollama_model">{{cfg.ollama_model}}</option>
+                <option v-for="m in ollamaModels" :key="'model-'+m" :value="m">{{m}}</option>
+              </select>
             </div>
             <div class="form-group">
               <label>&nbsp;</label>
               <button class="btn btn-sm" @click="refreshOllamaModels">刷新模型列表</button>
             </div>
           </div>
-          <div v-if="ollamaModels.length" class="model-list">
-            可用: <span v-for="m in ollamaModels" :key="m" class="badge badge-info clickable" @click="cfg.ollama_model=m">{{m}}</span>
-          </div>
           <div class="form-group">
             <label>Embedding 模型</label>
-            <input v-model="cfg.embedding_model">
+            <select v-model="cfg.embedding_model">
+              <option value="">请选择 Embedding 模型</option>
+              <option v-if="cfg.embedding_model && ollamaModels.indexOf(cfg.embedding_model)===-1" :value="cfg.embedding_model">{{cfg.embedding_model}}</option>
+              <option v-for="m in ollamaModels" :key="'embedding-'+m" :value="m">{{m}}</option>
+            </select>
           </div>
           <div class="form-group">
             <label><input type="checkbox" v-model="cfg.use_embedding_rank"> 启用 Embedding 候选重排</label>

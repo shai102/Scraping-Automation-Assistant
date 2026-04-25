@@ -1,7 +1,7 @@
 import os
 import sys
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 # When frozen by PyInstaller, place the DB next to the .exe
@@ -27,6 +27,17 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def vacuum_db():
+    """Compact SQLite database files after large deletes.
+
+    SQLite keeps deleted rows as reusable free pages, so the .db file size only
+    shrinks after VACUUM. VACUUM must run outside an active transaction.
+    """
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+        conn.execute(text("VACUUM"))
 
 
 def init_db():

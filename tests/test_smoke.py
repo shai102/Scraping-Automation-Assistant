@@ -1,8 +1,12 @@
+import logging
+import sys
 import threading
 import time
 import unittest
 
 from ai.ollama_ai import _extract_siliconflow_content, is_ai_rate_limited_error
+from api.routes.settings import _extract_local_model_names
+from main import _is_ignorable_connection_reset
 from monitor.watcher import FolderWatcher
 from core.services.matcher_service import extract_ollama_model_names
 from core.services.naming_service import (
@@ -49,6 +53,22 @@ class SmokeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _extract_siliconflow_content({"choices": []})
 
+    def test_windows_asyncio_connection_reset_log_is_ignored(self):
+        try:
+            raise ConnectionResetError(10054, "远程主机强迫关闭了一个现有的连接。")
+        except ConnectionResetError:
+            record = logging.LogRecord(
+                "asyncio",
+                logging.ERROR,
+                __file__,
+                1,
+                "Exception in callback _ProactorBasePipeTransport._call_connection_lost()",
+                (),
+                sys.exc_info(),
+            )
+
+        self.assertTrue(_is_ignorable_connection_reset(record))
+
     def test_extract_siliconflow_content_accepts_content_parts(self):
         payload = {
             "choices": [
@@ -93,6 +113,18 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(
             extract_ollama_model_names(payload),
             ["qwen2.5:14b", "nomic-embed-text:latest"],
+        )
+
+    def test_extract_local_model_names_accepts_openai_compatible_shape(self):
+        payload = {
+            "data": [
+                {"id": "qwen3:8b"},
+                {"id": "nomic-embed-text"},
+            ]
+        }
+        self.assertEqual(
+            _extract_local_model_names(payload),
+            ["qwen3:8b", "nomic-embed-text"],
         )
 
     def test_extract_ollama_model_names_rejects_invalid_shape(self):
