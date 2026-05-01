@@ -507,8 +507,9 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
         query_extra = text_mentions_extra_title(query)
         query_norm = re.sub(r"[\W_]+", "", str(query).lower())
         merged = {}
+        merged_set_idx = {}  # 记录每个 ID 当前采用的数据来自第几批（0=zh-CN，1=en-US）
         order = 0
-        for results in result_sets:
+        for set_idx, results in enumerate(result_sets):
             for item in results or []:
                 order += 1
                 cid = str(item.get("id") or "")
@@ -529,8 +530,23 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
                     order,
                 )
                 previous = merged.get(cid)
-                if previous is None or priority < previous[0]:
+                if previous is None:
+                    # 首次见到该 ID
                     merged[cid] = (priority, item)
+                    merged_set_idx[cid] = set_idx
+                elif set_idx < merged_set_idx[cid]:
+                    # 当前批次编号更小（更靠前，即 zh-CN），优先使用其 item 数据
+                    # 但取两者中更优的 priority，保证排名位置尽可能靠前
+                    best_priority = min(priority, previous[0])
+                    merged[cid] = (best_priority, item)
+                    merged_set_idx[cid] = set_idx
+                elif set_idx == merged_set_idx[cid] and priority < previous[0]:
+                    # 同批次内更优的排名
+                    merged[cid] = (priority, item)
+                elif set_idx > merged_set_idx[cid] and priority < previous[0]:
+                    # 来自更晚批次（en-US），不替换 item（保留 zh-CN 的标题数据），
+                    # 但将更优的 priority 继承，确保该 ID 在候选列表中排名正确
+                    merged[cid] = (priority, previous[1])
         return [item for _, item in sorted(merged.values(), key=lambda pair: pair[0])]
 
     def _request_once(query, year_mode=None, language="zh-CN"):
