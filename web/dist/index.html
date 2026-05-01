@@ -33,6 +33,9 @@
       <li :class="{active: page==='ai'}" @click="page='ai'">
         <span class="icon">🤖</span> AI识别设置
       </li>
+      <li :class="{active: page==='recognition_test'}" @click="page='recognition_test'">
+        <span class="icon">🧠</span> 识别测试
+      </li>
       <li :class="{active: page==='classify'}" @click="page='classify'">
         <span class="icon">⚙️</span> 二级分类设置
       </li>
@@ -41,7 +44,7 @@
       </li>
     </ul>
     <div class="sidebar-footer">
-      <span class="version">v2.4</span>
+      <span class="version">v2.5</span>
     </div>
   </nav>
 
@@ -503,6 +506,103 @@
         </div>
       </div>
     </div>
+
+    <!-- 识别测试 -->
+    <section v-if="page==='recognition_test'" class="recognition-page">
+      <div class="recognition-shell">
+        <div class="recognition-hero">
+          <div class="recognition-hero-icon">🧠</div>
+          <div>
+            <div class="recognition-eyebrow">整理识别实验室</div>
+            <h1>识别测试</h1>
+            <p>输入文件名，调用当前整理识别链路并返回元数据、海报和标准命名预览。</p>
+          </div>
+        </div>
+        <div class="recognition-body">
+          <label class="recognition-label">测试名称</label>
+          <div class="recognition-search">
+            <input v-model="recognitionName" @keyup.enter="runRecognitionTest" placeholder="例如：CLIMAX.S01E01.2026.1080p.DSNP.WEB-DL.H264.AAC-ADWeb.mkv">
+            <button class="recognition-run" @click="runRecognitionTest" :disabled="recognitionTesting || !recognitionName.trim()">{{recognitionTesting?'识别中...':'开始识别'}}</button>
+          </div>
+
+          <label class="recognition-toggle">
+            <input type="checkbox" v-model="recognitionUseAi">
+            <span class="toggle-track"><span class="toggle-dot"></span></span>
+            <span>
+              <strong>使用 AI 辅助测试</strong>
+              <small>开启后，本次识别测试会按整理链路尝试 AI 回退；需先在 AI 识别设置中完成 API 配置</small>
+            </span>
+          </label>
+
+          <div class="recognition-pills">
+            <span>仅支持文件名，不支持文件夹名</span>
+            <span>自动解析季集与 TMDB</span>
+            <span>返回标准命名预览</span>
+          </div>
+
+          <div class="recognition-result-box">
+            <div v-if="recognitionError" class="msg msg-err">{{recognitionError}}</div>
+            <div v-else-if="recognitionResult" class="recognition-result">
+              <div class="recognition-result-head">
+                <div>
+                  <span :class="['badge', statusClass(recognitionResult.status)]">{{statusText(recognitionResult.status)}}</span>
+                  <span class="recognition-message">{{recognitionResult.message}}</span>
+                </div>
+                <span class="recognition-source">{{recognitionResult.source==='siliconflow_tmdb'?'TMDB':'BGM'}}</span>
+              </div>
+
+              <div class="recognition-summary">
+                <div class="recognition-poster" v-if="recognitionResult.preview && recognitionResult.preview.poster">
+                  <img :src="recognitionResult.preview.poster" alt="">
+                </div>
+                <div class="recognition-poster recognition-poster-empty" v-else>NO POSTER</div>
+                <div class="recognition-main">
+                  <h2>{{(recognitionResult.match && recognitionResult.match.title) || recognitionResult.guessit.title || '-'}}</h2>
+                  <div class="recognition-meta-line">
+                    <span v-if="recognitionResult.match && recognitionResult.match.year">{{recognitionResult.match.year}}</span>
+                    <span>{{recognitionTypeText(recognitionResult.match && recognitionResult.match.type)}}</span>
+                    <span v-if="recognitionResult.match && recognitionResult.match.id">ID: {{recognitionResult.match.id}}</span>
+                    <span v-if="recognitionResult.ai">{{recognitionResult.ai.status}}</span>
+                  </div>
+                  <p v-if="recognitionResult.match && (recognitionResult.match.episode_plot || recognitionResult.match.overview)">{{recognitionResult.match.episode_plot || recognitionResult.match.overview}}</p>
+                  <div class="recognition-preview">
+                    <div><strong>标准文件名</strong><span>{{(recognitionResult.preview && recognitionResult.preview.new_name) || '-'}}</span></div>
+                    <div><strong>归档路径预览</strong><span>{{(recognitionResult.preview && recognitionResult.preview.target_path) || '-'}}</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="recognition-detail-grid">
+                <div class="recognition-detail-card">
+                  <h3>guessit 基础解析</h3>
+                  <dl>
+                    <div><dt>标题</dt><dd>{{recognitionResult.guessit.title || '-'}}</dd></div>
+                    <div><dt>年份</dt><dd>{{recognitionResult.guessit.year || '-'}}</dd></div>
+                    <div><dt>季 / 集</dt><dd>S{{recognitionResult.guessit.season || '-'}} / E{{recognitionResult.guessit.episode || '-'}}</dd></div>
+                    <div><dt>是否建议 AI</dt><dd>{{recognitionResult.guessit.needs_ai_assist?'是':'否'}}</dd></div>
+                  </dl>
+                </div>
+                <div class="recognition-detail-card">
+                  <h3>最终匹配</h3>
+                  <dl>
+                    <div><dt>来源</dt><dd>{{(recognitionResult.ai && recognitionResult.ai.parse_source) || '-'}}</dd></div>
+                    <div><dt>资料库</dt><dd>{{(recognitionResult.match && recognitionResult.match.provider) || '-'}}</dd></div>
+                    <div><dt>剧集标题</dt><dd>{{(recognitionResult.match && recognitionResult.match.episode_title) || '-'}}</dd></div>
+                    <div><dt>季 / 集</dt><dd>S{{(recognitionResult.match && recognitionResult.match.season) || '-'}} / E{{(recognitionResult.match && recognitionResult.match.episode) || '-'}}</dd></div>
+                  </dl>
+                </div>
+              </div>
+
+              <details class="recognition-raw">
+                <summary>查看原始解析数据</summary>
+                <pre>{{formatRecognitionRaw(recognitionResult)}}</pre>
+              </details>
+            </div>
+            <div v-else class="recognition-empty"></div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- TMDB设置 -->
     <section v-if="page==='tmdb'">

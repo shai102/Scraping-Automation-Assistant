@@ -64,6 +64,12 @@ const app = Vue.createApp({
       showBgmKey: false,
       showSfKey: false,
       showTgToken: false,
+      // Recognition test
+      recognitionName: '',
+      recognitionUseAi: false,
+      recognitionTesting: false,
+      recognitionResult: null,
+      recognitionError: '',
       // WebSocket
       ws: null,
       // Folder browser
@@ -503,6 +509,34 @@ const app = Vue.createApp({
       if (!p) return '';
       var parts = p.replace(/\\/g, '/').split('/');
       return parts.length > 3 ? '.../' + parts.slice(-3).join('/') : p;
+    },
+
+    // --- Recognition Test ---
+    async runRecognitionTest() {
+      var name = (this.recognitionName || '').trim();
+      if (!name || this.recognitionTesting) return;
+      this.recognitionTesting = true;
+      this.recognitionError = '';
+      this.recognitionResult = null;
+      try {
+        this.recognitionResult = await this.api('POST', '/api/recognition-test', {
+          filename: name,
+          use_ai: this.recognitionUseAi,
+          data_source: (this.cfg && this.cfg.data_source) || 'siliconflow_tmdb',
+        });
+      } catch (e) {
+        this.recognitionError = e.message || '识别测试失败';
+      }
+      this.recognitionTesting = false;
+    },
+    recognitionTypeText(type) {
+      if (type === 'episode') return '电视剧';
+      if (type === 'movie') return '电影';
+      return '自动判断';
+    },
+    formatRecognitionRaw(value) {
+      try { return JSON.stringify(value || {}, null, 2); }
+      catch (e) { return String(value || ''); }
     },
 
     // --- Grouped View ---

@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from api.routes import monitor, records, settings, symlinks
+from api.routes import monitor, recognition_test, records, settings, symlinks
 from api.routes.ws import router as ws_router, manager as ws_manager
 from db.database import init_db
 from monitor.watcher import FolderWatcher
@@ -52,6 +52,7 @@ app.add_middleware(
 
 # API routes
 app.include_router(monitor.router)
+app.include_router(recognition_test.router)
 app.include_router(records.router)
 app.include_router(settings.router)
 app.include_router(symlinks.router)
