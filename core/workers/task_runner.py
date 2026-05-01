@@ -160,8 +160,6 @@ def _fetch_ai_parse(gui, pure_for_parse):
     if gui.prefer_ollama.get():
         if gui.ollama_url.get().strip() and gui.ollama_model.get().strip():
             ai_data, ai_msg = gui._parse_with_ollama(pure_for_parse)
-            if ai_data is None and gui.sf_api_key.get().strip():
-                ai_data, ai_msg = _fetch_remote()
             return ai_data, ai_msg
         if gui.sf_api_key.get().strip():
             return _fetch_remote()
@@ -174,7 +172,16 @@ def _fetch_ai_parse(gui, pure_for_parse):
 
 def _derive_guessit_fields(gui, pure, dir_p, g, extracted_ep):
     """Build the baseline parse result from guessit and directory hints."""
-    title = g.get("title") or derive_title_from_filename(pure) or "未知"
+    guess_title = str(g.get("title") or "").strip()
+    derived_title = derive_title_from_filename(pure)
+    if (
+        GROUP_RELEASE_RE.search(str(pure or ""))
+        and _is_meaningful_title(derived_title)
+        and normalize_compare_text(guess_title) != normalize_compare_text(derived_title)
+    ):
+        title = derived_title
+    else:
+        title = guess_title or derived_title or "未知"
     year = g.get("year")
     if not year:
         dir_for_year = dir_p
@@ -925,6 +932,7 @@ def process_task(gui, i):
             "release": meta.get("release", ""),
             "original_title": meta.get("original_title", ""),
             "parse_source": parse_source,
+            "query_title": t,
         }
         item.parse_source = parse_source
 
@@ -1007,4 +1015,3 @@ def run_scrape_execution(gui):
 def process_one_file_scrape(gui, item):
     """Process single file scrape-only (write NFO and download images)."""
     return execution_process_one_file_scrape(gui, item)
-

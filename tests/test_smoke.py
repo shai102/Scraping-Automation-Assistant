@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from ai.ollama_ai import _extract_siliconflow_content, is_ai_rate_limited_error
+from api.routes.recognition_test import _mode_config
 from api.routes.settings import _extract_local_model_names
 from core.services.worker_context import WorkerContext
 from main import _is_ignorable_connection_reset
@@ -22,12 +23,16 @@ from core.services.naming_service import (
 )
 from core.workers.task_runner import (
     SPECIAL_TAG_RE,
+    _fetch_ai_parse,
     _guessit_needs_assist,
     _is_meaningful_title,
 )
 from utils.helpers import (
+    bypass_api_cache,
     build_db_query_plan,
     build_query_titles,
+    cached_request,
+    derive_title_from_filename,
     format_error_message,
     normalize_parse_source,
     parse_error_message,
@@ -170,6 +175,50 @@ class SmokeTests(unittest.TestCase):
         })
         self.assertTrue(ctx._can_use_embedding_rank())
 
+    def test_recognition_online_ai_keeps_local_embedding(self):
+        cfg = _mode_config(
+            {
+                "ollama_model": "qwen-local",
+                "embedding_model": "nomic-embed-text",
+                "embedding_source": "online",
+                "online_embedding_model": "provider/embed-model",
+                "prefer_ollama": True,
+            },
+            "online_ai",
+        )
+        self.assertEqual(cfg["ai_mode"], "force")
+        self.assertFalse(cfg["prefer_ollama"])
+        self.assertEqual(cfg["ollama_model"], "")
+        self.assertEqual(cfg["embedding_source"], "local")
+        self.assertEqual(cfg["embedding_model"], "nomic-embed-text")
+        self.assertEqual(cfg["online_embedding_model"], "")
+
+    def test_prefer_ollama_parse_does_not_fallback_to_online(self):
+        ctx = WorkerContext(config={
+            "prefer_ollama": True,
+            "ollama_url": "http://localhost:11434",
+            "ollama_model": "qwen-local",
+            "sf_api_key": "sk-test",
+            "sf_api_url": "https://api.example.com/v1",
+            "sf_model": "provider/chat-model",
+        })
+        with (
+            patch.object(
+                ctx,
+                "_parse_with_ollama",
+                return_value=(None, "local parse failed"),
+            ),
+            patch(
+                "core.workers.task_runner.fetch_siliconflow_info",
+                side_effect=AssertionError("online parse should not be used"),
+            ) as online_parse,
+        ):
+            ai_data, ai_msg = _fetch_ai_parse(ctx, "Ambiguous.Title.S01E01.mkv")
+
+        self.assertIsNone(ai_data)
+        self.assertEqual(ai_msg, "local parse failed")
+        online_parse.assert_not_called()
+
     def test_pick_candidate_with_openai_compatible_selects_candidate(self):
         class FakeResponse:
             def raise_for_status(self):
@@ -206,6 +255,223 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(args[0], "https://openrouter.ai/api/v1/chat/completions")
         self.assertEqual(kwargs["json"]["model"], "provider/chat-model")
 
+    def test_online_model_judges_candidates_before_local_ollama(self):
+        ctx = WorkerContext(config={
+            "prefer_ollama": False,
+            "sf_api_url": "https://api.example.com/v1",
+            "sf_api_key": "sk-test",
+            "sf_model": "provider/chat-model",
+            "ollama_url": "http://localhost:11434",
+            "ollama_model": "qwen-local",
+            "use_embedding_rank": False,
+        })
+        item = {"old_name": "Ambiguous.Title.S01E01.mkv"}
+        candidates = [
+            {
+                "id": "1",
+                "title": "Wrong Series",
+                "alt_title": "",
+                "release": "2024-01-01",
+                "meta": {"search_query": "Ambiguous Title", "search_rank": 1},
+            },
+            {
+                "id": "2",
+                "title": "Right Series",
+                "alt_title": "",
+                "release": "2024-01-01",
+                "meta": {"search_query": "Ambiguous Title", "search_rank": 2},
+            },
+        ]
+        with (
+            patch.object(
+                ctx,
+                "_pick_candidate_with_online_model",
+                return_value=(candidates[1], "online chose"),
+            ) as online_pick,
+            patch.object(
+                ctx,
+                "_pick_candidate_with_ollama",
+                side_effect=AssertionError("local Ollama should not judge first"),
+            ) as ollama_pick,
+        ):
+            _title, matched_id, message, _meta = ctx._select_best_db_match(
+                item,
+                "Ambiguous Title",
+                None,
+                True,
+                "TMDb",
+                candidates,
+            )
+
+        self.assertEqual(matched_id, "2")
+        self.assertIn("在线模型判定", message)
+        online_pick.assert_called_once()
+        ollama_pick.assert_not_called()
+
+    def test_online_model_uncertain_does_not_fall_back_to_tmdb_first(self):
+        ctx = WorkerContext(config={
+            "prefer_ollama": False,
+            "sf_api_url": "https://api.example.com/v1",
+            "sf_api_key": "sk-test",
+            "sf_model": "provider/chat-model",
+            "use_embedding_rank": False,
+        })
+        item = {"old_name": "Ambiguous.Title.S01E01.mkv"}
+        candidates = [
+            {
+                "id": "1",
+                "title": "Wrong Series",
+                "alt_title": "",
+                "release": "2024-01-01",
+                "meta": {"search_query": "Ambiguous Title", "search_rank": 1},
+            },
+            {
+                "id": "2",
+                "title": "Another Series",
+                "alt_title": "",
+                "release": "2024-01-01",
+                "meta": {"search_query": "Ambiguous Title", "search_rank": 2},
+            }
+        ]
+        with patch.object(
+            ctx,
+            "_pick_candidate_with_online_model",
+            return_value=(None, "uncertain"),
+        ):
+            _title, matched_id, _message, _meta = ctx._select_best_db_match(
+                item,
+                "Ambiguous Title",
+                None,
+                True,
+                "TMDb",
+                candidates,
+            )
+
+        self.assertEqual(matched_id, "None")
+
+    def test_online_model_remains_final_judge_after_embedding_rerank(self):
+        ctx = WorkerContext(config={
+            "prefer_ollama": False,
+            "sf_api_url": "https://api.example.com/v1",
+            "sf_api_key": "sk-test",
+            "sf_model": "provider/chat-model",
+            "use_embedding_rank": True,
+        })
+        item = {"old_name": "Ambiguous.Title.S01E01.mkv"}
+        candidates = [
+            {"id": "1", "title": "Wrong Series", "alt_title": "", "release": "2024-01-01"},
+            {"id": "2", "title": "Right Series", "alt_title": "", "release": "2024-01-01"},
+        ]
+        ranked = [candidates[1], candidates[0]]
+        with (
+            patch.object(
+                ctx,
+                "_rerank_candidates_with_embedding",
+                return_value=(ranked, candidates[1], "embedding top=0.91"),
+            ) as rerank,
+            patch.object(
+                ctx,
+                "_pick_candidate_with_online_model",
+                return_value=(ranked[0], "online confirmed"),
+            ) as online_pick,
+        ):
+            _title, matched_id, message, _meta = ctx._select_best_db_match(
+                item,
+                "Ambiguous Title",
+                None,
+                True,
+                "TMDb",
+                candidates,
+            )
+
+        self.assertEqual(matched_id, "2")
+        self.assertIn("在线模型判定", message)
+        self.assertIn("embedding top=0.91", message)
+        rerank.assert_called_once()
+        online_pick.assert_called_once()
+        self.assertEqual(online_pick.call_args[0][5][0]["id"], "2")
+
+    def test_prefer_ollama_final_judge_does_not_fallback_to_online(self):
+        ctx = WorkerContext(config={
+            "prefer_ollama": True,
+            "sf_api_url": "https://api.example.com/v1",
+            "sf_api_key": "sk-test",
+            "sf_model": "provider/chat-model",
+            "ollama_url": "http://localhost:11434",
+            "ollama_model": "qwen-local",
+            "use_embedding_rank": False,
+        })
+        item = {"old_name": "Ambiguous.Title.S01E01.mkv"}
+        candidates = [
+            {"id": "1", "title": "Wrong Series", "alt_title": "", "release": "2024-01-01"},
+            {"id": "2", "title": "Right Series", "alt_title": "", "release": "2024-01-01"},
+        ]
+        with (
+            patch.object(
+                ctx,
+                "_pick_candidate_with_ollama",
+                return_value=(None, "local uncertain"),
+            ) as ollama_pick,
+            patch.object(
+                ctx,
+                "_pick_candidate_with_online_model",
+                side_effect=AssertionError("online final judge should not be used"),
+            ) as online_pick,
+        ):
+            _title, matched_id, _message, _meta = ctx._select_best_db_match(
+                item,
+                "Ambiguous Title",
+                None,
+                True,
+                "TMDb",
+                candidates,
+            )
+
+        self.assertEqual(matched_id, "None")
+        ollama_pick.assert_called_once()
+        online_pick.assert_not_called()
+
+    def test_prefer_ollama_remains_final_judge_after_embedding_rerank(self):
+        ctx = WorkerContext(config={
+            "prefer_ollama": True,
+            "ollama_url": "http://localhost:11434",
+            "ollama_model": "qwen-local",
+            "use_embedding_rank": True,
+        })
+        item = {"old_name": "Ambiguous.Title.S01E01.mkv"}
+        candidates = [
+            {"id": "1", "title": "Wrong Series", "alt_title": "", "release": "2024-01-01"},
+            {"id": "2", "title": "Right Series", "alt_title": "", "release": "2024-01-01"},
+        ]
+        ranked = [candidates[1], candidates[0]]
+        with (
+            patch.object(
+                ctx,
+                "_rerank_candidates_with_embedding",
+                return_value=(ranked, candidates[1], "embedding top=0.91"),
+            ) as rerank,
+            patch.object(
+                ctx,
+                "_pick_candidate_with_ollama",
+                return_value=(ranked[0], "local confirmed"),
+            ) as ollama_pick,
+        ):
+            _title, matched_id, message, _meta = ctx._select_best_db_match(
+                item,
+                "Ambiguous Title",
+                None,
+                True,
+                "TMDb",
+                candidates,
+            )
+
+        self.assertEqual(matched_id, "2")
+        self.assertIn("Ollama判定", message)
+        self.assertIn("embedding top=0.91", message)
+        rerank.assert_called_once()
+        ollama_pick.assert_called_once()
+        self.assertEqual(ollama_pick.call_args[0][5][0]["id"], "2")
+
     def test_extract_ollama_model_names_rejects_invalid_shape(self):
         with self.assertRaises(ValueError):
             extract_ollama_model_names({"models": "bad"})
@@ -217,6 +483,19 @@ class SmokeTests(unittest.TestCase):
 
     def test_error_message_parse_legacy_text(self):
         self.assertEqual(parse_error_message("未配置TMDb Key")[0], "CONFIG")
+
+    def test_cached_request_bypass_calls_api_without_cache_write(self):
+        calls = []
+
+        def fake_api():
+            calls.append("called")
+            return {"fresh": True}
+
+        with bypass_api_cache(True):
+            result = cached_request(fake_api, "unit_test_bypass_key")
+
+        self.assertEqual(result, {"fresh": True})
+        self.assertEqual(calls, ["called"])
 
     def test_build_query_titles_filters_generic_season_title(self):
         item = {
@@ -248,6 +527,194 @@ class SmokeTests(unittest.TestCase):
             build_db_query_plan(item, "Baha", ai_data, g),
             [["Sousou no Frieren"]],
         )
+
+    def test_derive_title_from_group_release_brackets(self):
+        pure = "[Lilith-Raws][Sousou no Frieren] - 01 [Baha][WEB-DL][1080p][AVC AAC][CHT]"
+        self.assertEqual(derive_title_from_filename(pure), "Sousou no Frieren")
+
+    def test_derive_title_skips_multi_word_release_group(self):
+        pure = "[Nekomoe kissaten][Make Heroine ga Oosugiru!] - 01 [WebRip 1080p HEVC AAC][CHT]"
+        self.assertEqual(derive_title_from_filename(pure), "Make Heroine ga Oosugiru")
+
+    def test_build_db_query_plan_ignores_release_group_title(self):
+        item = {
+            "old_name": "[Nekomoe kissaten][Make Heroine ga Oosugiru!] - 01 [WebRip 1080p HEVC AAC][CHT].mkv",
+            "dir": "",
+        }
+        g = {"title": "Nekomoe kissaten"}
+        self.assertEqual(
+            build_db_query_plan(item, "Nekomoe kissaten", None, g),
+            [["Make Heroine ga Oosugiru"]],
+        )
+
+    def test_derive_title_from_single_release_group_prefix(self):
+        pure = "[Sakurato] Chainsaw Man [S01E01][HEVC-10bit 1080P@60FPS AAC][CHS&CHT]"
+        self.assertEqual(derive_title_from_filename(pure), "Chainsaw Man")
+
+    def test_build_db_query_plan_uses_single_release_group_title_only(self):
+        item = {
+            "old_name": "[Sakurato] Chainsaw Man [S01E01][HEVC-10bit 1080P@60FPS AAC][CHS&CHT].strm",
+            "dir": "",
+        }
+        g = {"title": "Chainsaw Man", "season": 1, "episode": 1}
+        self.assertEqual(
+            build_db_query_plan(item, "Chainsaw Man", None, g),
+            [["Chainsaw Man"]],
+        )
+
+    def test_tmdb_single_candidate_does_not_auto_pick_release_group_query(self):
+        ctx = WorkerContext(config={})
+        item = {
+            "old_name": "[Nekomoe kissaten][Make Heroine ga Oosugiru!] - 01 [WebRip 1080p HEVC AAC][CHT].mkv"
+        }
+        candidates = [
+            {
+                "id": "259140",
+                "title": "Wrong Result",
+                "alt_title": "",
+                "release": "2024-10-06",
+                "meta": {"search_query": "Nekomoe kissaten", "search_rank": 1},
+            }
+        ]
+        _title, tmdb_id, _msg, _meta = ctx._select_best_db_match(
+            item,
+            "Nekomoe kissaten",
+            None,
+            True,
+            "TMDb",
+            candidates,
+        )
+        self.assertEqual(tmdb_id, "None")
+
+    def test_tmdb_extra_candidate_filtered_for_regular_episode(self):
+        ctx = WorkerContext(config={})
+        item = {
+            "old_name": "[Sakurato] Chainsaw Man [S01E01][HEVC-10bit 1080P@60FPS AAC][CHS&CHT].strm"
+        }
+        candidates = [
+            {
+                "id": "299555",
+                "title": "链锯人 总集篇",
+                "alt_title": "チェンソーマン 総集篇",
+                "release": "2025-09-05",
+                "meta": {
+                    "original_title": "チェンソーマン 総集篇",
+                    "search_query": "Chainsaw Man",
+                    "search_rank": 1,
+                },
+            },
+            {
+                "id": "114410",
+                "title": "链锯人",
+                "alt_title": "チェンソーマン",
+                "release": "2022-10-12",
+                "meta": {
+                    "original_title": "チェンソーマン",
+                    "search_query": "Chainsaw Man",
+                    "search_rank": 2,
+                },
+            },
+        ]
+        _title, tmdb_id, _msg, _meta = ctx._select_best_db_match(
+            item,
+            "Chainsaw Man",
+            None,
+            True,
+            "TMDb",
+            candidates,
+        )
+        self.assertEqual(tmdb_id, "114410")
+
+    def test_tmdb_only_extra_candidate_requires_manual_for_regular_episode(self):
+        ctx = WorkerContext(config={})
+        item = {
+            "old_name": "[Sakurato] Chainsaw Man [S01E01][HEVC-10bit 1080P@60FPS AAC][CHS&CHT].strm"
+        }
+        candidates = [
+            {
+                "id": "299555",
+                "title": "链锯人 总集篇",
+                "alt_title": "チェンソーマン 総集篇",
+                "release": "2025-09-05",
+                "meta": {"original_title": "チェンソーマン 総集篇"},
+            }
+        ]
+        _title, tmdb_id, _msg, _meta = ctx._select_best_db_match(
+            item,
+            "Chainsaw Man",
+            None,
+            True,
+            "TMDb",
+            candidates,
+        )
+        self.assertEqual(tmdb_id, "None")
+
+    def test_tmdb_unrequested_variant_candidate_is_filtered(self):
+        ctx = WorkerContext(config={})
+        item = {
+            "old_name": "[LoliHouse] Tensei Shitara Slime Datta Ken S02E01 [WebRip 1080p HEVC-10bit AAC SRTx3].strm"
+        }
+        candidates = [
+            {
+                "id": "118541",
+                "title": "The Slime Diaries",
+                "alt_title": "転スラ日記 転生したらスライムだった件",
+                "release": "2021-04-06",
+                "meta": {
+                    "original_title": "転スラ日記 転生したらスライムだった件",
+                    "search_query": "Tensei Shitara Slime Datta Ken",
+                    "search_rank": 1,
+                },
+            },
+            {
+                "id": "82684",
+                "title": "That Time I Got Reincarnated as a Slime",
+                "alt_title": "転生したらスライムだった件",
+                "release": "2018-10-02",
+                "meta": {
+                    "original_title": "転生したらスライムだった件",
+                    "search_query": "Tensei Shitara Slime Datta Ken",
+                    "search_rank": 2,
+                },
+            },
+        ]
+        _title, tmdb_id, _msg, _meta = ctx._select_best_db_match(
+            item,
+            "Tensei Shitara Slime Datta Ken",
+            None,
+            True,
+            "TMDb",
+            candidates,
+        )
+        self.assertEqual(tmdb_id, "82684")
+
+    def test_tmdb_requested_variant_candidate_is_allowed(self):
+        ctx = WorkerContext(config={})
+        item = {
+            "old_name": "[LoliHouse] The Slime Diaries S01E01 [WebRip 1080p].strm"
+        }
+        candidates = [
+            {
+                "id": "118541",
+                "title": "The Slime Diaries",
+                "alt_title": "転スラ日記 転生したらスライムだった件",
+                "release": "2021-04-06",
+                "meta": {
+                    "original_title": "転スラ日記 転生したらスライムだった件",
+                    "search_query": "The Slime Diaries",
+                    "search_rank": 1,
+                },
+            }
+        ]
+        _title, tmdb_id, _msg, _meta = ctx._select_best_db_match(
+            item,
+            "The Slime Diaries",
+            None,
+            True,
+            "TMDb",
+            candidates,
+        )
+        self.assertEqual(tmdb_id, "118541")
 
     def test_extract_explicit_season_from_sxxeyy(self):
         name = "Extracurricular.S01E01.2020.NF.WEB-DL.1080p.HEVC.strm"

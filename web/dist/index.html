@@ -44,7 +44,7 @@
       </li>
     </ul>
     <div class="sidebar-footer">
-      <span class="version">v2.5</span>
+      <span class="version">v2.6</span>
     </div>
   </nav>
 
@@ -515,90 +515,187 @@
           <div>
             <div class="recognition-eyebrow">整理识别实验室</div>
             <h1>识别测试</h1>
-            <p>输入文件名，调用当前整理识别链路并返回元数据、海报和标准命名预览。</p>
+            <p>输入文件名或测试集，对比 guessit、本地 AI、在线 AI 的识别率和失败原因。</p>
           </div>
         </div>
         <div class="recognition-body">
-          <label class="recognition-label">测试名称</label>
-          <div class="recognition-search">
-            <input v-model="recognitionName" @keyup.enter="runRecognitionTest" placeholder="例如：CLIMAX.S01E01.2026.1080p.DSNP.WEB-DL.H264.AAC-ADWeb.mkv">
-            <button class="recognition-run" @click="runRecognitionTest" :disabled="recognitionTesting || !recognitionName.trim()">{{recognitionTesting?'识别中...':'开始识别'}}</button>
+          <div class="recognition-tabs">
+            <button :class="{active: recognitionTab==='single'}" @click="recognitionTab='single'">单条测试</button>
+            <button :class="{active: recognitionTab==='batch'}" @click="recognitionTab='batch'">批量实验</button>
           </div>
 
-          <label class="recognition-toggle">
-            <input type="checkbox" v-model="recognitionUseAi">
-            <span class="toggle-track"><span class="toggle-dot"></span></span>
-            <span>
-              <strong>使用 AI 辅助测试</strong>
-              <small>开启后，本次识别测试会按整理链路尝试 AI 回退；需先在 AI 识别设置中完成 API 配置</small>
-            </span>
-          </label>
-
-          <div class="recognition-pills">
-            <span>仅支持文件名，不支持文件夹名</span>
-            <span>自动解析季集与 TMDB</span>
-            <span>返回标准命名预览</span>
-          </div>
-
-          <div class="recognition-result-box">
-            <div v-if="recognitionError" class="msg msg-err">{{recognitionError}}</div>
-            <div v-else-if="recognitionResult" class="recognition-result">
-              <div class="recognition-result-head">
-                <div>
-                  <span :class="['badge', statusClass(recognitionResult.status)]">{{statusText(recognitionResult.status)}}</span>
-                  <span class="recognition-message">{{recognitionResult.message}}</span>
-                </div>
-                <span class="recognition-source">{{recognitionResult.source==='siliconflow_tmdb'?'TMDB':'BGM'}}</span>
-              </div>
-
-              <div class="recognition-summary">
-                <div class="recognition-poster" v-if="recognitionResult.preview && recognitionResult.preview.poster">
-                  <img :src="recognitionResult.preview.poster" alt="">
-                </div>
-                <div class="recognition-poster recognition-poster-empty" v-else>NO POSTER</div>
-                <div class="recognition-main">
-                  <h2>{{(recognitionResult.match && recognitionResult.match.title) || recognitionResult.guessit.title || '-'}}</h2>
-                  <div class="recognition-meta-line">
-                    <span v-if="recognitionResult.match && recognitionResult.match.year">{{recognitionResult.match.year}}</span>
-                    <span>{{recognitionTypeText(recognitionResult.match && recognitionResult.match.type)}}</span>
-                    <span v-if="recognitionResult.match && recognitionResult.match.id">ID: {{recognitionResult.match.id}}</span>
-                    <span v-if="recognitionResult.ai">{{recognitionResult.ai.status}}</span>
-                  </div>
-                  <p v-if="recognitionResult.match && (recognitionResult.match.episode_plot || recognitionResult.match.overview)">{{recognitionResult.match.episode_plot || recognitionResult.match.overview}}</p>
-                  <div class="recognition-preview">
-                    <div><strong>标准文件名</strong><span>{{(recognitionResult.preview && recognitionResult.preview.new_name) || '-'}}</span></div>
-                    <div><strong>归档路径预览</strong><span>{{(recognitionResult.preview && recognitionResult.preview.target_path) || '-'}}</span></div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="recognition-detail-grid">
-                <div class="recognition-detail-card">
-                  <h3>guessit 基础解析</h3>
-                  <dl>
-                    <div><dt>标题</dt><dd>{{recognitionResult.guessit.title || '-'}}</dd></div>
-                    <div><dt>年份</dt><dd>{{recognitionResult.guessit.year || '-'}}</dd></div>
-                    <div><dt>季 / 集</dt><dd>S{{recognitionResult.guessit.season || '-'}} / E{{recognitionResult.guessit.episode || '-'}}</dd></div>
-                    <div><dt>是否建议 AI</dt><dd>{{recognitionResult.guessit.needs_ai_assist?'是':'否'}}</dd></div>
-                  </dl>
-                </div>
-                <div class="recognition-detail-card">
-                  <h3>最终匹配</h3>
-                  <dl>
-                    <div><dt>来源</dt><dd>{{(recognitionResult.ai && recognitionResult.ai.parse_source) || '-'}}</dd></div>
-                    <div><dt>资料库</dt><dd>{{(recognitionResult.match && recognitionResult.match.provider) || '-'}}</dd></div>
-                    <div><dt>剧集标题</dt><dd>{{(recognitionResult.match && recognitionResult.match.episode_title) || '-'}}</dd></div>
-                    <div><dt>季 / 集</dt><dd>S{{(recognitionResult.match && recognitionResult.match.season) || '-'}} / E{{(recognitionResult.match && recognitionResult.match.episode) || '-'}}</dd></div>
-                  </dl>
-                </div>
-              </div>
-
-              <details class="recognition-raw">
-                <summary>查看原始解析数据</summary>
-                <pre>{{formatRecognitionRaw(recognitionResult)}}</pre>
-              </details>
+          <div v-if="recognitionTab==='single'">
+            <label class="recognition-label">测试名称</label>
+            <div class="recognition-search">
+              <input v-model="recognitionName" @keyup.enter="runRecognitionTest" placeholder="例如：CLIMAX.S01E01.2026.1080p.DSNP.WEB-DL.H264.AAC-ADWeb.mkv">
+              <button class="recognition-run" @click="runRecognitionTest" :disabled="recognitionTesting || !recognitionName.trim()">{{recognitionTesting?'识别中...':'开始识别'}}</button>
             </div>
-            <div v-else class="recognition-empty"></div>
+
+            <label class="recognition-toggle">
+              <input type="checkbox" v-model="recognitionUseAi">
+              <span class="toggle-track"><span class="toggle-dot"></span></span>
+              <span>
+                <strong>使用在线 AI 测试</strong>
+                <small>开启后，在线 API 解析文件名，本地 Embedding 重排候选，并由在线 API 做最终判定</small>
+              </span>
+            </label>
+
+            <label class="recognition-toggle recognition-cache-toggle">
+              <input type="checkbox" v-model="recognitionBypassCache">
+              <span class="toggle-track"><span class="toggle-dot"></span></span>
+              <span>
+                <strong>绕过 API 缓存</strong>
+                <small>开启后，本页测试会实时请求 TMDB/BGM，不读取也不写入 api_cache.json；平常刮削不受影响</small>
+              </span>
+            </label>
+
+            <div class="recognition-pills">
+              <span>仅支持文件名，不支持文件夹名</span>
+              <span>自动解析季集与 TMDB</span>
+              <span>返回标准命名预览</span>
+            </div>
+
+            <div class="recognition-result-box">
+              <div v-if="recognitionError" class="msg msg-err">{{recognitionError}}</div>
+              <div v-else-if="recognitionResult" class="recognition-result">
+                <div class="recognition-result-head">
+                  <div>
+                    <span :class="['badge', statusClass(recognitionResult.status)]">{{statusText(recognitionResult.status)}}</span>
+                    <span class="recognition-message">{{recognitionResult.message}}</span>
+                  </div>
+                  <span class="recognition-source">{{recognitionResult.source==='siliconflow_tmdb'?'TMDB':'BGM'}}</span>
+                </div>
+
+                <div class="recognition-summary">
+                  <div class="recognition-poster" v-if="recognitionResult.preview && recognitionResult.preview.poster">
+                    <img :src="recognitionResult.preview.poster" alt="">
+                  </div>
+                  <div class="recognition-poster recognition-poster-empty" v-else>NO POSTER</div>
+                  <div class="recognition-main">
+                    <h2>{{(recognitionResult.match && recognitionResult.match.title) || recognitionResult.guessit.title || '-'}}</h2>
+                    <div class="recognition-meta-line">
+                      <span v-if="recognitionResult.match && recognitionResult.match.year">{{recognitionResult.match.year}}</span>
+                      <span>{{recognitionTypeText(recognitionResult.match && recognitionResult.match.type)}}</span>
+                      <span v-if="recognitionResult.match && recognitionResult.match.id">ID: {{recognitionResult.match.id}}</span>
+                      <span v-if="recognitionResult.ai">{{recognitionResult.ai.status}}</span>
+                    </div>
+                    <p v-if="recognitionResult.match && (recognitionResult.match.episode_plot || recognitionResult.match.overview)">{{recognitionResult.match.episode_plot || recognitionResult.match.overview}}</p>
+                    <div class="recognition-preview">
+                      <div><strong>标准文件名</strong><span>{{(recognitionResult.preview && recognitionResult.preview.new_name) || '-'}}</span></div>
+                      <div><strong>归档路径预览</strong><span>{{(recognitionResult.preview && recognitionResult.preview.target_path) || '-'}}</span></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="recognition-detail-grid">
+                  <div class="recognition-detail-card">
+                    <h3>guessit 基础解析</h3>
+                    <dl>
+                      <div><dt>标题</dt><dd>{{recognitionResult.guessit.title || '-'}}</dd></div>
+                      <div><dt>年份</dt><dd>{{recognitionResult.guessit.year || '-'}}</dd></div>
+                      <div><dt>季 / 集</dt><dd>S{{recognitionResult.guessit.season || '-'}} / E{{recognitionResult.guessit.episode || '-'}}</dd></div>
+                      <div><dt>是否建议 AI</dt><dd>{{recognitionResult.guessit.needs_ai_assist?'是':'否'}}</dd></div>
+                    </dl>
+                  </div>
+                  <div class="recognition-detail-card">
+                    <h3>最终匹配</h3>
+                    <dl>
+                      <div><dt>来源</dt><dd>{{(recognitionResult.ai && recognitionResult.ai.parse_source) || '-'}}</dd></div>
+                      <div><dt>资料库</dt><dd>{{(recognitionResult.match && recognitionResult.match.provider) || '-'}}</dd></div>
+                      <div><dt>剧集标题</dt><dd>{{(recognitionResult.match && recognitionResult.match.episode_title) || '-'}}</dd></div>
+                      <div><dt>季 / 集</dt><dd>S{{(recognitionResult.match && recognitionResult.match.season) || '-'}} / E{{(recognitionResult.match && recognitionResult.match.episode) || '-'}}</dd></div>
+                    </dl>
+                  </div>
+                </div>
+
+                <details class="recognition-raw">
+                  <summary>查看原始解析数据</summary>
+                  <pre>{{formatRecognitionRaw(recognitionResult)}}</pre>
+                </details>
+              </div>
+              <div v-else class="recognition-empty"></div>
+            </div>
+          </div>
+
+          <div v-else class="recognition-batch">
+            <div class="recognition-batch-head">
+              <div>
+                <h2>批量测试集</h2>
+                <p>粘贴 CSV，系统会对每条文件名同时跑 guessit、本地 AI、在线 AI，并计算准确率。</p>
+              </div>
+              <button class="btn btn-sm" @click="loadRecognitionBatchSample">填入示例</button>
+            </div>
+            <label class="recognition-toggle recognition-cache-toggle">
+              <input type="checkbox" v-model="recognitionBypassCache">
+              <span class="toggle-track"><span class="toggle-dot"></span></span>
+              <span>
+                <strong>绕过 API 缓存</strong>
+                <small>开启后，批量实验会实时请求 TMDB/BGM；关闭可复用缓存以减少请求量</small>
+              </span>
+            </label>
+            <textarea v-model="recognitionBatchText" class="recognition-batch-input" rows="8" placeholder="filename,expected_title,expected_year,expected_season,expected_episode,expected_provider,expected_id,media_type&#10;The.Mandalorian.S03E04.2023.WEB-DL.mkv,The Mandalorian,2023,3,4,tmdb,82856,tv"></textarea>
+            <div class="recognition-batch-actions">
+              <button class="recognition-run" @click="runRecognitionBatch" :disabled="recognitionBatchTesting || !recognitionBatchText.trim()">{{recognitionBatchTesting?'批量识别中...':'开始批量实验'}}</button>
+              <span>最多 100 条。未填写标准答案的字段不会参与对应准确率统计。</span>
+            </div>
+            <div v-if="recognitionBatchError" class="msg msg-err">{{recognitionBatchError}}</div>
+
+            <div v-if="recognitionBatchResult" class="recognition-batch-result">
+              <div class="recognition-stats">
+                <div class="recognition-stat-card" v-for="mode in recognitionBatchResult.modes" :key="mode">
+                  <h3>{{recognitionModeLabel(mode)}}</h3>
+                  <strong>{{metricPercent(recognitionBatchResult.stats.modes[mode].full)}}</strong>
+                  <span>完全命中率</span>
+                  <div>标题 {{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.title)}} · ID {{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.id)}}</div>
+                  <div>年份 {{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.year)}} · 季 {{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.season)}} · 集 {{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.episode)}}</div>
+                  <div>待手动 {{recognitionBatchResult.stats.modes[mode].pending_manual}} · 错配 {{recognitionBatchResult.stats.modes[mode].wrong_match}}</div>
+                </div>
+              </div>
+
+              <div class="recognition-table-wrap">
+                <table class="table recognition-compare-table">
+                  <thead>
+                    <tr>
+                      <th>文件名 / 标准答案</th>
+                      <th v-for="mode in recognitionBatchResult.modes" :key="mode">{{recognitionModeLabel(mode)}}</th>
+                    </tr>
+                  </thead>
+                  <tbody v-for="row in recognitionBatchResult.rows" :key="row.index">
+                    <tr>
+                      <td class="cell-path">
+                        <strong>{{row.filename}}</strong>
+                        <div class="path-target">期望：{{recognitionExpectationText(row.expected)}}</div>
+                      </td>
+                      <td v-for="mode in recognitionBatchResult.modes" :key="mode" :class="['recognition-mode-cell', resultCellClass(row.results[mode])]">
+                        <div class="recognition-cell-title">{{recognitionBrief(row.results[mode])}}</div>
+                        <div class="recognition-cell-meta">{{recognitionResultMeta(row.results[mode])}}</div>
+                        <div class="recognition-cell-score">{{recognitionScoreText(row.results[mode])}}</div>
+                      </td>
+                    </tr>
+                    <tr class="recognition-detail-row">
+                      <td :colspan="1 + recognitionBatchResult.modes.length">
+                        <details>
+                          <summary>识别过程与失败原因</summary>
+                          <div class="recognition-reason-grid">
+                            <div v-for="mode in recognitionBatchResult.modes" :key="mode" class="recognition-reason-card">
+                              <h4>{{recognitionModeLabel(mode)}}</h4>
+                              <ul>
+                                <li v-for="reason in row.results[mode].reasons" :key="reason">{{reason}}</li>
+                              </ul>
+                              <div class="recognition-mini">
+                                <div>解析名：{{(row.results[mode].diagnostics && row.results[mode].diagnostics.parsed_name) || '-'}}</div>
+                                <div>搜索词：{{recognitionSearchPlan(row.results[mode])}}</div>
+                              </div>
+                              <pre>{{formatRecognitionRaw(row.results[mode])}}</pre>
+                            </div>
+                          </div>
+                        </details>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </div>

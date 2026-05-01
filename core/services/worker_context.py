@@ -52,11 +52,16 @@ from utils.helpers import (
     build_db_query_plan,
     build_query_titles,
     candidate_to_result,
+    candidate_looks_like_extra_title,
+    candidate_looks_like_unrequested_variant,
+    derive_title_from_filename,
     extract_year_from_release,
+    GROUP_RELEASE_BRACKET_RE,
     normalize_parse_source,
     normalize_compare_text,
     safe_filename,
     safe_int,
+    text_mentions_extra_title,
     write_nfo,
     save_image,
     _nfo_has_empty_plot,
@@ -291,6 +296,13 @@ class WorkerContext:
     def _can_use_ollama_for_pick(self):
         return bool(self.ollama_url.get().strip() and self.ollama_model.get().strip())
 
+    def _can_use_online_model_for_pick(self):
+        return bool(
+            self.sf_api_url.get().strip()
+            and self.sf_api_key.get().strip()
+            and self.sf_model.get().strip()
+        )
+
     def _can_use_embedding_rank(self):
         if not self.use_embedding_rank.get():
             return False
@@ -415,7 +427,46 @@ class WorkerContext:
                               candidates, recognized_title=None):
         if not candidates:
             return query_title, "None", f"{source_name}无结果", {}
-        if len(candidates) == 1:
+        rank_pick_allowed = True
+        raw_name = ""
+        if isinstance(item, dict):
+            raw_name = str(item.get("old_name") or "")
+        else:
+            raw_name = str(getattr(item, "old_name", "") or "")
+        if GROUP_RELEASE_BRACKET_RE.match(raw_name):
+            derived_query = derive_title_from_filename(raw_name)
+            if (
+                derived_query
+                and normalize_compare_text(derived_query) != normalize_compare_text(query_title)
+            ):
+                rank_pick_allowed = False
+
+        if source_name.startswith("TMDb") and not text_mentions_extra_title(
+            f"{raw_name} {query_title}"
+        ):
+            regular_candidates = [
+                c for c in candidates if not candidate_looks_like_extra_title(c)
+            ]
+            if regular_candidates:
+                candidates = regular_candidates
+            elif candidates:
+                return query_title, "None", "TMDb候选疑似总集篇/特别篇，需手动确认", {}
+
+        if source_name.startswith("TMDb"):
+            source_text = f"{raw_name} {query_title}"
+            regular_candidates = [
+                c
+                for c in candidates
+                if not candidate_looks_like_unrequested_variant(c, source_text)
+            ]
+            if regular_candidates:
+                candidates = regular_candidates
+            elif candidates:
+                return query_title, "None", "TMDb候选疑似外传/衍生剧，需手动确认", {}
+
+        if len(candidates) == 1 and (
+            not source_name.startswith("TMDb") or rank_pick_allowed
+        ):
             return candidate_to_result(candidates[0], f"{source_name}命中")
 
         # Year pre-sort
@@ -452,26 +503,85 @@ class WorkerContext:
             if _exact is not None:
                 return candidate_to_result(_exact, f"标题匹配/{source_name}命中")
 
-        # Embedding rerank
+        prefer_ollama = bool(self.prefer_ollama.get())
+        online_ready = self._can_use_online_model_for_pick()
+        ollama_ready = self._can_use_ollama_for_pick()
+
+        # Embedding rerank. When a chat model is available, embedding only
+        # changes candidate order; the chat model remains the final judge.
         ranked, emb_pick, emb_msg = self._rerank_candidates_with_embedding(
             item, query_title, year, is_tv, source_name, candidates
         )
-        if emb_pick:
-            return candidate_to_result(emb_pick, f"Embedding判定/{source_name}命中")
+        if emb_pick and not (online_ready or ollama_ready):
+            hit_msg = f"Embedding判定/{source_name}命中"
+            if emb_msg:
+                hit_msg += f" ({emb_msg})"
+            return candidate_to_result(emb_pick, hit_msg)
 
-        # Ollama pick
-        chosen, reason = self._pick_candidate_with_ollama(
-            item, query_title, year, is_tv, source_name, ranked
-        )
-        if chosen:
-            return candidate_to_result(chosen, f"Ollama判定/{source_name}命中")
+        def _candidate_result_from_model(label, chosen, reason):
+            hit_msg = f"{label}/{source_name}命中"
+            if emb_msg:
+                hit_msg += f" ({emb_msg})"
+            if reason:
+                hit_msg += f" ({reason})"
+            return candidate_to_result(chosen, hit_msg)
 
-        # OpenAI-compatible online model pick
-        chosen, reason = self._pick_candidate_with_online_model(
-            item, query_title, year, is_tv, source_name, ranked
-        )
-        if chosen:
-            return candidate_to_result(chosen, f"在线模型判定/{source_name}命中")
+        if prefer_ollama and ollama_ready:
+            chosen, reason = self._pick_candidate_with_ollama(
+                item, query_title, year, is_tv, source_name, ranked
+            )
+            if chosen:
+                return _candidate_result_from_model("Ollama判定", chosen, reason)
+            online_ready = False
+
+        if online_ready:
+            chosen, reason = self._pick_candidate_with_online_model(
+                item, query_title, year, is_tv, source_name, ranked
+            )
+            if chosen:
+                return _candidate_result_from_model("在线模型判定", chosen, reason)
+
+        if (not prefer_ollama) and (not online_ready) and ollama_ready:
+            chosen, reason = self._pick_candidate_with_ollama(
+                item, query_title, year, is_tv, source_name, ranked
+            )
+            if chosen:
+                return _candidate_result_from_model("Ollama判定", chosen, reason)
+
+        # TMDb can return the correct anime by romanized alias while the visible
+        # zh-CN/original titles are Chinese/Japanese. Use this only as a final
+        # fallback after embedding/model judgement has had a chance to decide.
+        if (
+            rank_pick_allowed
+            and source_name.startswith("TMDb")
+            and not online_ready
+            and _q_norm
+            and len(_q_norm) >= 6
+        ):
+            primary_hits = []
+            for _c in ranked:
+                _meta = _c.get("meta") or {}
+                _sq_norm = re.sub(
+                    r"[\W_]+",
+                    "",
+                    str(_meta.get("search_query") or "").lower(),
+                )
+                if _sq_norm == _q_norm:
+                    primary_hits.append(_c)
+            primary_hits.sort(
+                key=lambda c: safe_int((c.get("meta") or {}).get("search_rank"), 999)
+            )
+            if primary_hits:
+                _top = primary_hits[0]
+                _top_meta = _top.get("meta") or {}
+                _top_rank = safe_int(_top_meta.get("search_rank"), 999)
+                _top_year = extract_year_from_release(_top.get("release") or "")
+                _year_ok = not year or not _top_year or _top_year == str(year).strip()
+                if _top_rank == 1 and _year_ok:
+                    hit_msg = f"TMDb首位候选/{source_name}命中"
+                    if emb_msg:
+                        hit_msg += f" ({emb_msg})"
+                    return candidate_to_result(_top, hit_msg)
 
         # --- Headless mode: no manual popup, return pending ---
         return query_title, "None", "待手动确认", {}

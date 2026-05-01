@@ -21,6 +21,7 @@ from utils.helpers import (
     format_error_message,
     get_cache_key,
     session,
+    text_mentions_extra_title,
     TIMEOUT_DB_DETAIL,
     TIMEOUT_DB_SEARCH,
 )
@@ -454,10 +455,10 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
     stype = "tv" if is_tv else "movie"
     q_norm = re.sub(r"[\W_]+", "", str(q).lower())
 
-    def _items_to_candidates(items):
+    def _items_to_candidates(items, search_query=""):
         candidates = []
         seen_ids = set()
-        for item in items[:8]:
+        for rank, item in enumerate(items[:8], 1):
             cid = str(item.get("id") or "")
             if not cid or cid in seen_ids:
                 continue
@@ -468,10 +469,13 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
             meta = {
                 "overview": item.get("overview", ""),
                 "rating": rating,
+                "popularity": item.get("popularity", 0),
                 "poster": item.get("poster_path", ""),
                 "fanart": item.get("backdrop_path", ""),
                 "release": release,
                 "original_title": item.get("original_name") or item.get("original_title") or "",
+                "search_query": search_query,
+                "search_rank": rank,
             }
             candidates.append(
                 {
@@ -488,8 +492,53 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
             )
         return candidates
 
-    def _request_once(query, year_mode=None):
-        params = {"api_key": api_key.strip(), "query": query, "language": "zh-CN"}
+    def _is_latin_query(query):
+        text = str(query or "")
+        return bool(re.search(r"[A-Za-z]", text)) and not bool(re.search(r"[\u4e00-\u9fff]", text))
+
+    def _item_extra(item):
+        fields = [
+            item.get("name") or item.get("title") or "",
+            item.get("original_name") or item.get("original_title") or "",
+        ]
+        return text_mentions_extra_title(" ".join(str(v) for v in fields if v))
+
+    def _rank_results(result_sets, query):
+        query_extra = text_mentions_extra_title(query)
+        query_norm = re.sub(r"[\W_]+", "", str(query).lower())
+        merged = {}
+        order = 0
+        for results in result_sets:
+            for item in results or []:
+                order += 1
+                cid = str(item.get("id") or "")
+                if not cid:
+                    continue
+                score = _similarity_score(item, query_norm)
+                name = item.get("name") or item.get("title") or ""
+                orig = item.get("original_name") or item.get("original_title") or ""
+                name_norm = re.sub(r"[\W_]+", "", str(name).lower())
+                orig_norm = re.sub(r"[\W_]+", "", str(orig).lower())
+                exact = bool(query_norm and (name_norm == query_norm or orig_norm == query_norm))
+                extra_penalty = 1 if (not query_extra and _item_extra(item)) else 0
+                priority = (
+                    extra_penalty,
+                    0 if exact else 1,
+                    -score,
+                    -float(item.get("popularity") or 0),
+                    order,
+                )
+                previous = merged.get(cid)
+                if previous is None or priority < previous[0]:
+                    merged[cid] = (priority, item)
+        return [item for _, item in sorted(merged.values(), key=lambda pair: pair[0])]
+
+    def _request_once(query, year_mode=None, language="zh-CN"):
+        params = {
+            "api_key": api_key.strip(),
+            "query": query,
+            "language": language,
+        }
         if year:
             if year_mode == "year":
                 params["year"] = year
@@ -503,16 +552,17 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
         response.raise_for_status()
         return response.json().get("results", [])
 
-    def _similarity_score(item):
+    def _similarity_score(item, query_norm=None):
+        compare_norm = query_norm or q_norm
         name = item.get("name") or item.get("title") or ""
         orig = item.get("original_name") or item.get("original_title") or ""
         name_norm = re.sub(r"[\W_]+", "", str(name).lower())
         orig_norm = re.sub(r"[\W_]+", "", str(orig).lower())
         scores = []
         if name_norm:
-            scores.append(difflib.SequenceMatcher(None, q_norm, name_norm).ratio())
+            scores.append(difflib.SequenceMatcher(None, compare_norm, name_norm).ratio())
         if orig_norm:
-            scores.append(difflib.SequenceMatcher(None, q_norm, orig_norm).ratio())
+            scores.append(difflib.SequenceMatcher(None, compare_norm, orig_norm).ratio())
         return max(scores) if scores else 0.0
 
     try:
@@ -528,9 +578,12 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
 
         for query in queries:
             for year_mode in search_plan:
-                results = _request_once(query, year_mode)
+                result_sets = [_request_once(query, year_mode, "zh-CN")]
+                if _is_latin_query(query):
+                    result_sets.append(_request_once(query, year_mode, "en-US"))
+                results = _rank_results(result_sets, query)
                 if results:
-                    return _items_to_candidates(results)
+                    return _items_to_candidates(results, query)
 
         # Fuzzy fallback: retry with split tokens and rerank by lexical similarity.
         token_queries = []
@@ -553,8 +606,8 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
             ranked = sorted(fuzzy_pool, key=_similarity_score, reverse=True)
             top = [it for it in ranked if _similarity_score(it) >= 0.35]
             if top:
-                return _items_to_candidates(top)
-            return _items_to_candidates(ranked)
+                return _items_to_candidates(top, " / ".join(token_queries))
+            return _items_to_candidates(ranked, " / ".join(token_queries))
         return []
     except requests.exceptions.Timeout:
         return []
@@ -576,7 +629,7 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
 def fetch_tmdb_candidates(title, year=None, is_tv=True, api_key=""):
     return cached_request(
         fetch_tmdb_candidates_raw,
-        get_cache_key("tmdb_candidates_v4", f"{title}_{year}_{is_tv}"),
+        get_cache_key("tmdb_candidates_v5", f"{title}_{year}_{is_tv}"),
         title,
         year,
         is_tv,

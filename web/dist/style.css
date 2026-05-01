@@ -117,6 +117,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica N
 .recognition-hero h1{font-size:26px;line-height:1.2;margin:0 0 4px}
 .recognition-hero p{color:#9aa0ae;font-size:15px;margin:0}
 .recognition-body{padding:26px 34px 34px}
+.recognition-tabs{display:inline-flex;gap:4px;margin-bottom:18px;padding:4px;border-radius:12px;background:#eef2ff;border:1px solid #dbe3ff}
+.recognition-tabs button{border:none;background:transparent;border-radius:9px;padding:8px 16px;font-weight:700;color:#64748b;cursor:pointer}
+.recognition-tabs button.active{background:#fff;color:#4f46e5;box-shadow:0 1px 6px rgba(79,70,229,.14)}
 .recognition-label{display:block;font-size:14px;font-weight:700;margin-bottom:10px}
 .recognition-search{display:flex;gap:14px;align-items:center;margin-bottom:14px}
 .recognition-search input{flex:1;height:52px;border:2px solid #c8abff;border-radius:18px;padding:0 20px;font-size:16px;outline:none;box-shadow:0 0 0 5px rgba(141,91,255,.1)}
@@ -131,6 +134,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica N
 .recognition-toggle input:checked+.toggle-track .toggle-dot{transform:translateX(22px)}
 .recognition-toggle strong{display:block;font-size:15px;margin-bottom:3px}
 .recognition-toggle small{display:block;color:#475569;font-size:13px}
+.recognition-cache-toggle{background:#fffaf0;border-color:#fed7aa}
+.recognition-cache-toggle input:checked+.toggle-track{background:#f59e0b}
 .recognition-pills{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 18px}
 .recognition-pills span{padding:5px 14px;border-radius:999px;background:#eef2ff;color:#5b63ff;border:1px solid #cdd5ff;font-size:13px;font-weight:700}
 .recognition-result-box{min-height:360px;border:1px solid #e5e7eb;border-radius:20px;background:linear-gradient(180deg,#fff,#fbfdff);padding:20px}
@@ -159,5 +164,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica N
 .recognition-raw{margin-top:14px;border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;background:#f8fafc}
 .recognition-raw summary{cursor:pointer;font-weight:700;font-size:13px;color:#475569}
 .recognition-raw pre{margin:10px 0 0;white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.5;max-height:320px;overflow:auto}
+.recognition-batch-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:12px}
+.recognition-batch-head h2{font-size:20px;margin:0 0 4px}
+.recognition-batch-head p{margin:0;color:#64748b}
+.recognition-batch-input{width:100%;border:1px solid #cfd8ea;border-radius:14px;padding:14px;font-family:Consolas,Monaco,monospace;font-size:13px;line-height:1.6;resize:vertical;outline:none;background:#fbfdff}
+.recognition-batch-input:focus{border-color:#8b5cf6;box-shadow:0 0 0 4px rgba(139,92,246,.12)}
+.recognition-batch-actions{display:flex;align-items:center;gap:14px;margin:14px 0 16px;flex-wrap:wrap}
+.recognition-batch-actions span{font-size:13px;color:#64748b}
+.recognition-batch-result{display:flex;flex-direction:column;gap:16px}
+.recognition-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.recognition-stat-card{border:1px solid #e5e7eb;border-radius:14px;padding:14px;background:#fff}
+.recognition-stat-card h3{font-size:14px;margin:0 0 8px;color:#475569}
+.recognition-stat-card strong{display:block;font-size:28px;line-height:1;color:#4f46e5;margin-bottom:4px}
+.recognition-stat-card span,.recognition-stat-card div{font-size:12px;color:#64748b;line-height:1.7}
+.recognition-table-wrap{overflow:auto;border:1px solid #e5e7eb;border-radius:14px;background:#fff}
+.recognition-compare-table{box-shadow:none;border-radius:0;min-width:980px}
+.recognition-mode-cell{vertical-align:top;min-width:180px}
+.recognition-mode-cell.is-pass{background:#f0fdf4}
+.recognition-mode-cell.is-wrong{background:#fff1f2}
+.recognition-mode-cell.is-pending{background:#fffbeb}
+.recognition-mode-cell.is-failed{background:#fef2f2}
+.recognition-mode-cell.is-partial{background:#f8fafc}
+.recognition-cell-title{font-weight:700;word-break:break-word}
+.recognition-cell-meta,.recognition-cell-score{font-size:12px;color:#64748b;margin-top:4px;word-break:break-word}
+.recognition-detail-row td{background:#fbfdff;padding:8px 12px}
+.recognition-detail-row summary{cursor:pointer;font-size:12px;color:#475569;font-weight:700}
+.recognition-reason-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:10px}
+.recognition-reason-card{border:1px solid #e5e7eb;border-radius:12px;background:#fff;padding:12px;min-width:0}
+.recognition-reason-card h4{margin:0 0 8px;font-size:13px}
+.recognition-reason-card ul{margin:0 0 8px 18px;color:#475569;font-size:12px;line-height:1.6}
+.recognition-mini{font-size:12px;color:#64748b;line-height:1.6;margin-bottom:8px;word-break:break-all}
+.recognition-reason-card pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:11px;line-height:1.45;max-height:240px;overflow:auto;background:#f8fafc;border-radius:8px;padding:8px}
 @media(max-width:900px){.recognition-search,.recognition-summary{display:flex;flex-direction:column}.recognition-run{width:100%}.recognition-detail-grid{grid-template-columns:1fr}.recognition-preview div{grid-template-columns:1fr}.recognition-poster{width:100%;min-height:220px}}
+@media(max-width:1100px){.recognition-stats,.recognition-reason-grid{grid-template-columns:1fr}}
 @media(max-width:768px){.sidebar{width:60px}.sidebar-header h2,.nav-list li span:not(.icon),.sidebar-footer{display:none}.content{margin-left:60px;padding:16px}}
