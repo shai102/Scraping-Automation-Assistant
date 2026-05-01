@@ -9,6 +9,7 @@ from guessit import guessit
 from ai.ollama_ai import fetch_siliconflow_info, is_ai_rate_limited_error
 from db.tmdb_api import (
     fetch_bgm_by_id,
+    fetch_bgm_candidates,
     fetch_hybrid_episode_meta,
     fetch_tmdb_by_id,
     fetch_tmdb_credits,
@@ -27,6 +28,7 @@ from utils.helpers import (
     derive_title_from_filename,
     extract_db_id_from_path,
     extract_episode_number,
+    extract_year_from_release,
     format_error_message,
     normalize_compare_text,
     safe_filename,
@@ -416,6 +418,7 @@ def bg_update_single_ui(gui, idx, title, t_id, msg, meta):
                     e_calc,
                     gui.bgm_api_key.get(),
                     gui.tmdb_api_key.get(),
+                    y,
                 )
 
         fallback_ep_title = g.get("episode_title") or ""
@@ -485,6 +488,7 @@ def bg_update_single_ui(gui, idx, title, t_id, msg, meta):
             "votes": meta.get("votes", 0),
             "release": meta.get("release", ""),
             "original_title": meta.get("original_title", ""),
+            "parse_source": "guessit",
         }
         item.new_name_only = new_fn
 
@@ -838,6 +842,21 @@ def process_task(gui, i):
             _, _, _, detail_meta = fetch_tmdb_by_id(tid, is_tv, gui.tmdb_api_key.get())
             if detail_meta:
                 meta = {**detail_meta, **{k: v for k, v in meta.items() if v}}
+
+        # TMDB 返回的标题是纯拉丁字符（TMDB 无中文名）→ 尝试用 BGM 补充中文名
+        # 条件：TMDB 模式 + 已有 ID + 标题无中文/日文假名 + TMDB 有年份（保证搜索精度）
+        if (_eff_tmdb and tid != "None" and std_t
+                and re.search(r'[A-Za-z]', std_t)
+                and not re.search(r'[\u4e00-\u9fff\u3040-\u30ff]', std_t)):
+            _release_year = extract_year_from_release(meta.get("release", ""))
+            if _release_year:
+                _bgm_cands = fetch_bgm_candidates(
+                    std_t, year=_release_year, api_key=gui.bgm_api_key.get()
+                )
+                if _bgm_cands:
+                    _bgm_cn_title = _bgm_cands[0].get("title", "")
+                    if _bgm_cn_title and re.search(r'[\u4e00-\u9fff]', _bgm_cn_title):
+                        std_t = _bgm_cn_title
 
         ep_n, ep_p, ep_s, s_p = "", "", "", ""
 
