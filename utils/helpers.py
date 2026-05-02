@@ -810,6 +810,12 @@ def build_db_query_plan(item, query_title, ai_data, g):
         not is_meaningful_query_title(guess_title)
         or normalize_compare_text(guess_title) != normalize_compare_text(ai_title)
     ):
+        # 若 guessit 也给出了有意义的不同标题（如英文片名），作为备选查询组兜底。
+        # 场景：AI 返回中文/韩文标题，TMDB API 超时，但英文标题可能命中缓存。
+        if is_meaningful_query_title(guess_title) and (
+            normalize_compare_text(guess_title) != normalize_compare_text(ai_title)
+        ):
+            return [[ai_title], [guess_title]]
         return [[ai_title]]
 
     if (
