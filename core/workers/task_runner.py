@@ -53,6 +53,32 @@ STANDARD_EPISODE_RE = re.compile(r"(?i)\bS\d{1,2}E\d{1,3}\b")
 AI_RATE_LIMIT_COOLDOWN_SECONDS = 60.0
 
 
+def _render_media_filename(gui, template, **kwargs):
+    renderer = getattr(gui, "_render_media_filename", None)
+    if callable(renderer):
+        return renderer(template, **kwargs)
+
+    context = {
+        "title": safe_str(kwargs.get("title", "")),
+        "year": safe_str(kwargs.get("year", "")),
+        "season": safe_str(kwargs.get("season", "")),
+        "episode": safe_str(kwargs.get("episode", "")),
+        "ep_name": safe_str(kwargs.get("ep_name", "")),
+        "ext": safe_str(kwargs.get("ext", "")),
+        "media_suffix": "",
+        # 以下字段仅在 Jinja2 模板中可用
+        "original_title": safe_str(kwargs.get("original_title", "")),
+        "rating": kwargs.get("rating") or 0,
+        "genres": kwargs.get("genres") or [],
+        "studios": kwargs.get("studios") or [],
+        "overview": safe_str(kwargs.get("overview", "")),
+        "ep_plot": safe_str(kwargs.get("ep_plot", "")),
+        "release": safe_str(kwargs.get("release", "")),
+    }
+    from core.services.naming_service import render_filename_template
+    return render_filename_template(template, context, False), ""
+
+
 def _is_meaningful_title(title):
     raw = str(title or "").strip()
     if not raw:
@@ -434,28 +460,49 @@ def bg_update_single_ui(gui, idx, title, t_id, msg, meta):
         safe_ep_name = safe_filename(ep_n_final)
 
         if is_tv:
-            new_fn = (
-                gui.tv_format.get()
-                .replace("{title}", safe_title)
-                .replace("{year}", safe_str(y))
-                .replace("{s:02d}", s_fmt)
-                .replace("{s}", s_fmt)
-                .replace("{e:02d}", e_fmt)
-                .replace("{e}", e_fmt)
-                .replace("{ep_name}", safe_ep_name)
-                .replace("{ext}", v_tag + ext)
+            new_fn, media_suffix = _render_media_filename(
+                gui,
+                gui.tv_format.get(),
+                title=safe_title,
+                year=y,
+                season=s_fmt,
+                episode=e_fmt,
+                ep_name=safe_ep_name,
+                ext=v_tag + ext,
+                source_filename=item.old_name,
+                pure_name=pure,
+                parse_source=item.parse_source or "",
+                source_provider="tmdb" if _eff_tmdb else "bgm",
+                media_id=t_id,
+                is_tv=is_tv,
+                original_title=meta.get("original_title", ""),
+                rating=meta.get("rating") or 0,
+                genres=meta.get("genres") or [],
+                studios=meta.get("studios") or [],
+                overview=meta.get("overview", ""),
+                ep_plot=ep_p,
+                release=meta.get("release", ""),
             )
         else:
-            new_fn = (
-                gui.movie_format.get()
-                .replace("{title}", safe_title)
-                .replace("{year}", safe_str(y))
-                .replace("{ext}", v_tag + ext)
+            new_fn, media_suffix = _render_media_filename(
+                gui,
+                gui.movie_format.get(),
+                title=safe_title,
+                year=y,
+                ext=v_tag + ext,
+                source_filename=item.old_name,
+                pure_name=pure,
+                parse_source=item.parse_source or "",
+                source_provider="tmdb" if _eff_tmdb else "bgm",
+                media_id=t_id,
+                is_tv=is_tv,
+                original_title=meta.get("original_title", ""),
+                rating=meta.get("rating") or 0,
+                genres=meta.get("genres") or [],
+                studios=meta.get("studios") or [],
+                overview=meta.get("overview", ""),
+                release=meta.get("release", ""),
             )
-
-        new_fn = re.sub(r"\s*\(\s*\)", "", new_fn)
-        new_fn = re.sub(r"\s*-\s*(?=\.)|\s*-\s*$", "", new_fn)
-        new_fn = re.sub(r"\s+(?=\.)", "", new_fn).strip()
 
         actors, directors = [], []
         if _eff_tmdb and t_id and t_id != "None":
@@ -489,7 +536,9 @@ def bg_update_single_ui(gui, idx, title, t_id, msg, meta):
             "release": meta.get("release", ""),
             "original_title": meta.get("original_title", ""),
             "parse_source": "guessit",
+            "media_suffix": media_suffix,
         }
+        item.media_suffix = media_suffix
         item.new_name_only = new_fn
 
         root_d = gui.target_root.get().strip()
@@ -896,28 +945,49 @@ def process_task(gui, i):
         safe_ep_name = safe_filename(ep_n_final)
 
         if is_tv:
-            new_fn = (
-                gui.tv_format.get()
-                .replace("{title}", safe_std_t)
-                .replace("{year}", safe_str(y))
-                .replace("{s:02d}", s_fmt)
-                .replace("{s}", s_fmt)
-                .replace("{e:02d}", e_fmt)
-                .replace("{e}", e_fmt)
-                .replace("{ep_name}", safe_ep_name)
-                .replace("{ext}", v_tag + ext)
+            new_fn, media_suffix = _render_media_filename(
+                gui,
+                gui.tv_format.get(),
+                title=safe_std_t,
+                year=y,
+                season=s_fmt,
+                episode=e_fmt,
+                ep_name=safe_ep_name,
+                ext=v_tag + ext,
+                source_filename=item.old_name,
+                pure_name=pure,
+                parse_source=item.parse_source or "",
+                source_provider="tmdb" if _eff_tmdb else "bgm",
+                media_id=tid,
+                is_tv=is_tv,
+                original_title=meta.get("original_title", ""),
+                rating=meta.get("rating") or 0,
+                genres=meta.get("genres") or [],
+                studios=meta.get("studios") or [],
+                overview=meta.get("overview", ""),
+                ep_plot=ep_p,
+                release=meta.get("release", ""),
             )
         else:
-            new_fn = (
-                gui.movie_format.get()
-                .replace("{title}", safe_std_t)
-                .replace("{year}", safe_str(y))
-                .replace("{ext}", v_tag + ext)
+            new_fn, media_suffix = _render_media_filename(
+                gui,
+                gui.movie_format.get(),
+                title=safe_std_t,
+                year=y,
+                ext=v_tag + ext,
+                source_filename=item.old_name,
+                pure_name=pure,
+                parse_source=item.parse_source or "",
+                source_provider="tmdb" if _eff_tmdb else "bgm",
+                media_id=tid,
+                is_tv=is_tv,
+                original_title=meta.get("original_title", ""),
+                rating=meta.get("rating") or 0,
+                genres=meta.get("genres") or [],
+                studios=meta.get("studios") or [],
+                overview=meta.get("overview", ""),
+                release=meta.get("release", ""),
             )
-
-        new_fn = re.sub(r"\s*\(\s*\)", "", new_fn)
-        new_fn = re.sub(r"\s*-\s*(?=\.)|\s*-\s*$", "", new_fn)
-        new_fn = re.sub(r"\s+(?=\.)", "", new_fn).strip()
 
         actors, directors = [], []
         if _eff_tmdb and tid and tid != "None":
@@ -952,8 +1022,10 @@ def process_task(gui, i):
             "original_title": meta.get("original_title", ""),
             "parse_source": parse_source,
             "query_title": t,
+            "media_suffix": media_suffix,
         }
         item.parse_source = parse_source
+        item.media_suffix = media_suffix
 
         item.new_name_only = new_fn
 

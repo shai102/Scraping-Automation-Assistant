@@ -1,4 +1,5 @@
 import difflib
+import logging
 import os
 import re
 
@@ -17,6 +18,51 @@ from utils.helpers import (
     parse_error_message,
     safe_int,
     safe_str,
+)
+
+MEDIA_SUFFIX_START_RE = re.compile(
+    r"""(?ix)
+    (?:^|[.\s_\-\[\(])
+    (
+        \d{3,4}p
+        |web[.\s_-]?dl
+        |web[.\s_-]?rip
+        |blu[.\s_-]?ray
+        |bluray
+        |bdrip
+        |bdremux
+        |remux
+        |hdtv
+        |hdrip
+        |dvdrip
+        |uhd
+        |hevc
+        |x265
+        |x264
+        |h[.\s_-]?265
+        |h[.\s_-]?264
+        |av1
+        |hdr10\+?
+        |dolby[.\s_-]?vision
+        |dv
+        |aac(?:[.\-_]?\d\.\d)?
+        |ddp(?:[.\-_]?\d\.\d)?
+        |dd(?:[.\-_]?\d\.\d)?
+        |dts(?:[.\-_]?hd)?
+        |truehd
+        |atmos
+        |tving
+        |nf
+        |netflix
+        |amzn
+        |amazon
+        |dsnp
+        |disney
+        |hmax
+        |hulu
+        |colortv
+    )
+    """,
 )
 
 
@@ -41,6 +87,108 @@ def extract_lang_and_ext(filename, lang_tags):
     if match and match.group(1):
         return filename[: match.start()], match.group(1) + match.group(2)
     return os.path.splitext(filename)
+
+
+def extract_media_suffix(filename, pure_name=None):
+    """Extract a media-info suffix like 2160p.WEB-DL.H265.AAC-Group."""
+    text = str(
+        pure_name
+        if pure_name not in (None, "")
+        else os.path.splitext(str(filename or ""))[0]
+    ).strip()
+    if not text:
+        return ""
+
+    match = MEDIA_SUFFIX_START_RE.search(text)
+    if not match:
+        return ""
+
+    suffix = text[match.start(1):].strip(" ._-[]()")
+    if not suffix:
+        return ""
+    if normalize_compare_text(suffix) == normalize_compare_text(text):
+        return ""
+    return suffix
+
+
+def cleanup_rendered_filename(text):
+    """Normalize rendered filename text and remove empty separator fragments."""
+    cleaned = str(text or "")
+    cleaned = re.sub(r"\s*[\(\[]\s*[\)\]]", "", cleaned)
+    cleaned = re.sub(r"\s*\{\s*\}", "", cleaned)
+    cleaned = re.sub(r"\s*\(\s*\)", "", cleaned)
+    cleaned = re.sub(r"\s*-\s*(?=\.)|\s*-\s*$", "", cleaned)
+    cleaned = re.sub(r"\s+(?=\.)", "", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return cleaned.strip()
+
+
+def apply_media_suffix_template(template, media_suffix, preserve_media_suffix):
+    """Auto-append media suffix before extension when enabled and template omits it."""
+    working = str(template or "")
+    suffix = str(media_suffix or "").strip()
+    if preserve_media_suffix and suffix and "{media_suffix}" not in working:
+        if "{ext}" in working:
+            working = working.replace("{ext}", " - {media_suffix}{ext}", 1)
+        else:
+            working = working + " - {media_suffix}"
+    return working
+
+
+def _is_jinja2_template(template):
+    """Return True if the template string uses Jinja2 syntax ({{ or {%)."""
+    return bool(re.search(r'\{\{|\{%', str(template or "")))
+
+
+def _render_jinja2(template, context):
+    """Render a Jinja2 template string with the given context.
+
+    Uses SandboxedEnvironment for safety.  On any render error, falls back to
+    returning the raw template string so the user can notice and fix it.
+    """
+    try:
+        from jinja2.sandbox import SandboxedEnvironment
+        from jinja2 import Undefined
+        env = SandboxedEnvironment(undefined=Undefined, autoescape=False)
+        rendered = env.from_string(str(template)).render(**context)
+        return cleanup_rendered_filename(rendered)
+    except Exception as err:
+        logging.warning("Jinja2 模板渲染失败，回退保留原模板: %s", err)
+        return cleanup_rendered_filename(str(template))
+
+
+def render_filename_template(template, context, preserve_media_suffix=False):
+    """Render filename templates supporting legacy {var} and Jinja2 {{ }}/ {% %} syntax.
+
+    Detection:
+    - Template contains ``{{`` or ``{%``  → Jinja2 path (SandboxedEnvironment)
+    - Otherwise                           → Legacy .replace() path (backward-compat)
+    """
+    context = context or {}
+    media_suffix = safe_str(context.get("media_suffix"))
+    working = apply_media_suffix_template(
+        template, media_suffix, preserve_media_suffix
+    )
+
+    if _is_jinja2_template(working):
+        return _render_jinja2(working, context)
+
+    # --- Legacy path (unchanged) ---
+    rendered = (
+        str(working)
+        .replace("{title}", safe_str(context.get("title")))
+        .replace("{year}", safe_str(context.get("year")))
+        .replace("{s:02d}", safe_str(context.get("season")))
+        .replace("{s}", safe_str(context.get("season")))
+        .replace("{season}", safe_str(context.get("season")))
+        .replace("{e:02d}", safe_str(context.get("episode")))
+        .replace("{e}", safe_str(context.get("episode")))
+        .replace("{episode}", safe_str(context.get("episode")))
+        .replace("{ep_name}", safe_str(context.get("ep_name")))
+        .replace("{media_suffix}", media_suffix)
+        .replace("{ext}", safe_str(context.get("ext")))
+    )
+    return cleanup_rendered_filename(rendered)
 
 
 def extract_explicit_season(pure_name):

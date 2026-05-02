@@ -28,9 +28,11 @@ from core.services.naming_service import (
     can_reuse_dir_ai,
     extract_explicit_season,
     extract_lang_and_ext,
+    extract_media_suffix,
     friendly_status_text,
     get_version_tag,
     pick_season,
+    render_filename_template,
 )
 from db.tmdb_api import (
     fetch_bgm_by_id,
@@ -138,6 +140,7 @@ class WorkerContext:
         self.video_exts = _SimpleVar(config.get("video_exts", DEFAULT_VIDEO_EXTS))
         self.sub_audio_exts = _SimpleVar(config.get("sub_audio_exts", DEFAULT_SUB_AUDIO_EXTS))
         self.lang_tags = _SimpleVar(config.get("lang_tags", DEFAULT_LANG_TAGS))
+        self.preserve_media_suffix = _SimpleVar(config.get("preserve_media_suffix", False))
         self.ollama_url = _SimpleVar(config.get("ollama_url", "http://localhost:11434"))
         self.ollama_model = _SimpleVar(config.get("ollama_model", ""))
         self.embedding_model = _SimpleVar(config.get("embedding_model", ""))
@@ -193,6 +196,7 @@ class WorkerContext:
             var = getattr(self, attr, None)
             if var is not None:
                 var.set(cfg.get(attr, var.get()))
+        self.preserve_media_suffix.set(cfg.get("preserve_media_suffix", False))
         self.prefer_ollama.set(cfg.get("prefer_ollama", False))
         self.use_embedding_rank.set(cfg.get("use_embedding_rank", True))
         self.ai_mode.set(cfg.get("ai_mode", "assist"))
@@ -262,6 +266,47 @@ class WorkerContext:
 
     def _get_version_tag(self, path):
         return get_version_tag(path)
+
+    def _extract_media_suffix(self, filename, pure_name=None):
+        return extract_media_suffix(filename, pure_name)
+
+    def _render_media_filename(
+        self,
+        template,
+        *,
+        title="",
+        year="",
+        season="",
+        episode="",
+        ep_name="",
+        ext="",
+        source_filename="",
+        pure_name="",
+        parse_source="",
+        source_provider="",
+        media_id="",
+        is_tv=True,
+    ):
+        preserve = bool(self.preserve_media_suffix.get())
+        media_suffix = ""
+        if preserve:
+            media_suffix = safe_filename(
+                self._extract_media_suffix(source_filename, pure_name)
+            )
+        context = {
+            "title": title,
+            "year": year,
+            "season": season,
+            "episode": episode,
+            "ep_name": ep_name,
+            "ext": ext,
+            "media_suffix": media_suffix,
+            "parse_source": parse_source,
+            "source_provider": source_provider,
+            "media_id": media_id,
+            "is_tv": is_tv,
+        }
+        return render_filename_template(template, context, preserve), media_suffix
 
     def _friendly_status_text(self, message):
         return friendly_status_text(message)

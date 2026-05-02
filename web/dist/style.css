@@ -326,6 +326,8 @@ main.content>section{padding-top:0}
 .proxy-icon{border-radius:8px;background:#e8f1ff}
 .proxy-help{border-radius:8px;background:#f7f8ff;border-color:#d9e2ff}
 .proxy-table{border-radius:8px}
+.setting-check{display:flex!important;align-items:center;gap:10px;margin:0!important;color:#344054!important;font-weight:800!important}
+.setting-check input{width:18px;height:18px;accent-color:var(--primary);flex:0 0 auto}
 
 /* In-app notifications */
 .toast-stack{position:fixed;top:18px;right:22px;z-index:3000;display:flex;flex-direction:column;gap:10px;pointer-events:none}

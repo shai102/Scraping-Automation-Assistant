@@ -16,7 +16,7 @@
         <div class="app-brand-mark">🎬</div>
         <div>
           <h2>刮削助手</h2>
-          <span>v2.9</span>
+          <span>v3.0</span>
         </div>
       </div>
     </div>
@@ -55,9 +55,6 @@
         <span class="icon">📨</span> TG 通知
       </li>
     </ul>
-    <div class="sidebar-footer">
-      <span class="version">v2.9</span>
-    </div>
   </nav>
 
   <!-- Main content -->
@@ -973,6 +970,13 @@
         <div class="form-group">
           <label>语言标签</label>
           <textarea v-model="cfg.lang_tags" rows="2" style="font-family:monospace;resize:vertical"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="setting-check">
+            <input type="checkbox" v-model="cfg.preserve_media_suffix">
+            <span>保留媒体信息后缀（如 2160p.TVING.WEB-DL.H.265.AAC-ColorTV）</span>
+          </label>
+          <small style="color:#888;display:block;margin-top:6px">开启后会从原文件名提取清晰度、片源、编码、音频、发布组等信息；如果命名模板未显式写入 {media_suffix}，会自动追加到扩展名前。</small>
         </div>
         <div class="form-row">
           <div class="form-group">

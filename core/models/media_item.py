@@ -12,4 +12,4 @@ class MediaItem:
     new_name_only: str = ""
     full_target: str = ""
     parse_source: str = ""
-
+    media_suffix: str = ""

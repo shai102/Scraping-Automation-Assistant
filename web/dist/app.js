@@ -978,6 +978,7 @@ const app = Vue.createApp({
         if (this.cfg.online_embedding_model === undefined) this.cfg.online_embedding_model = '';
         if (this.cfg.proxy_enabled === undefined) this.cfg.proxy_enabled = false;
         if (this.cfg.proxy_url === undefined) this.cfg.proxy_url = '';
+        if (this.cfg.preserve_media_suffix === undefined) this.cfg.preserve_media_suffix = false;
         if (!this.cfg.proxy_no_proxy) {
           this.cfg.proxy_no_proxy = 'localhost,127.0.0.1,::1,0.0.0.0,host.docker.internal,*.local,10.*,192.168.*,172.16.*,172.17.*,172.18.*,172.19.*,172.20.*,172.21.*,172.22.*,172.23.*,172.24.*,172.25.*,172.26.*,172.27.*,172.28.*,172.29.*,172.30.*,172.31.*';
         }

@@ -167,21 +167,20 @@ def _try_nfo_fast_path(item, ctx) -> bool:
     safe_t = safe_filename(series_title)
     safe_ep = safe_filename(ep_n or f"第 {e} 集")
 
-    new_fn = (
-        ctx.tv_format.get()
-        .replace("{title}", safe_t)
-        .replace("{year}", safe_str(year))
-        .replace("{s:02d}", s_fmt)
-        .replace("{s}", s_fmt)
-        .replace("{e:02d}", e_fmt)
-        .replace("{e}", e_fmt)
-        .replace("{ep_name}", safe_ep)
-        .replace("{ext}", ext_full)
+    new_fn, media_suffix = ctx._render_media_filename(
+        ctx.tv_format.get(),
+        title=safe_t,
+        year=year,
+        season=s_fmt,
+        episode=e_fmt,
+        ep_name=safe_ep,
+        ext=ext_full,
+        source_filename=item.old_name,
+        pure_name=pure_name,
+        source_provider="tmdb" if use_tmdb else "bgm",
+        media_id=tid,
+        is_tv=True,
     )
-    import re as _re
-    new_fn = _re.sub(r"\s*\(\s*\)", "", new_fn)
-    new_fn = _re.sub(r"\s*-\s*(?=\.)|\s*-\s*$", "", new_fn)
-    new_fn = _re.sub(r"\s+(?=\.)", "", new_fn).strip()
 
     item.metadata = {
         "id": tid,
@@ -208,7 +207,9 @@ def _try_nfo_fast_path(item, ctx) -> bool:
         "votes": 0,
         "release": "",
         "original_title": "",
+        "media_suffix": media_suffix,
     }
+    item.media_suffix = media_suffix
     item.new_name_only = new_fn
 
     root_d = ctx.target_root.get().strip() if hasattr(ctx, 'target_root') else ""

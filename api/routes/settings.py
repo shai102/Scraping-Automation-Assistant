@@ -38,6 +38,7 @@ class SettingsModel(BaseModel):
     video_exts: Optional[str] = None
     sub_audio_exts: Optional[str] = None
     lang_tags: Optional[str] = None
+    preserve_media_suffix: Optional[bool] = None
     ollama_url: Optional[str] = None
     ollama_model: Optional[str] = None
     embedding_model: Optional[str] = None
@@ -151,6 +152,7 @@ def get_settings_raw():
     cfg.setdefault("proxy_enabled", False)
     cfg.setdefault("proxy_url", "")
     cfg.setdefault("proxy_no_proxy", DEFAULT_NO_PROXY)
+    cfg.setdefault("preserve_media_suffix", False)
     return cfg
 
 

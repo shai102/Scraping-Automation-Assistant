@@ -19,7 +19,9 @@ from core.services.matcher_service import (
 from core.services.naming_service import (
     can_reuse_dir_ai,
     extract_explicit_season,
+    extract_media_suffix,
     pick_season,
+    render_filename_template,
 )
 from core.workers.task_runner import (
     SPECIAL_TAG_RE,
@@ -57,6 +59,49 @@ class SmokeTests(unittest.TestCase):
         self.assertTrue(proxy_bypass_url("http://host.docker.internal:7890"))
         self.assertTrue(proxy_bypass_url("http://192.168.100.195:8090"))
         self.assertFalse(proxy_bypass_url("https://api.themoviedb.org/3/configuration"))
+
+    def test_extract_media_suffix_from_standard_episode_name(self):
+        name = "Signal.S01E02.2160p.TVING.WEB-DL.H.265.AAC-ColorTV.strm"
+        self.assertEqual(
+            extract_media_suffix(name),
+            "2160p.TVING.WEB-DL.H.265.AAC-ColorTV",
+        )
+
+    def test_render_filename_template_appends_media_suffix(self):
+        rendered = render_filename_template(
+            "{title} - S{s:02d}E{e:02d} - {ep_name}{ext}",
+            {
+                "title": "信号",
+                "season": "01",
+                "episode": "02",
+                "ep_name": "回响",
+                "ext": ".strm",
+                "media_suffix": "2160p.TVING.WEB-DL.H.265.AAC-ColorTV",
+            },
+            preserve_media_suffix=True,
+        )
+        self.assertEqual(
+            rendered,
+            "信号 - S01E02 - 回响 - 2160p.TVING.WEB-DL.H.265.AAC-ColorTV.strm",
+        )
+
+    def test_worker_context_render_media_filename_respects_setting(self):
+        ctx = WorkerContext({"preserve_media_suffix": True})
+        rendered, suffix = ctx._render_media_filename(
+            "{title} - S{s:02d}E{e:02d} - {ep_name}{ext}",
+            title="信号",
+            season="01",
+            episode="02",
+            ep_name="回响",
+            ext=".strm",
+            source_filename="Signal.S01E02.2160p.TVING.WEB-DL.H.265.AAC-ColorTV.strm",
+            pure_name="Signal.S01E02.2160p.TVING.WEB-DL.H.265.AAC-ColorTV",
+        )
+        self.assertEqual(suffix, "2160p.TVING.WEB-DL.H.265.AAC-ColorTV")
+        self.assertEqual(
+            rendered,
+            "信号 - S01E02 - 回响 - 2160p.TVING.WEB-DL.H.265.AAC-ColorTV.strm",
+        )
 
     def test_extract_siliconflow_content_success(self):
         payload = {
