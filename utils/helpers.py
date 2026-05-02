@@ -502,6 +502,8 @@ def extract_title_after_leading_release_group(pure_name):
 
     title = clean_search_title(match.group(2))
     title = re.sub(r"(?i)[\s._-]+S\d{1,2}E\d{1,4}.*$", "", title).strip()
+    # 去除末尾集号，如 " - 01"、" - 12v2"（横线 + 纯数字），避免集号混入标题
+    title = re.sub(r"\s*[-–]\s*\d{1,3}(?:v\d)?\s*$", "", title).strip()
     if not is_meaningful_query_title(title) or _is_noise_title_fragment(title):
         return ""
     return title
