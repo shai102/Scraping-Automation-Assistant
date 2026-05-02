@@ -719,11 +719,16 @@ def process_task(gui, i):
                 else:
                     if is_ai_rate_limited_error(ai_msg):
                         _mark_ai_rate_limited(item)
+                        return
                     else:
-                        # AI 失败 → 直接待手动，不猜测
-                        item.metadata = {"id": "None", "parse_source": "ai"}
-                        item.new_name_only = ""
-                    return
+                        # AI 失败（非限流）→ 回退到 guessit 继续查资料库，不直接放弃
+                        # 例如 AI 超时但 guessit 已能正确解析文件名时，仍可完成匹配
+                        t = guess_title
+                        y = guess_year
+                        s = guess_season
+                        e = guess_episode
+                        parse_source = "guessit"
+                        ai_msg = "AI失败·guessit兜底"
             else:
                 # Skip AI recognition if folder has TMDB/BGM ID
                 if ai_mode_val == "assist" and guessit_needs_assist and not has_folder_id:
