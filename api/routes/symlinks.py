@@ -32,6 +32,7 @@ def list_symlinks(
     folder_id: Optional[int] = None,
     status: Optional[str] = None,
     keyword: Optional[str] = None,
+    dir: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -43,6 +44,12 @@ def list_symlinks(
         q = q.filter(SymlinkRecord.status == status)
     if keyword:
         q = q.filter(SymlinkRecord.original_path.contains(keyword))
+    if dir:
+        norm_dir = os.path.normpath(dir)
+        q = q.filter(
+            SymlinkRecord.original_path.like(norm_dir.replace('\\', '/') + '/%') |
+            SymlinkRecord.original_path.like(norm_dir + os.sep + '%')
+        )
     total = q.count()
     rows = q.order_by(SymlinkRecord.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
     items = []
@@ -66,6 +73,47 @@ def symlink_stats(db: Session = Depends(get_db)):
     success = db.query(func.count(SymlinkRecord.id)).filter(SymlinkRecord.status == "success").scalar() or 0
     failed = db.query(func.count(SymlinkRecord.id)).filter(SymlinkRecord.status == "failed").scalar() or 0
     return {"total": total, "success": success, "failed": failed}
+
+
+@router.get("/grouped")
+def list_symlinks_grouped(
+    folder_id: Optional[int] = None,
+    status: Optional[str] = None,
+    keyword: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Return symlink records grouped by original source directory."""
+    q = db.query(SymlinkRecord)
+    if folder_id:
+        q = q.filter(SymlinkRecord.folder_id == folder_id)
+    if status:
+        q = q.filter(SymlinkRecord.status == status)
+    if keyword:
+        q = q.filter(SymlinkRecord.original_path.contains(keyword))
+    rows = q.order_by(SymlinkRecord.id.desc()).all()
+
+    groups: dict = {}
+    for r in rows:
+        dir_path = os.path.normpath(os.path.dirname(r.original_path))
+        if dir_path not in groups:
+            groups[dir_path] = {
+                "dir_path": dir_path,
+                "dir_name": os.path.basename(dir_path),
+                "folder_id": r.folder_id,
+                "total": 0,
+                "success": 0,
+                "failed": 0,
+                "ids": [],
+            }
+        g = groups[dir_path]
+        g["total"] += 1
+        g["ids"].append(r.id)
+        if r.status == "success":
+            g["success"] += 1
+        elif r.status == "failed":
+            g["failed"] += 1
+
+    return {"groups": list(groups.values())}
 
 
 @router.delete("/all")

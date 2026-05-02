@@ -16,8 +16,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from ai.ollama_ai import fetch_siliconflow_info, is_ai_rate_limited_error
 from core.services.matcher_service import (
+    auto_pick_candidate_by_score,
     get_embedding,
-    get_online_embedding,
     pick_candidate_with_openai_compatible,
     parse_with_ollama,
     pick_candidate_with_ollama,
@@ -123,6 +123,7 @@ class WorkerContext:
         self.manual_locks: Dict[str, Any] = {}
         self.forced_seasons: Dict[str, int] = {}
         self.forced_offsets: Dict[str, int] = {}
+        self.dir_parse_events: Dict[str, threading.Event] = {}
         self.db_resolution_events: Dict[str, threading.Event] = {}
         self.embedding_cache: Dict[str, Any] = {}
         self.ollama_embed_endpoint: Optional[str] = None
@@ -357,34 +358,23 @@ class WorkerContext:
 
     def _can_use_online_model_for_pick(self):
         return bool(
-            self.sf_api_url.get().strip()
+            not self.prefer_ollama.get()
+            and self.sf_api_url.get().strip()
             and self.sf_api_key.get().strip()
             and self.sf_model.get().strip()
         )
 
     def _can_use_embedding_rank(self):
-        if not self.use_embedding_rank.get():
-            return False
-        if str(self.embedding_source.get() or "local").strip().lower() == "online":
-            return bool(
-                self.sf_api_url.get().strip()
-                and self.sf_api_key.get().strip()
-                and self.online_embedding_model.get().strip()
-            )
-        return bool(self.ollama_url.get().strip() and self.embedding_model.get().strip())
+        return bool(
+            self.use_embedding_rank.get()
+            and self.prefer_ollama.get()
+            and self.ollama_url.get().strip()
+            and self.embedding_model.get().strip()
+        )
 
     def _get_embedding(self, text):
         if not self._can_use_embedding_rank():
             return None
-        if str(self.embedding_source.get() or "local").strip().lower() == "online":
-            return get_online_embedding(
-                self.sf_api_url.get().strip(),
-                self.sf_api_key.get().strip(),
-                self.online_embedding_model.get().strip(),
-                text,
-                self.embedding_cache,
-                self.cache_lock,
-            )
         emb, endpoint = get_embedding(
             self.ollama_url.get().strip(),
             self.embedding_model.get().strip(),
@@ -565,6 +555,7 @@ class WorkerContext:
         prefer_ollama = bool(self.prefer_ollama.get())
         online_ready = self._can_use_online_model_for_pick()
         ollama_ready = self._can_use_ollama_for_pick()
+        reason = ""
 
         # Embedding rerank. When a chat model is available, embedding only
         # changes candidate order; the chat model remains the final judge.
@@ -608,10 +599,23 @@ class WorkerContext:
             if chosen:
                 return _candidate_result_from_model("Ollama判定", chosen, reason)
 
+        auto_pick, auto_reason = self._auto_pick_candidate_by_score(
+            query_title, year, source_name, ranked
+        )
+        if auto_pick:
+            hit_msg = f"自动评分判定/{source_name}鍛戒腑"
+            if emb_msg:
+                hit_msg += f" ({emb_msg})"
+            if reason:
+                hit_msg += f" ({reason})"
+            if auto_reason:
+                hit_msg += f" ({auto_reason})"
+            return candidate_to_result(auto_pick, hit_msg)
+
         # TMDb can return the correct anime by romanized alias while the visible
         # zh-CN/original titles are Chinese/Japanese. Use this only as a final
         # fallback after embedding/model judgement has had a chance to decide.
-        if (
+        if False and (
             rank_pick_allowed
             and source_name.startswith("TMDb")
             and not online_ready
@@ -654,6 +658,9 @@ class WorkerContext:
             item, query_title, year, is_tv, source_name, candidates, self._get_embedding,
         )
 
+    def _auto_pick_candidate_by_score(self, query_title, year, source_name, candidates):
+        return auto_pick_candidate_by_score(query_title, year, source_name, candidates)
+
     def _pick_candidate_with_ollama(self, item, query_title, year, is_tv,
                                     source_name, candidates):
         return pick_candidate_with_ollama(
@@ -671,6 +678,7 @@ class WorkerContext:
             self.sf_model.get().strip(),
             item, query_title, year, is_tv, source_name, candidates,
             self._get_ai_temperature(),
+            self._get_ai_top_p(),
         )
 
     def _request_manual_candidate_choice(self, item, query_title, source_name,
@@ -759,9 +767,9 @@ class WorkerContext:
     # process_task / process_one_file delegates  (called by task_runner)
     # ------------------------------------------------------------------
 
-    def process_task(self, i):
+    def process_task(self, i, advance_progress=True):
         from core.workers.task_runner import process_task
-        process_task(self, i)
+        process_task(self, i, advance_progress=advance_progress)
 
     def process_one_file(self, item, is_archive):
         from core.workers.execution_runner import process_one_file

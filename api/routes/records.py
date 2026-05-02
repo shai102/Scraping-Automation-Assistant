@@ -473,9 +473,10 @@ def _archive_file(item, row, folder, ctx, tid, provider, db):
                 db.flush()
                 return target
             row.status = "failed"
-            row.error_msg = "目标文件已存在"
+            row.target_path = target
+            row.error_msg = f"目标文件已存在: {target}"
             db.commit()
-            raise HTTPException(400, detail="目标文件已存在")
+            raise HTTPException(400, detail=f"目标文件已存在: {target}")
         src_dir = os.path.dirname(item.path)
 
         if organize_mode == 'copy':

@@ -16,7 +16,7 @@
         <div class="app-brand-mark">🎬</div>
         <div>
           <h2>刮削助手</h2>
-          <span>v3.0</span>
+          <span>v3.1</span>
         </div>
       </div>
     </div>
@@ -1102,6 +1102,7 @@
         <div class="toolbar-left">
           <button class="btn-grad btn-grad-red btn-sm" @click="batchDeleteSymlinkSelected" :disabled="!symlinkSelectedIds.length">删除所选记录</button>
           <button class="btn-grad btn-grad-yellow btn-sm" @click="retrySymlinkFailed" :disabled="!symlinkStats.failed">重试失败</button>
+          <button class="btn-grad btn-grad-blue btn-sm" @click="toggleSymlinkGroupedView">{{symlinkGroupedView?'列表视图':'分组视图'}}</button>
           <span class="toolbar-hint">已选择 {{symlinkSelectedIds.length}} 条记录</span>
           <span class="toolbar-hint" v-if="symlinkStats.total" style="margin-left:12px">共 {{symlinkStats.total}} 条，成功 {{symlinkStats.success || 0}}，失败 {{symlinkStats.failed || 0}}</span>
         </div>
@@ -1113,9 +1114,10 @@
           <option value="success">成功</option>
           <option value="failed">失败</option>
         </select>
-        <button class="btn btn-primary btn-sm" @click="symlinkPage=1;loadSymlinkRecords()">筛选</button>
+        <button class="btn btn-primary btn-sm" @click="symlinkPage=1;symlinkGroupedView?loadSymlinkGroupedRecords():loadSymlinkRecords()">筛选</button>
         <button class="btn btn-sm" @click="resetSymlinkFilter">重置</button>
       </div>
+      <template v-if="!symlinkGroupedView">
       <table class="table" v-if="symlinkRecords.length">
         <thead>
           <tr>
@@ -1162,6 +1164,67 @@
           <button class="btn btn-sm" @click="gotoSymlinkPage">确定</button>
         </div>
       </div>
+      </template>
+
+      <template v-else>
+      <div class="empty" v-if="!symlinkGroupedRecords.length">No Data</div>
+      <table class="table" v-else>
+        <thead>
+          <tr>
+            <th style="width:36px"></th>
+            <th>目录</th>
+            <th style="width:80px">总数</th>
+            <th style="width:80px">成功</th>
+            <th style="width:80px">失败</th>
+            <th style="width:120px">操作</th>
+          </tr>
+        </thead>
+        <template v-for="g in symlinkGroupedRecords" :key="g.dir_path">
+          <tbody>
+            <tr class="group-row" @click="toggleSymlinkGroup(g)">
+              <td><input type="checkbox" :checked="isSymlinkGroupAllSelected(g)" @click.stop="toggleSelectSymlinkGroup(g)"></td>
+              <td>
+                <span style="display:inline-block;width:18px;text-align:center;margin-right:4px">{{symlinkExpandedGroups[g.dir_path]?'▼':'▶'}}</span>
+                <strong>{{g.dir_name}}</strong>
+                <span style="color:#999;margin-left:8px;font-size:12px">{{g.dir_path}}</span>
+              </td>
+              <td><span class="badge badge-gray">{{g.total}}</span></td>
+              <td><span class="badge badge-success" v-if="g.success">{{g.success}}</span><span v-else>-</span></td>
+              <td><span class="badge badge-danger" v-if="g.failed">{{g.failed}}</span><span v-else>-</span></td>
+              <td class="actions" @click.stop>
+                <button class="btn btn-sm btn-danger" @click="deleteSymlinkGroup(g)">删除全组</button>
+              </td>
+            </tr>
+          </tbody>
+          <tbody v-if="symlinkExpandedGroups[g.dir_path]">
+            <tr v-if="symlinkExpandedGroups[g.dir_path].loading">
+              <td colspan="6" style="text-align:center;color:#999;padding:12px">加载中...</td>
+            </tr>
+            <template v-else>
+              <tr class="group-record-row" v-for="r in symlinkExpandedGroups[g.dir_path].records" :key="r.id">
+                <td><input type="checkbox" :value="r.id" v-model="symlinkSelectedIds"></td>
+                <td colspan="2" class="cell-path" style="padding-left:40px">
+                  <div>{{r.original_path}}</div>
+                  <div v-if="r.error_msg" style="color:#e53935;font-size:12px;margin-top:2px">⚠ {{r.error_msg}}</div>
+                </td>
+                <td><span :class="['badge', r.status==='success'?'badge-success':'badge-danger']">{{r.status==='success'?'成功':'失败'}}</span></td>
+                <td class="cell-path">{{r.link_path || '-'}}</td>
+                <td class="actions">
+                  <button class="btn btn-sm btn-danger" @click="deleteSymlinkGroupRecord(g, r.id)">删除</button>
+                </td>
+              </tr>
+              <tr v-if="symlinkExpandedGroups[g.dir_path].total > 50" class="group-pagination-row">
+                <td colspan="6" style="text-align:center;padding:8px">
+                  <button class="btn btn-sm" :disabled="symlinkExpandedGroups[g.dir_path].page<=1" @click.stop="symlinkGroupPagePrev(g)">&lt; 上一页</button>
+                  <span style="margin:0 12px;font-size:13px;color:#666">{{symlinkExpandedGroups[g.dir_path].page}} / {{Math.ceil(symlinkExpandedGroups[g.dir_path].total/50)}}</span>
+                  <button class="btn btn-sm" :disabled="symlinkExpandedGroups[g.dir_path].page*50>=symlinkExpandedGroups[g.dir_path].total" @click.stop="symlinkGroupPageNext(g)">下一页 &gt;</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </template>
+      </table>
+      </template>
     </section>
   </main>
   <div class="toast-stack">

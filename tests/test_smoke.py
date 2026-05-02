@@ -12,6 +12,8 @@ from core.services.worker_context import WorkerContext
 from main import _is_ignorable_connection_reset
 from monitor.watcher import FolderWatcher
 from core.services.matcher_service import (
+    _parse_candidate_pick_response,
+    auto_pick_candidate_by_score,
     extract_ollama_model_names,
     get_online_embedding,
     pick_candidate_with_openai_compatible,
@@ -25,6 +27,8 @@ from core.services.naming_service import (
 )
 from core.workers.task_runner import (
     SPECIAL_TAG_RE,
+    _can_reuse_same_folder_season_cache,
+    _dir_cache_key,
     _fetch_ai_parse,
     _guessit_needs_assist,
     _is_meaningful_title,
@@ -35,6 +39,7 @@ from utils.helpers import (
     build_query_titles,
     cached_request,
     derive_title_from_filename,
+    extract_episode_number,
     format_error_message,
     normalize_proxy_url,
     normalize_parse_source,
@@ -66,6 +71,17 @@ class SmokeTests(unittest.TestCase):
             extract_media_suffix(name),
             "2160p.TVING.WEB-DL.H.265.AAC-ColorTV",
         )
+
+    def test_extract_episode_prefers_explicit_bracket_number(self):
+        name = (
+            "[Nekomoe kissaten&VCB-Studio] Kage no Jitsuryokusha ni Naritakute! "
+            "S2 [10][Ma10p_1080p][x265_flac].strm"
+        )
+        self.assertEqual(extract_episode_number(name, {"episode": 1}), 10)
+
+    def test_extract_episode_ignores_bracketed_year_noise(self):
+        name = "[Group] Some Anime [2024][1080p][x265].mkv"
+        self.assertIsNone(extract_episode_number(name))
 
     def test_render_filename_template_appends_media_suffix(self):
         rendered = render_filename_template(
@@ -206,7 +222,7 @@ class SmokeTests(unittest.TestCase):
 
         cache = {}
         lock = threading.Lock()
-        with patch("utils.helpers.requests.post", return_value=FakeResponse()) as post:
+        with patch("core.services.matcher_service.request_post", return_value=FakeResponse()) as post:
             emb = get_online_embedding(
                 "https://api.example.com/v1",
                 "sk-test",
@@ -223,7 +239,7 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(kwargs["json"]["model"], "provider/embed-model")
         self.assertEqual(kwargs["json"]["input"], "hello")
 
-    def test_worker_context_can_use_online_embedding_rank(self):
+    def test_worker_context_matches_desktop_embedding_rank_policy(self):
         ctx = WorkerContext(config={
             "use_embedding_rank": True,
             "embedding_source": "online",
@@ -231,7 +247,15 @@ class SmokeTests(unittest.TestCase):
             "sf_api_key": "sk-test",
             "online_embedding_model": "provider/embed-model",
         })
-        self.assertTrue(ctx._can_use_embedding_rank())
+        self.assertFalse(ctx._can_use_embedding_rank())
+
+        local_ctx = WorkerContext(config={
+            "use_embedding_rank": True,
+            "prefer_ollama": True,
+            "ollama_url": "http://localhost:11434",
+            "embedding_model": "nomic-embed-text",
+        })
+        self.assertTrue(local_ctx._can_use_embedding_rank())
 
     def test_recognition_online_ai_keeps_local_embedding(self):
         cfg = _mode_config(
@@ -294,7 +318,10 @@ class SmokeTests(unittest.TestCase):
             {"id": "2", "title": "Right", "release": "2024-01-01"},
         ]
         item = {"old_name": "Right.S01E01.2024.mkv"}
-        with patch("utils.helpers.requests.post", return_value=FakeResponse()) as post:
+        with patch(
+            "core.services.matcher_service._post_openai_compatible",
+            return_value=FakeResponse(),
+        ) as post:
             chosen, reason = pick_candidate_with_openai_compatible(
                 "https://openrouter.ai/api/v1",
                 "sk-test",
@@ -311,7 +338,7 @@ class SmokeTests(unittest.TestCase):
         self.assertIn("匹配", reason)
         args, kwargs = post.call_args
         self.assertEqual(args[0], "https://openrouter.ai/api/v1/chat/completions")
-        self.assertEqual(kwargs["json"]["model"], "provider/chat-model")
+        self.assertEqual(args[1]["model"], "provider/chat-model")
 
     def test_online_model_judges_candidates_before_local_ollama(self):
         ctx = WorkerContext(config={
@@ -620,7 +647,7 @@ class SmokeTests(unittest.TestCase):
             [["Chainsaw Man"]],
         )
 
-    def test_tmdb_single_candidate_does_not_auto_pick_release_group_query(self):
+    def test_tmdb_single_candidate_uses_desktop_auto_score_fallback(self):
         ctx = WorkerContext(config={})
         item = {
             "old_name": "[Nekomoe kissaten][Make Heroine ga Oosugiru!] - 01 [WebRip 1080p HEVC AAC][CHT].mkv"
@@ -642,7 +669,7 @@ class SmokeTests(unittest.TestCase):
             "TMDb",
             candidates,
         )
-        self.assertEqual(tmdb_id, "None")
+        self.assertEqual(tmdb_id, "259140")
 
     def test_tmdb_extra_candidate_filtered_for_regular_episode(self):
         ctx = WorkerContext(config={})
@@ -864,6 +891,81 @@ class SmokeTests(unittest.TestCase):
                 guess_data,
             )
         )
+
+    def test_same_folder_season_cache_reuses_even_when_title_guess_is_noisy(self):
+        cached_ai = {
+            "title": "想要成为影之实力者！",
+            "year": 2023,
+            "season": 1,
+            "cache_season": 1,
+        }
+        guess_data = {"title": "Nekomo kissaten VCB Studio Ma10p flac JPTC"}
+        self.assertTrue(
+            _can_reuse_same_folder_season_cache(cached_ai, 1, guess_data)
+        )
+
+    def test_same_folder_season_cache_does_not_cross_seasons(self):
+        cached_ai = {
+            "title": "想要成为影之实力者！",
+            "season": 2,
+            "cache_season": 1,
+        }
+        self.assertFalse(_can_reuse_same_folder_season_cache(cached_ai, 2, {}))
+        self.assertTrue(_can_reuse_same_folder_season_cache(cached_ai, 1, {}))
+        self.assertNotEqual(
+            _dir_cache_key(r"D:\Anime\Show", 1),
+            _dir_cache_key(r"D:\Anime\Show", 2),
+        )
+
+    def test_auto_pick_candidate_uses_general_metadata_confidence(self):
+        candidates = [
+            {
+                "title": "想要成为影之实力者！",
+                "alt_title": "陰の実力者になりたくて！",
+                "id": "119495",
+                "rating": 8.0,
+                "release": "2022-10-05",
+                "meta": {
+                    "overview": "A boy dreams of becoming a hidden mastermind.",
+                    "poster": "/poster.jpg",
+                    "original_title": "陰の実力者になりたくて！",
+                },
+            },
+            {
+                "title": "Karens Kagebord",
+                "alt_title": "",
+                "id": "bad",
+                "rating": 0,
+                "release": "",
+                "meta": {"poster": "/poster2.jpg"},
+            },
+        ]
+        picked, reason = auto_pick_candidate_by_score(
+            "Kage no Jitsuryokusha ni Naritakute!", None, "TMDb", candidates
+        )
+        self.assertIs(picked, candidates[0])
+        self.assertIn("高置信", reason)
+
+    def test_auto_pick_candidate_refuses_low_confidence_close_candidates(self):
+        candidates = [
+            {"title": "Alpha", "id": "1", "rating": 0, "release": "", "meta": {}},
+            {"title": "Alpine", "id": "2", "rating": 0, "release": "", "meta": {}},
+        ]
+        picked, reason = auto_pick_candidate_by_score(
+            "Alp", None, "TMDb", candidates
+        )
+        self.assertIsNone(picked)
+        self.assertIn("自动评分不足", reason)
+
+    def test_parse_candidate_pick_response_accepts_loose_json(self):
+        parsed = _parse_candidate_pick_response('{"pick": 1 "reason": "first"}')
+        self.assertEqual(parsed["pick"], 1)
+        self.assertEqual(parsed["reason"], "first")
+
+    def test_parse_candidate_pick_response_accepts_plain_pick(self):
+        parsed = _parse_candidate_pick_response("pick: 2 reason: \"better title\"")
+        self.assertEqual(parsed["pick"], 2)
+        self.assertEqual(parsed["reason"], "better title")
 
     def test_folder_watcher_serializes_same_directory(self):
         watcher = FolderWatcher()

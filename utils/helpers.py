@@ -102,7 +102,7 @@ VARIANT_TITLE_MARKERS = {
 }
 
 VERSION_TAG_RE = re.compile(r"\[(NC\.Ver|SP|OVA|Extra|Special|OAD|Creditless)\]", re.I)
-EPISODE_NOISE_NUMBERS = {2160, 1080, 720, 480, 265, 264, 10}
+EPISODE_NOISE_NUMBERS = {2160, 1080, 720, 480, 265, 264}
 
 ERROR_CODE_TIMEOUT = "TIMEOUT"
 ERROR_CODE_CONFIG = "CONFIG"
@@ -586,23 +586,27 @@ def is_decimal_episode(pure_name):
     return bool(_DECIMAL_EP_RE.search(str(pure_name or "")))
 
 
+def _coerce_episode_number(value):
+    if isinstance(value, list) and value:
+        value = value[0]
+    if isinstance(value, (int, float)):
+        num = int(value)
+    elif isinstance(value, str) and value.strip().isdigit():
+        num = int(value.strip())
+    else:
+        return None
+    if 0 < num <= 5000:
+        return num
+    return None
+
+
+def _is_episode_noise_number(num):
+    if num in EPISODE_NOISE_NUMBERS:
+        return True
+    return 1900 <= num <= 2099
+
+
 def extract_episode_number(pure_name, guess_data=None, ai_data=None):
-    if guess_data:
-        ep = guess_data.get("episode")
-        if isinstance(ep, list) and ep:
-            ep = ep[0]
-        if isinstance(ep, (int, float)):
-            return int(ep)
-        if isinstance(ep, str) and ep.strip().isdigit():
-            return int(ep.strip())
-
-    if ai_data:
-        ep = ai_data.get("episode")
-        if isinstance(ep, (int, float)):
-            return int(ep)
-        if isinstance(ep, str) and ep.strip().isdigit():
-            return int(ep.strip())
-
     text = str(pure_name or "")
     patterns = [
         r"(?i)\bS\d{1,2}E\s*0*(\d{1,4})\b",
@@ -620,9 +624,19 @@ def extract_episode_number(pure_name, guess_data=None, ai_data=None):
             num = int(match.group(1))
         except Exception:
             continue
-        if idx >= 3 and num in EPISODE_NOISE_NUMBERS:
+        if idx >= 3 and _is_episode_noise_number(num):
             continue
         if 0 < num <= 5000:
+            return num
+
+    if guess_data:
+        num = _coerce_episode_number(guess_data.get("episode"))
+        if num and not _is_episode_noise_number(num):
+            return num
+
+    if ai_data:
+        num = _coerce_episode_number(ai_data.get("episode"))
+        if num and not _is_episode_noise_number(num):
             return num
 
     return None

@@ -134,11 +134,11 @@ def _try_nfo_fast_path(item, ctx) -> bool:
     pure_name, _ = extract_lang_and_ext(item.old_name, ctx.lang_tags.get() if hasattr(ctx, 'lang_tags') else "")
     g = guessit(pure_name)
     raw_s = g.get("season") or 1
-    raw_e = g.get("episode")
+    raw_e = extract_episode_number(pure_name, g)
+    if raw_e is None:
+        raw_e = g.get("episode")
     if isinstance(raw_e, list):
         raw_e = raw_e[0]
-    if raw_e is None:
-        raw_e = extract_episode_number(pure_name, g)
     if raw_e is None:
         return False  # Cannot determine episode number
 
@@ -988,6 +988,7 @@ class FolderWatcher:
             # Share recognition caches across per-file contexts so files in the
             # same folder can reuse both title parsing and DB candidate picks.
             ctx.dir_cache = self._worker_ctx.dir_cache
+            ctx.dir_parse_events = self._worker_ctx.dir_parse_events
             ctx.db_cache = self._worker_ctx.db_cache
             ctx.db_resolution_events = self._worker_ctx.db_resolution_events
             ctx.embedding_cache = self._worker_ctx.embedding_cache
@@ -1070,7 +1071,8 @@ class FolderWatcher:
                 if os.path.normcase(item.path) != os.path.normcase(target):
                     if os.path.exists(target):
                         record.status = "failed"
-                        record.error_msg = "目标文件已存在"
+                        record.target_path = target
+                        record.error_msg = f"目标文件已存在: {target}"
                         db.commit()
                         self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
                         return
