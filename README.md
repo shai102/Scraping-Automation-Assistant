@@ -13,7 +13,8 @@ TG 问题反馈群：<https://t.me/+Wx34NdYY_x1iNjg1>
   <a href="#运行">运行</a> |
   <a href="#界面预览">界面预览</a> |
   <a href="#功能概览">功能概览</a> |
-  <a href="#配置说明">配置说明</a>
+  <a href="#配置说明">配置说明</a> |
+  <a href="https://github.com/shai102/Scraping-Automation-Assistant/wiki/%E9%87%8D%E5%91%BD%E5%90%8D%E6%A8%A1%E6%9D%BF">命名模板</a>
 </p>
 
 </div>
