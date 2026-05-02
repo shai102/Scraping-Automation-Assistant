@@ -504,6 +504,8 @@ def extract_title_after_leading_release_group(pure_name):
     title = re.sub(r"(?i)[\s._-]+S\d{1,2}E\d{1,4}.*$", "", title).strip()
     # 去除末尾集号，如 " - 01"、" - 12v2"（横线 + 纯数字），避免集号混入标题
     title = re.sub(r"\s*[-–]\s*\d{1,3}(?:v\d)?\s*$", "", title).strip()
+    # 去除末尾独立季号，如 " S2"、" S12"（无集号），如 Kage no Jitsuryokusha ni Naritakute! S2
+    title = re.sub(r"(?i)\s+S\d{1,2}\s*$", "", title).strip()
     if not is_meaningful_query_title(title) or _is_noise_title_fragment(title):
         return ""
     return title
@@ -643,6 +645,8 @@ def derive_title_from_filename(pure_name):
     text = re.sub(r"(?i)[\[\(（]\s*\d{1,4}(?:v\d+)?\s*[\]\)）]\s*$", "", text)
     # 去除末尾横线集号，如 " - 01"、" - 12v2"
     text = re.sub(r"\s*[-–]\s*\d{1,3}(?:v\d)?\s*$", "", text).strip()
+    # 去除末尾独立季号，如 " S2"、" S12"
+    text = re.sub(r"(?i)\s+S\d{1,2}\s*$", "", text).strip()
     return clean_search_title(text)
 
 
