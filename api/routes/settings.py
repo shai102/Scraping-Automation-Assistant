@@ -3,12 +3,22 @@
 import json
 import logging
 import os
+import time
+import urllib.parse
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import List, Optional
 
-from utils.helpers import CONFIG_FILE
+from utils.helpers import (
+    CONFIG_FILE,
+    DEFAULT_NO_PROXY,
+    apply_proxy_environment,
+    normalize_proxy_url,
+    override_proxy_config,
+    proxy_summary,
+    request_get,
+)
 from ai.ollama_ai import test_silicon_api
 
 logger = logging.getLogger(__name__)
@@ -46,6 +56,9 @@ class SettingsModel(BaseModel):
     tg_notify_delay: Optional[int] = None
     strip_keywords: Optional[List[str]] = None
     cache_expiry_days: Optional[int] = None
+    proxy_enabled: Optional[bool] = None
+    proxy_url: Optional[str] = None
+    proxy_no_proxy: Optional[str] = None
 
 
 def _load() -> dict:
@@ -89,8 +102,6 @@ def _extract_local_model_names(payload: dict) -> list[str]:
 
 
 def _list_local_ai_models(base_url: str) -> tuple[list[str], str]:
-    import requests as req
-
     normalized = str(base_url or "").strip().rstrip("/")
     if not normalized:
         return [], "本地 AI 地址未配置"
@@ -101,7 +112,7 @@ def _list_local_ai_models(base_url: str) -> tuple[list[str], str]:
     errors = []
     for endpoint in endpoints:
         try:
-            resp = req.get(normalized + endpoint, timeout=8)
+            resp = request_get(normalized + endpoint, timeout=8)
             if resp.status_code != 200:
                 errors.append(f"{endpoint}: HTTP {resp.status_code}")
                 continue
@@ -137,6 +148,9 @@ def get_settings_raw():
     cfg = _load()
     cfg.setdefault("ai_temperature", 0.20)
     cfg.setdefault("ai_top_p", 0.85)
+    cfg.setdefault("proxy_enabled", False)
+    cfg.setdefault("proxy_url", "")
+    cfg.setdefault("proxy_no_proxy", DEFAULT_NO_PROXY)
     return cfg
 
 
@@ -144,6 +158,10 @@ def get_settings_raw():
 def update_settings(body: SettingsModel):
     cfg = _load()
     updates = body.model_dump(exclude_none=True)
+    if "proxy_url" in updates:
+        updates["proxy_url"] = normalize_proxy_url(updates["proxy_url"])
+    if "proxy_no_proxy" in updates and not str(updates.get("proxy_no_proxy") or "").strip():
+        updates["proxy_no_proxy"] = DEFAULT_NO_PROXY
     cfg.update(updates)
     _save(cfg)
 
@@ -151,6 +169,8 @@ def update_settings(body: SettingsModel):
     if 'cache_expiry_days' in updates:
         from utils.helpers import set_cache_expiry_days
         set_cache_expiry_days(updates['cache_expiry_days'])
+    if {"proxy_enabled", "proxy_url", "proxy_no_proxy"} & set(updates):
+        apply_proxy_environment(cfg)
 
     # Reload worker context if watcher is running
     from server import get_watcher
@@ -169,9 +189,8 @@ def test_tmdb():
     api_key = cfg.get("tmdb_api_key", "")
     if not api_key:
         raise HTTPException(400, detail="TMDB API Key 未配置")
-    import requests as req
     try:
-        resp = req.get(
+        resp = request_get(
             "https://api.themoviedb.org/3/configuration",
             params={"api_key": api_key},
             timeout=10,
@@ -230,6 +249,99 @@ def test_telegram():
         return {"ok": False, "message": result.get("description", "发送失败")}
     except Exception as e:
         return {"ok": False, "message": str(e)[:200]}
+
+
+def _service_url_label(url: str) -> str:
+    host = urllib.parse.urlparse(url).netloc or url
+    return host.replace(":443", "").replace(":80", "")
+
+
+def _build_proxy_test_targets(cfg: dict) -> list[dict]:
+    targets = [
+        {"name": "api.themoviedb.org", "url": "https://api.themoviedb.org/3/configuration"},
+        {"name": "www.themoviedb.org", "url": "https://www.themoviedb.org/"},
+        {
+            "name": "image.tmdb.org",
+            "url": "https://image.tmdb.org/t/p/w92/wwemzKWzjKYJFfCeiB57q3r4Bcm.png",
+        },
+        {"name": "api.bgm.tv", "url": "https://api.bgm.tv/v0/subjects/1"},
+        {"name": "api.telegram.org", "url": "https://api.telegram.org/"},
+        {"name": "t.me", "url": "https://t.me/"},
+        {"name": "github.com", "url": "https://github.com/"},
+    ]
+    api_url = str(cfg.get("sf_api_url") or "").strip().rstrip("/")
+    if api_url:
+        model_url = api_url if api_url.endswith("/models") else api_url + "/models"
+        targets.insert(0, {"name": _service_url_label(api_url), "url": model_url, "auth": "ai"})
+    return targets
+
+
+@router.post("/test-proxy")
+def test_proxy(body: Optional[SettingsModel] = None):
+    cfg = _load()
+    if body is not None:
+        updates = body.model_dump(exclude_none=True)
+        if "proxy_url" in updates:
+            updates["proxy_url"] = normalize_proxy_url(updates["proxy_url"])
+        if "proxy_no_proxy" in updates and not str(updates.get("proxy_no_proxy") or "").strip():
+            updates["proxy_no_proxy"] = DEFAULT_NO_PROXY
+        cfg.update(updates)
+    cfg.setdefault("proxy_enabled", False)
+    cfg.setdefault("proxy_url", "")
+    cfg.setdefault("proxy_no_proxy", DEFAULT_NO_PROXY)
+
+    results = []
+    ok_count = 0
+    latencies = []
+    with override_proxy_config(cfg):
+        summary = proxy_summary()
+        for target in _build_proxy_test_targets(cfg):
+            headers = {"User-Agent": "MyMediaRenamer/ProxyTest"}
+            if target.get("auth") == "ai" and str(cfg.get("sf_api_key") or "").strip():
+                headers["Authorization"] = f"Bearer {str(cfg.get('sf_api_key')).strip()}"
+            started = time.perf_counter()
+            try:
+                resp = request_get(target["url"], headers=headers, timeout=(5, 12))
+                latency = int((time.perf_counter() - started) * 1000)
+                status = int(resp.status_code)
+                connected = status < 500
+                ok_count += 1 if connected else 0
+                latencies.append(latency)
+                results.append(
+                    {
+                        "name": target["name"],
+                        "url": target["url"],
+                        "ok": connected,
+                        "status": f"HTTP {status}",
+                        "latency_ms": latency,
+                        "message": "连通" if connected else "服务端错误",
+                    }
+                )
+            except Exception as err:
+                latency = int((time.perf_counter() - started) * 1000)
+                results.append(
+                    {
+                        "name": target["name"],
+                        "url": target["url"],
+                        "ok": False,
+                        "status": "FAILED",
+                        "latency_ms": latency,
+                        "message": str(err)[:180],
+                    }
+                )
+
+    avg_latency = round(sum(latencies) / len(latencies)) if latencies else None
+    return {
+        "ok": ok_count > 0,
+        "summary": {
+            "total": len(results),
+            "success": ok_count,
+            "failed": len(results) - ok_count,
+            "avg_latency_ms": avg_latency,
+        },
+        "proxy": summary,
+        "results": results,
+    }
 
 
 @router.post("/clear-cache")

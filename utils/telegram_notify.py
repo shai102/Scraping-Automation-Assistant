@@ -8,9 +8,7 @@ import os
 import threading
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import requests
-
-from utils.helpers import TIMEOUT_IMAGE_DOWNLOAD
+from utils.helpers import TIMEOUT_IMAGE_DOWNLOAD, request_post
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +29,7 @@ _MEDIA_EXTS = {
 def _send_photo(token: str, chat_id: str, photo_url: str, caption: str) -> dict:
     """Send a photo message via Telegram Bot API."""
     url = f"{_TG_API}/bot{token}/sendPhoto"
-    resp = requests.post(url, data={
+    resp = request_post(url, data={
         "chat_id": chat_id,
         "photo": photo_url,
         "caption": caption,
@@ -43,7 +41,7 @@ def _send_photo(token: str, chat_id: str, photo_url: str, caption: str) -> dict:
 def _send_message(token: str, chat_id: str, text: str) -> dict:
     """Send a plain text message via Telegram Bot API."""
     url = f"{_TG_API}/bot{token}/sendMessage"
-    resp = requests.post(url, data={
+    resp = request_post(url, data={
         "chat_id": chat_id,
         "text": text,
         "parse_mode": "HTML",

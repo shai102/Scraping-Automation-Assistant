@@ -57,6 +57,8 @@ const app = Vue.createApp({
       // Settings
       cfg: {},
       testResult: null,
+      proxyTestResult: null,
+      proxyTesting: false,
       tgTestResult: null,
       ollamaModels: [],
       // API key visibility (default hidden)
@@ -86,6 +88,17 @@ const app = Vue.createApp({
       browseDirs: [],
       browseSelected: '',
       newKeyword: '',
+      toasts: [],
+      toastSeq: 1,
+      confirmDialog: {
+        visible: false,
+        title: '',
+        message: '',
+        confirmText: '确认',
+        cancelText: '取消',
+        danger: false,
+        resolver: null,
+      },
     };
   },
   mounted() {
@@ -118,6 +131,41 @@ const app = Vue.createApp({
     },
   },
   methods: {
+    notify(message, type, duration) {
+      var text = String(message || '').trim();
+      if (!text) return;
+      var toast = { id: this.toastSeq++, message: text, type: type || 'info' };
+      this.toasts.push(toast);
+      var self = this;
+      setTimeout(function() {
+        self.removeToast(toast.id);
+      }, duration || 3600);
+    },
+    removeToast(id) {
+      this.toasts = this.toasts.filter(function(t) { return t.id !== id; });
+    },
+    confirmAction(options) {
+      var opts = options || {};
+      var self = this;
+      return new Promise(function(resolve) {
+        self.confirmDialog = {
+          visible: true,
+          title: opts.title || '确认操作',
+          message: opts.message || '',
+          confirmText: opts.confirmText || '确认',
+          cancelText: opts.cancelText || '取消',
+          danger: !!opts.danger,
+          resolver: resolve,
+        };
+      });
+    },
+    resolveConfirm(value) {
+      var resolver = this.confirmDialog && this.confirmDialog.resolver;
+      this.confirmDialog.visible = false;
+      this.confirmDialog.resolver = null;
+      if (resolver) resolver(!!value);
+    },
+
     // --- API helpers ---
     async api(method, path, body) {
       var opts = { method: method, headers: { 'Content-Type': 'application/json' } };
@@ -220,7 +268,7 @@ const app = Vue.createApp({
         this.browseCurrent = data.current || '';
         this.browseParent = data.parent || '';
         this.browseDirs = data.dirs || [];
-      } catch (e) { alert(e.message); }
+      } catch (e) { this.notify(e.message, 'error'); }
     },
     browseSelect(d) {
       this.browseSelected = d.path;
@@ -263,17 +311,22 @@ const app = Vue.createApp({
         this.showAddFolder = false;
         this.newFolder = { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '', skip_if_scraped: false };
         this.loadFolders();
-      } catch (e) { alert(e.message); }
+      } catch (e) { this.notify(e.message, 'error'); }
     },
     async toggleFolder(f) {
       try {
         await this.api('PUT', '/api/monitor/folders/' + f.id, { enabled: !f.enabled });
         this.loadFolders();
-      } catch (e) { alert(e.message); }
+      } catch (e) { this.notify(e.message, 'error'); }
     },
     async deleteFolder(id) {
-      if (!confirm('确认删除该监控目录？关联的刮削记录不会删除。')) return;
-      try { await this.api('DELETE', '/api/monitor/folders/' + id); this.loadFolders(); } catch (e) { alert(e.message); }
+      if (!(await this.confirmAction({
+        title: '删除监控目录',
+        message: '关联的刮削记录不会删除。',
+        confirmText: '删除',
+        danger: true,
+      }))) return;
+      try { await this.api('DELETE', '/api/monitor/folders/' + id); this.loadFolders(); } catch (e) { this.notify(e.message, 'error'); }
     },
     openEditFolder(f) {
       this.editFolderData = {
@@ -301,13 +354,13 @@ const app = Vue.createApp({
         });
         this.editFolderVisible = false;
         this.loadFolders();
-      } catch (e) { alert(e.message); }
+      } catch (e) { this.notify(e.message, 'error'); }
     },
     async scanFolder(id) {
       try {
         var r = await this.api('POST', '/api/monitor/folders/' + id + '/scan');
-        alert(r.message || '扫描已启动');
-      } catch (e) { alert(e.message); }
+        this.notify(r.message || '扫描已启动', 'success');
+      } catch (e) { this.notify(e.message, 'error'); }
     },
 
     // --- Symlink Export ---
@@ -323,7 +376,7 @@ const app = Vue.createApp({
         this.showAddSymlink = false;
         this.newSymlinkFolder = { path: '', target_root: '' };
         this.loadFolders();
-      } catch (e) { alert(e.message); }
+      } catch (e) { this.notify(e.message, 'error'); }
     },
     async loadSymlinkRecords() {
       try {
@@ -346,8 +399,13 @@ const app = Vue.createApp({
       this.loadSymlinkRecords();
     },
     async deleteSymlinkRecord(id) {
-      if (!confirm('确认删除该记录？')) return;
-      try { await this.api('DELETE', '/api/symlinks/' + id); this.loadSymlinkRecords(); this.loadSymlinkStats(); } catch (e) { alert(e.message); }
+      if (!(await this.confirmAction({
+        title: '删除软链接记录',
+        message: '确认删除该记录？',
+        confirmText: '删除',
+        danger: true,
+      }))) return;
+      try { await this.api('DELETE', '/api/symlinks/' + id); this.loadSymlinkRecords(); this.loadSymlinkStats(); } catch (e) { this.notify(e.message, 'error'); }
     },
     toggleSymlinkSelectAll(e) {
       if (e.target.checked) {
@@ -358,27 +416,46 @@ const app = Vue.createApp({
     },
     async batchDeleteSymlinkSelected() {
       if (!this.symlinkSelectedIds.length) return;
-      if (!confirm('确认删除选中的 ' + this.symlinkSelectedIds.length + ' 条记录？')) return;
+      if (!(await this.confirmAction({
+        title: '批量删除软链接记录',
+        message: '确认删除选中的 ' + this.symlinkSelectedIds.length + ' 条记录？',
+        confirmText: '删除',
+        danger: true,
+      }))) return;
       try {
         await this.api('POST', '/api/symlinks/batch-delete', { ids: this.symlinkSelectedIds });
         this.loadSymlinkRecords(); this.loadSymlinkStats();
-      } catch (e) { alert(e.message); }
+      } catch (e) { this.notify(e.message, 'error'); }
     },
     async retrySymlinkFailed() {
-      if (!confirm('确认重试所有失败的软链接记录？')) return;
+      if (!(await this.confirmAction({
+        title: '重试失败软链接',
+        message: '确认重试所有失败的软链接记录？',
+        confirmText: '重试',
+      }))) return;
       try {
         var res = await this.api('POST', '/api/symlinks/retry-failed');
-        alert('已将 ' + (res.queued || 0) + ' 条失败记录加入重试队列，请稍候刷新查看结果。');
+        this.notify('已将 ' + (res.queued || 0) + ' 条失败记录加入重试队列，请稍候刷新查看结果。', 'success');
         this.loadSymlinkRecords(); this.loadSymlinkStats();
-      } catch (e) { alert(e.message); }
+      } catch (e) { this.notify(e.message, 'error'); }
     },
     async clearSymlinkFailed() {
-      if (!confirm('确认清除所有失败的软链接记录？')) return;
-      try { await this.api('POST', '/api/symlinks/clear-failed'); this.loadSymlinkRecords(); this.loadSymlinkStats(); } catch (e) { alert(e.message); }
+      if (!(await this.confirmAction({
+        title: '清除失败软链接记录',
+        message: '确认清除所有失败的软链接记录？',
+        confirmText: '清除',
+        danger: true,
+      }))) return;
+      try { await this.api('POST', '/api/symlinks/clear-failed'); this.loadSymlinkRecords(); this.loadSymlinkStats(); } catch (e) { this.notify(e.message, 'error'); }
     },
     async clearSymlinkAll() {
-      if (!confirm('确认清空所有软链接记录？此操作不可恢复。')) return;
-      try { await this.api('DELETE', '/api/symlinks/all'); this.loadSymlinkRecords(); this.loadSymlinkStats(); } catch (e) { alert(e.message); }
+      if (!(await this.confirmAction({
+        title: '清空软链接记录',
+        message: '确认清空所有软链接记录？此操作不可恢复。',
+        confirmText: '清空',
+        danger: true,
+      }))) return;
+      try { await this.api('DELETE', '/api/symlinks/all'); this.loadSymlinkRecords(); this.loadSymlinkStats(); } catch (e) { this.notify(e.message, 'error'); }
     },
 
     // --- Records ---
@@ -427,11 +504,16 @@ const app = Vue.createApp({
       this.loadSymlinkRecords();
     },
     async deleteRecord(id) {
-      if (!confirm('确认删除该记录？')) return;
-      try { await this.api('DELETE', '/api/records/' + id); this.loadRecords(); } catch (e) { alert(e.message); }
+      if (!(await this.confirmAction({
+        title: '删除刮削记录',
+        message: '确认删除该记录？',
+        confirmText: '删除',
+        danger: true,
+      }))) return;
+      try { await this.api('DELETE', '/api/records/' + id); this.loadRecords(); } catch (e) { this.notify(e.message, 'error'); }
     },
     async retryRecord(id) {
-      try { await this.api('POST', '/api/records/' + id + '/retry'); this.loadRecords(); } catch (e) { alert(e.message); }
+      try { await this.api('POST', '/api/records/' + id + '/retry'); this.loadRecords(); } catch (e) { this.notify(e.message, 'error'); }
     },
     // --- Batch Operations ---
     toggleSelectAll(e) {
@@ -443,12 +525,17 @@ const app = Vue.createApp({
     },
     async batchDeleteSelected() {
       if (!this.selectedIds.length) return;
-      if (!confirm('确认删除选中的 ' + this.selectedIds.length + ' 条记录？')) return;
+      if (!(await this.confirmAction({
+        title: '批量删除刮削记录',
+        message: '确认删除选中的 ' + this.selectedIds.length + ' 条记录？',
+        confirmText: '删除',
+        danger: true,
+      }))) return;
       try {
         await this.api('POST', '/api/records/batch-delete', { ids: this.selectedIds });
         if (this.groupedView) this.loadGroupedRecords();
         else this.loadRecords();
-      } catch (e) { alert(e.message); }
+      } catch (e) { this.notify(e.message, 'error'); }
     },
     async batchRetrySelected() {
       if (!this.selectedIds.length) return;
@@ -456,27 +543,37 @@ const app = Vue.createApp({
         await this.api('POST', '/api/records/batch-retry', { ids: this.selectedIds });
         if (this.groupedView) this.loadGroupedRecords();
         else this.loadRecords();
-      } catch (e) { alert(e.message); }
+      } catch (e) { this.notify(e.message, 'error'); }
     },
     async clearFailed() {
-      if (!confirm('确认清除所有失败记录？')) return;
+      if (!(await this.confirmAction({
+        title: '清除失败记录',
+        message: '确认清除所有失败记录？',
+        confirmText: '清除',
+        danger: true,
+      }))) return;
       try {
         await this.api('POST', '/api/records/clear-failed');
         if (this.groupedView) this.loadGroupedRecords();
         else this.loadRecords();
-      } catch (e) { alert(e.message); }
+      } catch (e) { this.notify(e.message, 'error'); }
     },
     async clearAll() {
-      if (!confirm('确认清空所有刮削记录？此操作不可恢复。')) return;
+      if (!(await this.confirmAction({
+        title: '清空刮削记录',
+        message: '确认清空所有刮削记录？此操作不可恢复。',
+        confirmText: '清空',
+        danger: true,
+      }))) return;
       try {
         await this.api('POST', '/api/records/clear-all');
         if (this.groupedView) this.loadGroupedRecords();
         else this.loadRecords();
-      } catch (e) { alert(e.message); }
+      } catch (e) { this.notify(e.message, 'error'); }
     },
     exportErrors() {
       var errors = this.records.filter(function(r) { return r.status === 'failed' || r.status === 'pending_manual'; });
-      if (!errors.length) { alert('当前页无识别错误记录'); return; }
+      if (!errors.length) { this.notify('当前页无识别错误记录', 'info'); return; }
       var lines = ['文件名,状态,错误信息,原始路径'];
       errors.forEach(function(r) {
         lines.push('"' + (r.original_name || '') + '","' + (r.status || '') + '","' + (r.error_msg || '') + '","' + (r.original_path || '') + '"');
@@ -765,19 +862,29 @@ const app = Vue.createApp({
       }
     },
     async deleteGroup(g) {
-      if (!confirm('确认删除「' + g.dir_name + '」内的全部 ' + g.total + ' 条记录？')) return;
+      if (!(await this.confirmAction({
+        title: '删除分组记录',
+        message: '确认删除「' + g.dir_name + '」内的全部 ' + g.total + ' 条记录？',
+        confirmText: '删除',
+        danger: true,
+      }))) return;
       try {
         await this.api('POST', '/api/records/batch-delete', { ids: g.ids });
         this.loadGroupedRecords();
-      } catch (e) { alert(e.message); }
+      } catch (e) { this.notify(e.message, 'error'); }
     },
     async deleteGroupRecord(g, id) {
-      if (!confirm('确认删除该记录？')) return;
+      if (!(await this.confirmAction({
+        title: '删除刮削记录',
+        message: '确认删除该记录？',
+        confirmText: '删除',
+        danger: true,
+      }))) return;
       try {
         await this.api('DELETE', '/api/records/' + id);
         this.loadGroupedRecords();
         if (this.expandedGroups[g.dir_path]) this.loadGroupRecords(g);
-      } catch (e) { alert(e.message); }
+      } catch (e) { this.notify(e.message, 'error'); }
     },
 
     // --- Manual Match ---
@@ -816,7 +923,7 @@ const app = Vue.createApp({
         });
         this.candidates = data.candidates || [];
         this.selectedCandidate = null;
-      } catch (e) { alert(e.message); }
+      } catch (e) { this.notify(e.message, 'error'); }
       this.searching = false;
       this.searchDone = true;
     },
@@ -836,7 +943,7 @@ const app = Vue.createApp({
         });
         this.manualMatchVisible = false;
         this.loadRecords();
-      } catch (e) { alert('匹配失败: ' + e.message); }
+      } catch (e) { this.notify('匹配失败: ' + e.message, 'error'); }
       this.searching = false;
     },
     selectCandidate(candidate) {
@@ -859,7 +966,7 @@ const app = Vue.createApp({
         });
         this.manualMatchVisible = false;
         this.loadRecords();
-      } catch (e) { alert('匹配失败: ' + e.message); }
+      } catch (e) { this.notify('匹配失败: ' + e.message, 'error'); }
       this.searching = false;
     },
 
@@ -869,6 +976,11 @@ const app = Vue.createApp({
         this.cfg = await this.api('GET', '/api/settings/raw');
         if (!this.cfg.embedding_source) this.cfg.embedding_source = 'local';
         if (this.cfg.online_embedding_model === undefined) this.cfg.online_embedding_model = '';
+        if (this.cfg.proxy_enabled === undefined) this.cfg.proxy_enabled = false;
+        if (this.cfg.proxy_url === undefined) this.cfg.proxy_url = '';
+        if (!this.cfg.proxy_no_proxy) {
+          this.cfg.proxy_no_proxy = 'localhost,127.0.0.1,::1,0.0.0.0,host.docker.internal,*.local,10.*,192.168.*,172.16.*,172.17.*,172.18.*,172.19.*,172.20.*,172.21.*,172.22.*,172.23.*,172.24.*,172.25.*,172.26.*,172.27.*,172.28.*,172.29.*,172.30.*,172.31.*';
+        }
       } catch (ex) {}
     },
     async saveSettings() {
@@ -904,12 +1016,37 @@ const app = Vue.createApp({
       } catch (ex) { this.testResult = { ok: false, message: ex.message }; }
     },
     async clearCache() {
-      if (!confirm('确认清除 API 缓存？\n清除后所有识别结果将重新向 API 请求，不会影响已归档的文件。')) return;
+      if (!(await this.confirmAction({
+        title: '清除 API 缓存',
+        message: '清除后所有识别结果将重新向 API 请求，不会影响已归档的文件。',
+        confirmText: '清除',
+        danger: true,
+      }))) return;
       this.testResult = null;
       try {
         var r = await this.api('POST', '/api/settings/clear-cache');
         this.testResult = { ok: true, message: r.message };
       } catch (e) { this.testResult = { ok: false, message: e.message }; }
+    },
+    async testProxy() {
+      this.proxyTesting = true;
+      this.proxyTestResult = null;
+      try {
+        this.proxyTestResult = await this.api('POST', '/api/settings/test-proxy', this.cfg);
+      } catch (e) {
+        this.proxyTestResult = {
+          ok: false,
+          summary: { total: 0, success: 0, failed: 0, avg_latency_ms: null },
+          proxy: {},
+          results: [],
+          message: e.message
+        };
+      }
+      this.proxyTesting = false;
+    },
+    proxyModeText(mode) {
+      var map = { manual: '手动代理', environment: '环境/系统代理', direct: '直连' };
+      return map[mode] || mode || '-';
     },
     addStripKeyword() {
       var kw = (this.newKeyword || '').trim();

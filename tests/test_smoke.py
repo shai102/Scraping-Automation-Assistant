@@ -34,8 +34,10 @@ from utils.helpers import (
     cached_request,
     derive_title_from_filename,
     format_error_message,
+    normalize_proxy_url,
     normalize_parse_source,
     parse_error_message,
+    proxy_bypass_url,
     safe_filename,
 )
 
@@ -44,6 +46,17 @@ class SmokeTests(unittest.TestCase):
     def test_safe_filename_replaces_illegal_chars(self):
         original = 'a<b>:"c/\\d|?*.'
         self.assertEqual(safe_filename(original), "a_b___c__d___")
+
+    def test_proxy_url_shorthand_is_normalized(self):
+        self.assertEqual(normalize_proxy_url("127.0.0.1:7890"), "http://127.0.0.1:7890")
+        self.assertEqual(normalize_proxy_url("https://proxy.example.com/"), "https://proxy.example.com")
+
+    def test_proxy_bypass_matches_local_defaults(self):
+        self.assertTrue(proxy_bypass_url("http://localhost:11434/api/tags"))
+        self.assertTrue(proxy_bypass_url("http://127.0.0.1:8090/api"))
+        self.assertTrue(proxy_bypass_url("http://host.docker.internal:7890"))
+        self.assertTrue(proxy_bypass_url("http://192.168.100.195:8090"))
+        self.assertFalse(proxy_bypass_url("https://api.themoviedb.org/3/configuration"))
 
     def test_extract_siliconflow_content_success(self):
         payload = {
@@ -148,7 +161,7 @@ class SmokeTests(unittest.TestCase):
 
         cache = {}
         lock = threading.Lock()
-        with patch("core.services.matcher_service.requests.post", return_value=FakeResponse()) as post:
+        with patch("utils.helpers.requests.post", return_value=FakeResponse()) as post:
             emb = get_online_embedding(
                 "https://api.example.com/v1",
                 "sk-test",
@@ -236,7 +249,7 @@ class SmokeTests(unittest.TestCase):
             {"id": "2", "title": "Right", "release": "2024-01-01"},
         ]
         item = {"old_name": "Right.S01E01.2024.mkv"}
-        with patch("core.services.matcher_service.requests.post", return_value=FakeResponse()) as post:
+        with patch("utils.helpers.requests.post", return_value=FakeResponse()) as post:
             chosen, reason = pick_candidate_with_openai_compatible(
                 "https://openrouter.ai/api/v1",
                 "sk-test",

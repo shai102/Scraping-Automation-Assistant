@@ -12,14 +12,25 @@
   <!-- Sidebar -->
   <nav class="sidebar">
     <div class="sidebar-header">
-      <h2>🎬 刮削助手</h2>
+      <div class="app-brand">
+        <div class="app-brand-mark">🎬</div>
+        <div>
+          <h2>刮削助手</h2>
+          <span>v2.9</span>
+        </div>
+      </div>
     </div>
     <ul class="nav-list">
+      <li class="nav-section">刮削管理</li>
       <li :class="{active: page==='folders'}" @click="page='folders'">
         <span class="icon">📂</span> 刮削目录
       </li>
       <li :class="{active: page==='records'}" @click="page='records'">
         <span class="icon">📋</span> 刮削记录
+      </li>
+      <li class="nav-section">工具</li>
+      <li :class="{active: page==='recognition_test'}" @click="page='recognition_test'">
+        <span class="icon">🧠</span> 识别测试
       </li>
       <li :class="{active: page==='symlink_folders'}" @click="page='symlink_folders'">
         <span class="icon">🔗</span> 导出软链接
@@ -27,14 +38,15 @@
       <li :class="{active: page==='symlink_records'}" @click="page='symlink_records'">
         <span class="icon">📎</span> 软链接记录
       </li>
+      <li class="nav-section">设置</li>
       <li :class="{active: page==='tmdb'}" @click="page='tmdb'">
         <span class="icon">🎬</span> TMDB设置
       </li>
       <li :class="{active: page==='ai'}" @click="page='ai'">
         <span class="icon">🤖</span> AI识别设置
       </li>
-      <li :class="{active: page==='recognition_test'}" @click="page='recognition_test'">
-        <span class="icon">🧠</span> 识别测试
+      <li :class="{active: page==='proxy'}" @click="page='proxy'">
+        <span class="icon">🌐</span> 网络代理
       </li>
       <li :class="{active: page==='classify'}" @click="page='classify'">
         <span class="icon">⚙️</span> 二级分类设置
@@ -44,7 +56,7 @@
       </li>
     </ul>
     <div class="sidebar-footer">
-      <span class="version">v2.8</span>
+      <span class="version">v2.9</span>
     </div>
   </nav>
 
@@ -866,6 +878,78 @@
       </div>
     </section>
 
+    <!-- 网络代理 -->
+    <section v-if="page==='proxy'">
+      <div class="page-header"><h1>网络代理</h1></div>
+      <div class="card proxy-card">
+        <div class="proxy-title">
+          <div class="proxy-icon">🌐</div>
+          <div>
+            <h2>网络代理</h2>
+            <p>先不填代理直接测试；如果直连失败，再填写代理地址。Docker 版通常需要手动配置。</p>
+          </div>
+        </div>
+
+        <label class="recognition-toggle proxy-enable-toggle">
+          <input type="checkbox" v-model="cfg.proxy_enabled">
+          <span class="toggle-track"><span class="toggle-dot"></span></span>
+          <span>
+            <strong>启用手动代理</strong>
+            <small>开启后，外网请求会显式使用下方代理；关闭时继续跟随系统/环境代理或直连。</small>
+          </span>
+        </label>
+
+        <div class="form-group">
+          <label>代理地址（单地址模式）</label>
+          <input v-model="cfg.proxy_url" placeholder="例如：http://127.0.0.1:7890 或 host.docker.internal:7890">
+          <small style="color:#888;display:block;margin-top:6px">可直接填写 127.0.0.1:7890，保存时会自动补全为 http://127.0.0.1:7890。</small>
+        </div>
+
+        <div class="form-group">
+          <label>NO_PROXY（不走代理）</label>
+          <textarea v-model="cfg.proxy_no_proxy" rows="3" style="font-family:Consolas,Monaco,monospace;resize:vertical"></textarea>
+          <small style="color:#888;display:block;margin-top:6px">默认包含 localhost、127.0.0.1、host.docker.internal、192.168.*、10.*、172.16-31.*，避免 Ollama、Web 后端和本地服务被代理。</small>
+        </div>
+
+        <div class="proxy-help">
+          <strong>怎么判断是否需要代理</strong>
+          <ol>
+            <li>先保持代理地址为空，点击“测试代理/直连”。</li>
+            <li>如果测试成功，说明当前网络可用，不需要额外配置代理。</li>
+            <li>如果测试失败，再填写你的代理地址并重新测试，直到结果正常。</li>
+          </ol>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-primary" @click="saveSettings">保存</button>
+          <button class="btn" @click="testProxy" :disabled="proxyTesting">{{proxyTesting?'测试中...':'🧪 测试代理/直连'}}</button>
+        </div>
+
+        <div v-if="proxyTestResult" class="proxy-result">
+          <div :class="['msg', proxyTestResult.ok?'msg-ok':'msg-err']">
+            测试完成：{{proxyModeText(proxyTestResult.proxy&&proxyTestResult.proxy.mode)}}，成功 {{proxyTestResult.summary&&proxyTestResult.summary.success}}/{{proxyTestResult.summary&&proxyTestResult.summary.total}}
+            <span v-if="proxyTestResult.summary&&proxyTestResult.summary.avg_latency_ms">，平均延迟 {{proxyTestResult.summary.avg_latency_ms}}ms</span>
+          </div>
+          <div class="proxy-current" v-if="proxyTestResult.proxy">
+            当前代理：{{proxyTestResult.proxy.proxy_url || '直连'}}（来源：{{proxyTestResult.proxy.source || '-'}}）
+          </div>
+          <table class="table proxy-table" v-if="proxyTestResult.results&&proxyTestResult.results.length">
+            <thead>
+              <tr><th>服务</th><th>状态</th><th>延迟</th><th>备注</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in proxyTestResult.results" :key="row.name">
+                <td><span :class="['proxy-check', row.ok?'ok':'bad']">{{row.ok?'✓':'×'}}</span> {{row.name}}</td>
+                <td>{{row.status}}</td>
+                <td>{{row.latency_ms}}ms</td>
+                <td>{{row.message}}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- 二级分类设置 -->
     <section v-if="page==='classify'">
       <div class="page-header"><h1>二级分类设置</h1></div>
@@ -1060,6 +1144,23 @@
       </div>
     </section>
   </main>
+  <div class="toast-stack">
+    <div v-for="toast in toasts" :key="toast.id" :class="['app-toast', 'toast-' + toast.type]">
+      <span class="toast-dot"></span>
+      <span class="toast-text">{{toast.message}}</span>
+      <button class="toast-close" @click="removeToast(toast.id)" title="关闭">×</button>
+    </div>
+  </div>
+  <div class="app-confirm-mask" v-if="confirmDialog.visible" @click.self="resolveConfirm(false)">
+    <div class="app-confirm">
+      <h3>{{confirmDialog.title}}</h3>
+      <p>{{confirmDialog.message}}</p>
+      <div class="app-confirm-actions">
+        <button class="btn" @click="resolveConfirm(false)">{{confirmDialog.cancelText}}</button>
+        <button :class="['btn', confirmDialog.danger ? 'btn-danger-solid' : 'btn-primary']" @click="resolveConfirm(true)">{{confirmDialog.confirmText}}</button>
+      </div>
+    </div>
+  </div>
 </div>
 <script src="app.js"></script>
 </body>

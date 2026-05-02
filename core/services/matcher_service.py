@@ -16,6 +16,8 @@ from utils.helpers import (
     extract_year_from_release,
     format_candidate_label,
     format_error_message,
+    request_get,
+    request_post,
     safe_str,
 )
 
@@ -25,7 +27,7 @@ def ollama_post_json(base_url, endpoint, payload, timeout):
     normalized = str(base_url or "").strip().rstrip("/")
     if not normalized:
         raise ValueError("Ollama URL 未配置")
-    return requests.post(normalized + endpoint, json=payload, timeout=timeout)
+    return request_post(normalized + endpoint, json=payload, timeout=timeout)
 
 
 def _extract_item_old_name(item):
@@ -60,7 +62,7 @@ def list_ollama_models(base_url):
         return [], "Ollama URL 未配置"
 
     try:
-        response = requests.get(normalized + "/api/tags", timeout=TIMEOUT_OLLAMA_TAGS)
+        response = request_get(normalized + "/api/tags", timeout=TIMEOUT_OLLAMA_TAGS)
         response.raise_for_status()
         try:
             payload = response.json()
@@ -357,7 +359,7 @@ def get_online_embedding(api_url, api_key, embedding_model, text, cache, cache_l
     }
 
     try:
-        response = requests.post(endpoint, headers=headers, json=payload, timeout=TIMEOUT_OLLAMA_EMBED)
+        response = request_post(endpoint, headers=headers, json=payload, timeout=TIMEOUT_OLLAMA_EMBED)
         response.raise_for_status()
         data = response.json()
         rows = data.get("data")
@@ -577,7 +579,7 @@ def pick_candidate_with_openai_compatible(
     }
 
     try:
-        response = requests.post(endpoint, headers=headers, json=payload, timeout=TIMEOUT_OLLAMA_CHAT)
+        response = request_post(endpoint, headers=headers, json=payload, timeout=TIMEOUT_OLLAMA_CHAT)
         response.raise_for_status()
         content = _extract_openai_message_content(response.json())
         if not content:
