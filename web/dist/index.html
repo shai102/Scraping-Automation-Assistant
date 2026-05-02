@@ -65,68 +65,6 @@
         <h1>刮削目录</h1>
         <button class="btn btn-primary" @click="showAddFolder=true">+ 添加目录</button>
       </div>
-      <div class="card card-form" v-if="showAddFolder">
-        <h3>添加监控目录</h3>
-        <div class="form-group">
-          <label>监控路径</label>
-          <div class="input-with-btn">
-            <input v-model="newFolder.path" placeholder="例如 D:\Media\Downloads" readonly>
-            <button class="btn btn-sm" @click="openBrowse('path')">浏览...</button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>归档目标根目录</label>
-          <div class="input-with-btn">
-            <input v-model="newFolder.target_root" placeholder="例如 D:\Media\Library" readonly :disabled="newFolder.organize_mode==='rename'">
-            <button class="btn btn-sm" @click="openBrowse('target_root')" :disabled="newFolder.organize_mode==='rename'">浏览...</button>
-          </div>
-          <small v-if="newFolder.organize_mode==='rename'" style="color:#888;display:block;margin-top:4px">原地整理模式不需要归档目标，文件将在监控目录内建立层级结构</small>
-
-        </div>
-        <div class="form-group">
-          <label>* 整理方式</label>
-          <div class="btn-group" style="display:flex;gap:0;margin-top:4px">
-            <button :class="['btn', newFolder.organize_mode==='move'?'btn-primary':'']" style="border-radius:6px 0 0 6px;min-width:72px" @click="newFolder.organize_mode='move'">移动</button>
-            <button :class="['btn', newFolder.organize_mode==='copy'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='copy'">复制</button>
-            <button :class="['btn', newFolder.organize_mode==='symlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='symlink'">软链接</button>
-            <button :class="['btn', newFolder.organize_mode==='hardlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='hardlink'">硬链接</button>
-            <button :class="['btn', newFolder.organize_mode==='rename'?'btn-primary':'']" style="border-radius:0 6px 6px 0;min-width:88px" @click="newFolder.organize_mode='rename'">原地整理</button>
-          </div>
-          <small style="color:#1976d2;display:block;margin-top:6px" v-if="newFolder.organize_mode==='move'">移动：将视频文件移动到目标路径，元数据（nfo、字幕等）也会直接生成或移动到目标路径</small>
-          <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='copy'">复制：将文件复制到目标路径，元数据（nfo、字幕等）也会直接生成或复制到目标路径</small>
-          <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='symlink'">软链接：创建文件的软链接到目标路径，元数据（nfo、字幕等）也会直接生成或复制到目标路径。Windows 可能需要管理员权限或开启开发者模式</small>
-          <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='hardlink'">硬链接：创建文件的硬链接到目标路径，元数据（nfo、字幕等）也会直接生成或复制到目标路径。仅支持同分区</small>
-          <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='rename'">原地整理：在监控目录内建立完整层级结构（剧名/Season X/），不需要设置归档目标</small>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>媒体类型</label>
-            <select v-model="newFolder.media_type">
-              <option value="auto">自动判断</option>
-              <option value="movie">电影</option>
-              <option value="tv">电视剧</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>数据源</label>
-            <select v-model="newFolder.data_source">
-              <option value="siliconflow_tmdb">AI + TMDb</option>
-              <option value="siliconflow_bgm">AI + BGM</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-group" style="margin-top:4px">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="checkbox" v-model="newFolder.skip_if_scraped">
-            <span>跳过已刮削文件</span>
-          </label>
-          <small style="color:#888;display:block;margin-top:4px">文件旁边已存在同名 .nfo 时自动跳过，不再重新刮削</small>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-primary" @click="addFolder">确认添加</button>
-          <button class="btn" @click="showAddFolder=false">取消</button>
-        </div>
-      </div>
       <table class="table" v-if="scrapeFolders.length">
         <thead>
           <tr>
@@ -150,7 +88,75 @@
           </tr>
         </tbody>
       </table>
-      <div class="empty" v-else-if="!showAddFolder">暂无监控目录，点击右上角添加</div>
+      <div class="empty" v-else>暂无监控目录，点击右上角添加</div>
+
+      <!-- 添加目录弹窗 -->
+      <div class="modal-overlay" v-if="showAddFolder" @click.self="showAddFolder=false">
+        <div class="modal" style="width:580px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <h2 style="margin:0">添加监控目录</h2>
+            <button @click="showAddFolder=false" style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#999;padding:0 6px">&times;</button>
+          </div>
+          <div class="form-group">
+            <label>监控路径</label>
+            <div class="input-with-btn">
+              <input v-model="newFolder.path" placeholder="例如 D:\Media\Downloads" readonly>
+              <button class="btn btn-sm" @click="openBrowse('path')">浏览...</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>归档目标根目录</label>
+            <div class="input-with-btn">
+              <input v-model="newFolder.target_root" placeholder="例如 D:\Media\Library" readonly :disabled="newFolder.organize_mode==='rename'">
+              <button class="btn btn-sm" @click="openBrowse('target_root')" :disabled="newFolder.organize_mode==='rename'">浏览...</button>
+            </div>
+            <small v-if="newFolder.organize_mode==='rename'" style="color:#888;display:block;margin-top:4px">原地整理模式不需要归档目标，文件将在监控目录内建立层级结构</small>
+          </div>
+          <div class="form-group">
+            <label>* 整理方式</label>
+            <div class="btn-group" style="display:flex;gap:0;margin-top:4px">
+              <button :class="['btn', newFolder.organize_mode==='move'?'btn-primary':'']" style="border-radius:6px 0 0 6px;min-width:72px" @click="newFolder.organize_mode='move'">移动</button>
+              <button :class="['btn', newFolder.organize_mode==='copy'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='copy'">复制</button>
+              <button :class="['btn', newFolder.organize_mode==='symlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='symlink'">软链接</button>
+              <button :class="['btn', newFolder.organize_mode==='hardlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='hardlink'">硬链接</button>
+              <button :class="['btn', newFolder.organize_mode==='rename'?'btn-primary':'']" style="border-radius:0 6px 6px 0;min-width:88px" @click="newFolder.organize_mode='rename'">原地整理</button>
+            </div>
+            <small style="color:#1976d2;display:block;margin-top:6px" v-if="newFolder.organize_mode==='move'">移动：将视频文件移动到目标路径，元数据（nfo、字幕等）也会直接生成或移动到目标路径</small>
+            <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='copy'">复制：将文件复制到目标路径，元数据（nfo、字幕等）也会直接生成或复制到目标路径</small>
+            <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='symlink'">软链接：创建文件的软链接到目标路径，元数据（nfo、字幕等）也会直接生成或复制到目标路径。Windows 可能需要管理员权限或开启开发者模式</small>
+            <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='hardlink'">硬链接：创建文件的硬链接到目标路径，元数据（nfo、字幕等）也会直接生成或复制到目标路径。仅支持同分区</small>
+            <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='rename'">原地整理：在监控目录内建立完整层级结构（剧名/Season X/），不需要设置归档目标</small>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>媒体类型</label>
+              <select v-model="newFolder.media_type">
+                <option value="auto">自动判断</option>
+                <option value="movie">电影</option>
+                <option value="tv">电视剧</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>数据源</label>
+              <select v-model="newFolder.data_source">
+                <option value="siliconflow_tmdb">AI + TMDb</option>
+                <option value="siliconflow_bgm">AI + BGM</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top:4px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" v-model="newFolder.skip_if_scraped">
+              <span>跳过已刮削文件</span>
+            </label>
+            <small style="color:#888;display:block;margin-top:4px">文件旁边已存在同名 .nfo 时自动跳过，不再重新刮削</small>
+          </div>
+          <div class="form-actions">
+            <button class="btn" @click="showAddFolder=false">取消</button>
+            <button class="btn btn-primary" @click="addFolder">确认添加</button>
+          </div>
+        </div>
+      </div>
 
       <!-- 编辑目录弹窗 -->
       <div class="modal-overlay" v-if="editFolderVisible" @click.self="editFolderVisible=false">
@@ -540,23 +546,24 @@
               <button class="recognition-run" @click="runRecognitionTest" :disabled="recognitionTesting || !recognitionName.trim()">{{recognitionTesting?'识别中...':'开始识别'}}</button>
             </div>
 
-            <label class="recognition-toggle">
-              <input type="checkbox" v-model="recognitionUseAi">
-              <span class="toggle-track"><span class="toggle-dot"></span></span>
-              <span>
-                <strong>使用在线 AI 测试</strong>
-                <small>开启后，在线 API 解析文件名，本地 Embedding 重排候选，并由在线 API 做最终判定</small>
-              </span>
-            </label>
-
-            <label class="recognition-toggle recognition-cache-toggle">
-              <input type="checkbox" v-model="recognitionBypassCache">
-              <span class="toggle-track"><span class="toggle-dot"></span></span>
-              <span>
-                <strong>绕过 API 缓存</strong>
-                <small>开启后，本页测试会实时请求 TMDB/BGM，不读取也不写入 api_cache.json；平常刮削不受影响</small>
-              </span>
-            </label>
+            <div class="recognition-toggle-row">
+              <label class="recognition-toggle">
+                <input type="checkbox" v-model="recognitionUseAi">
+                <span class="toggle-track"><span class="toggle-dot"></span></span>
+                <span>
+                  <strong>使用在线 AI 测试</strong>
+                  <small>开启后，在线 API 解析文件名，本地 Embedding 重排候选，并由在线 API 做最终判定</small>
+                </span>
+              </label>
+              <label class="recognition-toggle recognition-cache-toggle">
+                <input type="checkbox" v-model="recognitionBypassCache">
+                <span class="toggle-track"><span class="toggle-dot"></span></span>
+                <span>
+                  <strong>绕过 API 缓存</strong>
+                  <small>开启后，本页测试会实时请求 TMDB/BGM，不读取也不写入 api_cache.json；平常刮削不受影响</small>
+                </span>
+              </label>
+            </div>
 
             <div class="recognition-pills">
               <span>仅支持文件名，不支持文件夹名</span>
@@ -1035,28 +1042,6 @@
         <h1>导出软链接</h1>
         <button class="btn btn-primary" @click="showAddSymlink=true">+ 添加目录</button>
       </div>
-      <div class="card card-form" v-if="showAddSymlink">
-        <h3>添加软链接导出目录</h3>
-        <div class="form-group">
-          <label>监控路径（原始文件所在目录）</label>
-          <div class="input-with-btn">
-            <input v-model="newSymlinkFolder.path" placeholder="例如 E:\MPSTRM" readonly>
-            <button class="btn btn-sm" @click="openBrowse('symlink_path')">浏览...</button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>导出目标目录（软链接创建位置）</label>
-          <div class="input-with-btn">
-            <input v-model="newSymlinkFolder.target_root" placeholder="例如 E:\STRM" readonly>
-            <button class="btn btn-sm" @click="openBrowse('symlink_target')">浏览...</button>
-          </div>
-          <small style="color:#1976d2;display:block;margin-top:6px">监控路径中的文件将在目标目录创建同名软链接，保持相同的目录结构，不刮削不改名</small>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-primary" @click="addSymlinkFolder">确认添加</button>
-          <button class="btn" @click="showAddSymlink=false">取消</button>
-        </div>
-      </div>
       <table class="table" v-if="symlinkFolders.length">
         <thead>
           <tr>
@@ -1076,7 +1061,36 @@
           </tr>
         </tbody>
       </table>
-      <div class="empty" v-else-if="!showAddSymlink">暂无软链接导出目录，点击右上角添加</div>
+      <div class="empty" v-else>暂无软链接导出目录，点击右上角添加</div>
+
+      <!-- 添加软链接弹窗 -->
+      <div class="modal-overlay" v-if="showAddSymlink" @click.self="showAddSymlink=false">
+        <div class="modal" style="width:520px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <h2 style="margin:0">添加软链接导出目录</h2>
+            <button @click="showAddSymlink=false" style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#999;padding:0 6px">&times;</button>
+          </div>
+          <div class="form-group">
+            <label>监控路径（原始文件所在目录）</label>
+            <div class="input-with-btn">
+              <input v-model="newSymlinkFolder.path" placeholder="例如 E:\MPSTRM" readonly>
+              <button class="btn btn-sm" @click="openBrowse('symlink_path')">浏览...</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>导出目标目录（软链接创建位置）</label>
+            <div class="input-with-btn">
+              <input v-model="newSymlinkFolder.target_root" placeholder="例如 E:\STRM" readonly>
+              <button class="btn btn-sm" @click="openBrowse('symlink_target')">浏览...</button>
+            </div>
+            <small style="color:#1976d2;display:block;margin-top:6px">监控路径中的文件将在目标目录创建同名软链接，保持相同的目录结构，不刮削不改名</small>
+          </div>
+          <div class="form-actions">
+            <button class="btn" @click="showAddSymlink=false">取消</button>
+            <button class="btn btn-primary" @click="addSymlinkFolder">确认添加</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- 软链接记录 -->
