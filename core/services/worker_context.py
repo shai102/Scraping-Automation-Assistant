@@ -599,6 +599,7 @@ class WorkerContext:
             )
             if chosen:
                 return _candidate_result_from_model("在线模型判定", chosen, reason)
+            online_ready = False  # 在线模型未能判定，允许后续兜底逻辑生效
 
         if (not prefer_ollama) and (not online_ready) and ollama_ready:
             chosen, reason = self._pick_candidate_with_ollama(
