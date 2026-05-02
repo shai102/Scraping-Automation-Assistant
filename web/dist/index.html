@@ -502,7 +502,7 @@
     </div>
 
     <!-- 目录浏览弹窗 -->
-    <div class="modal-overlay" v-if="browseVisible" @click.self="browseVisible=false">
+    <div class="modal-overlay" v-if="browseVisible" @click.self="browseVisible=false" style="z-index:400">
       <div class="modal" style="width:550px">
         <h2>选择目录</h2>
         <div class="browse-path-bar">
