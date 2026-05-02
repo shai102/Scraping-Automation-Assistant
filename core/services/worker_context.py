@@ -286,6 +286,13 @@ class WorkerContext:
         source_provider="",
         media_id="",
         is_tv=True,
+        original_title="",
+        rating=0,
+        genres=None,
+        studios=None,
+        overview="",
+        ep_plot="",
+        release="",
     ):
         preserve = bool(self.preserve_media_suffix.get())
         media_suffix = ""
@@ -305,6 +312,13 @@ class WorkerContext:
             "source_provider": source_provider,
             "media_id": media_id,
             "is_tv": is_tv,
+            "original_title": original_title,
+            "rating": rating or 0,
+            "genres": genres or [],
+            "studios": studios or [],
+            "overview": overview,
+            "ep_plot": ep_plot,
+            "release": release,
         }
         return render_filename_template(template, context, preserve), media_suffix
 
