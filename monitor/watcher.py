@@ -1052,7 +1052,8 @@ class FolderWatcher:
                     record.error_msg = meta.get("error_msg") or "AI接口限流，请稍后重试"
                 else:
                     record.status = "pending_manual"
-                    record.error_msg = "无法自动识别"
+                    # 优先使用匹配阶段记录的具体原因，兜底为通用提示
+                    record.error_msg = meta.get("pending_reason") or "无法自动识别"
                 db.commit()
                 self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
                 return

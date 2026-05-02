@@ -1028,6 +1028,7 @@ def process_task(gui, i):
             "parse_source": parse_source,
             "query_title": t,
             "media_suffix": media_suffix,
+            "pending_reason": db_m,  # 匹配阶段返回的状态消息，待手动时用于前端展示原因
         }
         item.parse_source = parse_source
         item.media_suffix = media_suffix
