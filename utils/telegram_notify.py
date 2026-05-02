@@ -211,7 +211,12 @@ def _send_batch(folder_name: str, items: list, cfg: dict, season_folder: str = "
         except Exception:
             pass
 
-    caption = _build_caption(folder_name, items, total_ep, file_count=len(items), existing_count=existing_count)
+    # 只统计视频/strm 文件作为「本次入库」集数，排除字幕/音频伴随文件
+    media_item_count = sum(
+        1 for it in items
+        if os.path.splitext(getattr(it, 'old_name', '') or getattr(it, 'path', '') or '')[1].lower() in _MEDIA_EXTS
+    ) or len(items)
+    caption = _build_caption(folder_name, items, total_ep, file_count=media_item_count, existing_count=existing_count)
     poster_url = _get_poster_url(items)
 
     try:
