@@ -641,6 +641,8 @@ def derive_title_from_filename(pure_name):
     text = re.sub(r"(?i)\bEP?\s*\d{1,4}\b.*$", "", text)
     text = re.sub(r"(?i)第\s*\d{1,4}\s*[集话話].*$", "", text)
     text = re.sub(r"(?i)[\[\(（]\s*\d{1,4}(?:v\d+)?\s*[\]\)）]\s*$", "", text)
+    # 去除末尾横线集号，如 " - 01"、" - 12v2"
+    text = re.sub(r"\s*[-–]\s*\d{1,3}(?:v\d)?\s*$", "", text).strip()
     return clean_search_title(text)
 
 
