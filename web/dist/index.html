@@ -65,7 +65,7 @@
         <h1>刮削目录</h1>
         <button class="btn btn-primary" @click="showAddFolder=true">+ 添加目录</button>
       </div>
-      <div class="card" v-if="showAddFolder">
+      <div class="card card-form" v-if="showAddFolder">
         <h3>添加监控目录</h3>
         <div class="form-group">
           <label>监控路径</label>
@@ -1035,7 +1035,7 @@
         <h1>导出软链接</h1>
         <button class="btn btn-primary" @click="showAddSymlink=true">+ 添加目录</button>
       </div>
-      <div class="card" v-if="showAddSymlink">
+      <div class="card card-form" v-if="showAddSymlink">
         <h3>添加软链接导出目录</h3>
         <div class="form-group">
           <label>监控路径（原始文件所在目录）</label>

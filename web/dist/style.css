@@ -17,6 +17,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica N
 .page-header h1{font-size:22px;font-weight:600}
 .filter-bar{display:flex;gap:6px}
 .card{background:var(--card-bg);border-radius:8px;padding:20px 24px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:16px}
+.card-form{max-width:800px}
 .form-group{margin-bottom:14px}
 .form-group label{display:block;font-size:13px;color:var(--text-muted);margin-bottom:4px}
 .form-group input[type=text],.form-group input[type=number],.form-group input[type=password],.form-group select,.form-group textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:#fff}
@@ -294,7 +295,7 @@ main.content>section{padding-top:0}
 
 /* Recognition test restyle */
 .recognition-page{max-width:none}
-.recognition-shell{border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow-md);background:#fff}
+.recognition-shell{border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow-md);background:#fff;max-width:900px}
 .recognition-hero{padding:24px 28px;background:#f7f8ff;border-bottom:1px solid #e3e9ff}
 .recognition-hero-icon{width:44px;height:44px;border-radius:8px;background:#e6ecff;color:#3f48cc;font-size:22px}
 .recognition-eyebrow{color:#8992a3;font-size:12px}
