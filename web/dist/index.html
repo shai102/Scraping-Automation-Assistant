@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>刮削助手</title>
+<title>鍒墛鍔╂墜</title>
 <link rel="stylesheet" href="style.css">
 <script src="vue.global.prod.js"></script>
 </head>
@@ -13,131 +13,131 @@
   <nav class="sidebar">
     <div class="sidebar-header">
       <div class="app-brand">
-        <div class="app-brand-mark">🎬</div>
+        <div class="app-brand-mark">馃幀</div>
         <div>
-          <h2>刮削助手</h2>
-          <span>v3.2</span>
+          <h2>鍒墛鍔╂墜</h2>
+          <span>v3.3</span>
         </div>
       </div>
     </div>
     <ul class="nav-list">
-      <li class="nav-section">刮削管理</li>
+      <li class="nav-section">鍒墛绠＄悊</li>
       <li :class="{active: page==='folders'}" @click="page='folders'">
-        <span class="icon">📂</span> 刮削目录
+        <span class="icon">馃搨</span> 鍒墛鐩綍
       </li>
       <li :class="{active: page==='records'}" @click="page='records'">
-        <span class="icon">📋</span> 刮削记录
+        <span class="icon">馃搵</span> 鍒墛璁板綍
       </li>
-      <li class="nav-section">工具</li>
+      <li class="nav-section">宸ュ叿</li>
       <li :class="{active: page==='recognition_test'}" @click="page='recognition_test'">
-        <span class="icon">🧠</span> 识别测试
+        <span class="icon">馃</span> 璇嗗埆娴嬭瘯
       </li>
       <li :class="{active: page==='symlink_folders'}" @click="page='symlink_folders'">
-        <span class="icon">🔗</span> 导出软链接
+        <span class="icon">馃敆</span> 瀵煎嚭杞摼鎺?
       </li>
       <li :class="{active: page==='symlink_records'}" @click="page='symlink_records'">
-        <span class="icon">📎</span> 软链接记录
+        <span class="icon">馃搸</span> 杞摼鎺ヨ褰?
       </li>
-      <li class="nav-section">设置</li>
+      <li class="nav-section">璁剧疆</li>
       <li :class="{active: page==='tmdb'}" @click="page='tmdb'">
-        <span class="icon">🎬</span> TMDB设置
+        <span class="icon">馃幀</span> TMDB璁剧疆
       </li>
       <li :class="{active: page==='ai'}" @click="page='ai'">
-        <span class="icon">🤖</span> AI识别设置
+        <span class="icon">馃</span> AI璇嗗埆璁剧疆
       </li>
       <li :class="{active: page==='proxy'}" @click="page='proxy'">
-        <span class="icon">🌐</span> 网络代理
+        <span class="icon">馃寪</span> 缃戠粶浠ｇ悊
       </li>
       <li :class="{active: page==='classify'}" @click="page='classify'">
-        <span class="icon">⚙️</span> 二级分类设置
+        <span class="icon">鈿欙笍</span> 浜岀骇鍒嗙被璁剧疆
       </li>
       <li :class="{active: page==='tgnotify'}" @click="page='tgnotify'">
-        <span class="icon">📨</span> TG 通知
+        <span class="icon">馃摠</span> TG 閫氱煡
       </li>
     </ul>
   </nav>
 
   <!-- Main content -->
   <main class="content">
-    <!-- 刮削目录 -->
+    <!-- 鍒墛鐩綍 -->
     <section v-if="page==='folders'">
       <div class="page-header">
-        <h1>刮削目录</h1>
-        <button class="btn btn-primary" @click="showAddFolder=true">+ 添加目录</button>
+        <h1>鍒墛鐩綍</h1>
+        <button class="btn btn-primary" @click="showAddFolder=true">+ 娣诲姞鐩綍</button>
       </div>
       <table class="table" v-if="scrapeFolders.length">
         <thead>
           <tr>
-            <th>路径</th><th>归档目标</th><th>整理方式</th><th>类型</th><th>数据源</th><th>状态</th><th>操作</th>
+            <th>璺緞</th><th>褰掓。鐩爣</th><th>鏁寸悊鏂瑰紡</th><th>绫诲瀷</th><th>鏁版嵁婧?/th><th>鐘舵€?/th><th>鎿嶄綔</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="f in scrapeFolders" :key="f.id">
             <td>{{f.path}}</td>
-            <td>{{f.organize_mode==='rename'?'(原地)':f.target_root || '-'}}</td>
-            <td>{{({move:'移动',copy:'复制',symlink:'软链接',hardlink:'硬链接',rename:'原地整理'})[f.organize_mode]||'移动'}}</td>
-            <td>{{f.media_type==='auto'?'自动':f.media_type==='movie'?'电影':'电视剧'}}</td>
+            <td>{{f.organize_mode==='rename'?'(鍘熷湴)':f.target_root || '-'}}</td>
+            <td>{{({move:'绉诲姩',copy:'澶嶅埗',symlink:'杞摼鎺?,hardlink:'纭摼鎺?,rename:'鍘熷湴鏁寸悊'})[f.organize_mode]||'绉诲姩'}}</td>
+            <td>{{f.media_type==='auto'?'鑷姩':f.media_type==='movie'?'鐢靛奖':'鐢佃鍓?}}</td>
             <td>{{f.data_source==='siliconflow_tmdb'?'TMDb':'BGM'}}</td>
-            <td><span :class="['badge', f.enabled?'badge-success':'badge-gray']">{{f.enabled?'监控中':'已停用'}}</span></td>
+            <td><span :class="['badge', f.enabled?'badge-success':'badge-gray']">{{f.enabled?'鐩戞帶涓?:'宸插仠鐢?}}</span></td>
             <td class="actions">
-              <button class="btn btn-sm" @click="scanFolder(f.id)" title="立即扫描">🔍</button>
-              <button class="btn btn-sm" @click="openEditFolder(f)" title="编辑">✏️</button>
-              <button class="btn btn-sm" @click="toggleFolder(f)" title="启停">{{f.enabled?'⏸':'▶'}}</button>
-              <button class="btn btn-sm btn-danger" @click="deleteFolder(f.id)" title="删除">🗑</button>
+              <button class="btn btn-sm" @click="scanFolder(f.id)" title="绔嬪嵆鎵弿">馃攳</button>
+              <button class="btn btn-sm" @click="openEditFolder(f)" title="缂栬緫">鉁忥笍</button>
+              <button class="btn btn-sm" @click="toggleFolder(f)" title="鍚仠">{{f.enabled?'鈴?:'鈻?}}</button>
+              <button class="btn btn-sm btn-danger" @click="deleteFolder(f.id)" title="鍒犻櫎">馃棏</button>
             </td>
           </tr>
         </tbody>
       </table>
-      <div class="empty" v-else>暂无监控目录，点击右上角添加</div>
+      <div class="empty" v-else>鏆傛棤鐩戞帶鐩綍锛岀偣鍑诲彸涓婅娣诲姞</div>
 
-      <!-- 添加目录弹窗 -->
+      <!-- 娣诲姞鐩綍寮圭獥 -->
       <div class="modal-overlay" v-if="showAddFolder" @click.self="showAddFolder=false">
         <div class="modal" style="width:580px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-            <h2 style="margin:0">添加监控目录</h2>
+            <h2 style="margin:0">娣诲姞鐩戞帶鐩綍</h2>
             <button @click="showAddFolder=false" style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#999;padding:0 6px">&times;</button>
           </div>
           <div class="form-group">
-            <label>监控路径</label>
+            <label>鐩戞帶璺緞</label>
             <div class="input-with-btn">
-              <input v-model="newFolder.path" placeholder="例如 D:\Media\Downloads" readonly>
-              <button class="btn btn-sm" @click="openBrowse('path')">浏览...</button>
+              <input v-model="newFolder.path" placeholder="渚嬪 D:\Media\Downloads" readonly>
+              <button class="btn btn-sm" @click="openBrowse('path')">娴忚...</button>
             </div>
           </div>
           <div class="form-group">
-            <label>归档目标根目录</label>
+            <label>褰掓。鐩爣鏍圭洰褰?/label>
             <div class="input-with-btn">
-              <input v-model="newFolder.target_root" placeholder="例如 D:\Media\Library" readonly :disabled="newFolder.organize_mode==='rename'">
-              <button class="btn btn-sm" @click="openBrowse('target_root')" :disabled="newFolder.organize_mode==='rename'">浏览...</button>
+              <input v-model="newFolder.target_root" placeholder="渚嬪 D:\Media\Library" readonly :disabled="newFolder.organize_mode==='rename'">
+              <button class="btn btn-sm" @click="openBrowse('target_root')" :disabled="newFolder.organize_mode==='rename'">娴忚...</button>
             </div>
-            <small v-if="newFolder.organize_mode==='rename'" style="color:#888;display:block;margin-top:4px">原地整理模式不需要归档目标，文件将在监控目录内建立层级结构</small>
+            <small v-if="newFolder.organize_mode==='rename'" style="color:#888;display:block;margin-top:4px">鍘熷湴鏁寸悊妯″紡涓嶉渶瑕佸綊妗ｇ洰鏍囷紝鏂囦欢灏嗗湪鐩戞帶鐩綍鍐呭缓绔嬪眰绾х粨鏋?/small>
           </div>
           <div class="form-group">
-            <label>* 整理方式</label>
+            <label>* 鏁寸悊鏂瑰紡</label>
             <div class="btn-group" style="display:flex;gap:0;margin-top:4px">
-              <button :class="['btn', newFolder.organize_mode==='move'?'btn-primary':'']" style="border-radius:6px 0 0 6px;min-width:72px" @click="newFolder.organize_mode='move'">移动</button>
-              <button :class="['btn', newFolder.organize_mode==='copy'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='copy'">复制</button>
-              <button :class="['btn', newFolder.organize_mode==='symlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='symlink'">软链接</button>
-              <button :class="['btn', newFolder.organize_mode==='hardlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='hardlink'">硬链接</button>
-              <button :class="['btn', newFolder.organize_mode==='rename'?'btn-primary':'']" style="border-radius:0 6px 6px 0;min-width:88px" @click="newFolder.organize_mode='rename'">原地整理</button>
+              <button :class="['btn', newFolder.organize_mode==='move'?'btn-primary':'']" style="border-radius:6px 0 0 6px;min-width:72px" @click="newFolder.organize_mode='move'">绉诲姩</button>
+              <button :class="['btn', newFolder.organize_mode==='copy'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='copy'">澶嶅埗</button>
+              <button :class="['btn', newFolder.organize_mode==='symlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='symlink'">杞摼鎺?/button>
+              <button :class="['btn', newFolder.organize_mode==='hardlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="newFolder.organize_mode='hardlink'">纭摼鎺?/button>
+              <button :class="['btn', newFolder.organize_mode==='rename'?'btn-primary':'']" style="border-radius:0 6px 6px 0;min-width:88px" @click="newFolder.organize_mode='rename'">鍘熷湴鏁寸悊</button>
             </div>
-            <small style="color:#1976d2;display:block;margin-top:6px" v-if="newFolder.organize_mode==='move'">移动：将视频文件移动到目标路径，元数据（nfo、字幕等）也会直接生成或移动到目标路径</small>
-            <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='copy'">复制：将文件复制到目标路径，元数据（nfo、字幕等）也会直接生成或复制到目标路径</small>
-            <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='symlink'">软链接：创建文件的软链接到目标路径，元数据（nfo、字幕等）也会直接生成或复制到目标路径。Windows 可能需要管理员权限或开启开发者模式</small>
-            <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='hardlink'">硬链接：创建文件的硬链接到目标路径，元数据（nfo、字幕等）也会直接生成或复制到目标路径。仅支持同分区</small>
-            <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='rename'">原地整理：在监控目录内建立完整层级结构（剧名/Season X/），不需要设置归档目标</small>
+            <small style="color:#1976d2;display:block;margin-top:6px" v-if="newFolder.organize_mode==='move'">绉诲姩锛氬皢瑙嗛鏂囦欢绉诲姩鍒扮洰鏍囪矾寰勶紝鍏冩暟鎹紙nfo銆佸瓧骞曠瓑锛変篃浼氱洿鎺ョ敓鎴愭垨绉诲姩鍒扮洰鏍囪矾寰?/small>
+            <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='copy'">澶嶅埗锛氬皢鏂囦欢澶嶅埗鍒扮洰鏍囪矾寰勶紝鍏冩暟鎹紙nfo銆佸瓧骞曠瓑锛変篃浼氱洿鎺ョ敓鎴愭垨澶嶅埗鍒扮洰鏍囪矾寰?/small>
+            <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='symlink'">杞摼鎺ワ細鍒涘缓鏂囦欢鐨勮蒋閾炬帴鍒扮洰鏍囪矾寰勶紝鍏冩暟鎹紙nfo銆佸瓧骞曠瓑锛変篃浼氱洿鎺ョ敓鎴愭垨澶嶅埗鍒扮洰鏍囪矾寰勩€俉indows 鍙兘闇€瑕佺鐞嗗憳鏉冮檺鎴栧紑鍚紑鍙戣€呮ā寮?/small>
+            <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='hardlink'">纭摼鎺ワ細鍒涘缓鏂囦欢鐨勭‖閾炬帴鍒扮洰鏍囪矾寰勶紝鍏冩暟鎹紙nfo銆佸瓧骞曠瓑锛変篃浼氱洿鎺ョ敓鎴愭垨澶嶅埗鍒扮洰鏍囪矾寰勩€備粎鏀寔鍚屽垎鍖?/small>
+            <small style="color:#1976d2;display:block;margin-top:6px" v-else-if="newFolder.organize_mode==='rename'">鍘熷湴鏁寸悊锛氬湪鐩戞帶鐩綍鍐呭缓绔嬪畬鏁村眰绾х粨鏋勶紙鍓у悕/Season X/锛夛紝涓嶉渶瑕佽缃綊妗ｇ洰鏍?/small>
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label>媒体类型</label>
+              <label>濯掍綋绫诲瀷</label>
               <select v-model="newFolder.media_type">
-                <option value="auto">自动判断</option>
-                <option value="movie">电影</option>
-                <option value="tv">电视剧</option>
+                <option value="auto">鑷姩鍒ゆ柇</option>
+                <option value="movie">鐢靛奖</option>
+                <option value="tv">鐢佃鍓?/option>
               </select>
             </div>
             <div class="form-group">
-              <label>数据源</label>
+              <label>鏁版嵁婧?/label>
               <select v-model="newFolder.data_source">
                 <option value="siliconflow_tmdb">AI + TMDb</option>
                 <option value="siliconflow_bgm">AI + BGM</option>
@@ -147,58 +147,58 @@
           <div class="form-group" style="margin-top:4px">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
               <input type="checkbox" v-model="newFolder.skip_if_scraped">
-              <span>跳过已刮削文件</span>
+              <span>璺宠繃宸插埉鍓婃枃浠?/span>
             </label>
-            <small style="color:#888;display:block;margin-top:4px">文件旁边已存在同名 .nfo 时自动跳过，不再重新刮削</small>
+            <small style="color:#888;display:block;margin-top:4px">鏂囦欢鏃佽竟宸插瓨鍦ㄥ悓鍚?.nfo 鏃惰嚜鍔ㄨ烦杩囷紝涓嶅啀閲嶆柊鍒墛</small>
           </div>
           <div class="form-actions">
-            <button class="btn" @click="showAddFolder=false">取消</button>
-            <button class="btn btn-primary" @click="addFolder">确认添加</button>
+            <button class="btn" @click="showAddFolder=false">鍙栨秷</button>
+            <button class="btn btn-primary" @click="addFolder">纭娣诲姞</button>
           </div>
         </div>
       </div>
 
-      <!-- 编辑目录弹窗 -->
+      <!-- 缂栬緫鐩綍寮圭獥 -->
       <div class="modal-overlay" v-if="editFolderVisible" @click.self="editFolderVisible=false">
         <div class="modal" style="width:550px">
-          <h2>编辑监控目录</h2>
+          <h2>缂栬緫鐩戞帶鐩綍</h2>
           <div class="form-group">
-            <label>监控路径</label>
+            <label>鐩戞帶璺緞</label>
             <div class="input-with-btn">
-              <input v-model="editFolderData.path" placeholder="例如 D:\Media\Downloads" readonly>
-              <button class="btn btn-sm" @click="openBrowse('edit_path')">浏览...</button>
+              <input v-model="editFolderData.path" placeholder="渚嬪 D:\Media\Downloads" readonly>
+              <button class="btn btn-sm" @click="openBrowse('edit_path')">娴忚...</button>
             </div>
           </div>
           <div class="form-group">
-            <label>归档目标根目录</label>
+            <label>褰掓。鐩爣鏍圭洰褰?/label>
             <div class="input-with-btn">
-              <input v-model="editFolderData.target_root" placeholder="例如 D:\Media\Library" readonly :disabled="editFolderData.organize_mode==='rename'">
-              <button class="btn btn-sm" @click="openBrowse('edit_target_root')" :disabled="editFolderData.organize_mode==='rename'">浏览...</button>
+              <input v-model="editFolderData.target_root" placeholder="渚嬪 D:\Media\Library" readonly :disabled="editFolderData.organize_mode==='rename'">
+              <button class="btn btn-sm" @click="openBrowse('edit_target_root')" :disabled="editFolderData.organize_mode==='rename'">娴忚...</button>
             </div>
-            <small v-if="editFolderData.organize_mode==='rename'" style="color:#888;display:block;margin-top:4px">原地整理模式不需要归档目标</small>
+            <small v-if="editFolderData.organize_mode==='rename'" style="color:#888;display:block;margin-top:4px">鍘熷湴鏁寸悊妯″紡涓嶉渶瑕佸綊妗ｇ洰鏍?/small>
 
           </div>
           <div class="form-group">
-            <label>* 整理方式</label>
+            <label>* 鏁寸悊鏂瑰紡</label>
             <div class="btn-group" style="display:flex;gap:0;margin-top:4px">
-              <button :class="['btn', editFolderData.organize_mode==='move'?'btn-primary':'']" style="border-radius:6px 0 0 6px;min-width:72px" @click="editFolderData.organize_mode='move'">移动</button>
-              <button :class="['btn', editFolderData.organize_mode==='copy'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="editFolderData.organize_mode='copy'">复制</button>
-              <button :class="['btn', editFolderData.organize_mode==='symlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="editFolderData.organize_mode='symlink'">软链接</button>
-              <button :class="['btn', editFolderData.organize_mode==='hardlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="editFolderData.organize_mode='hardlink'">硬链接</button>
-              <button :class="['btn', editFolderData.organize_mode==='rename'?'btn-primary':'']" style="border-radius:0 6px 6px 0;min-width:88px" @click="editFolderData.organize_mode='rename'">原地整理</button>
+              <button :class="['btn', editFolderData.organize_mode==='move'?'btn-primary':'']" style="border-radius:6px 0 0 6px;min-width:72px" @click="editFolderData.organize_mode='move'">绉诲姩</button>
+              <button :class="['btn', editFolderData.organize_mode==='copy'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="editFolderData.organize_mode='copy'">澶嶅埗</button>
+              <button :class="['btn', editFolderData.organize_mode==='symlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="editFolderData.organize_mode='symlink'">杞摼鎺?/button>
+              <button :class="['btn', editFolderData.organize_mode==='hardlink'?'btn-primary':'']" style="border-radius:0;min-width:72px" @click="editFolderData.organize_mode='hardlink'">纭摼鎺?/button>
+              <button :class="['btn', editFolderData.organize_mode==='rename'?'btn-primary':'']" style="border-radius:0 6px 6px 0;min-width:88px" @click="editFolderData.organize_mode='rename'">鍘熷湴鏁寸悊</button>
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label>媒体类型</label>
+              <label>濯掍綋绫诲瀷</label>
               <select v-model="editFolderData.media_type">
-                <option value="auto">自动判断</option>
-                <option value="movie">电影</option>
-                <option value="tv">电视剧</option>
+                <option value="auto">鑷姩鍒ゆ柇</option>
+                <option value="movie">鐢靛奖</option>
+                <option value="tv">鐢佃鍓?/option>
               </select>
             </div>
             <div class="form-group">
-              <label>数据源</label>
+              <label>鏁版嵁婧?/label>
               <select v-model="editFolderData.data_source">
                 <option value="siliconflow_tmdb">AI + TMDb</option>
                 <option value="siliconflow_bgm">AI + BGM</option>
@@ -208,78 +208,78 @@
           <div class="form-group" style="margin-top:4px">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
               <input type="checkbox" v-model="editFolderData.skip_if_scraped">
-              <span>跳过已刮削文件</span>
+              <span>璺宠繃宸插埉鍓婃枃浠?/span>
             </label>
-            <small style="color:#888;display:block;margin-top:4px">文件旁边已存在同名 .nfo 时自动跳过，不再重新刮削</small>
+            <small style="color:#888;display:block;margin-top:4px">鏂囦欢鏃佽竟宸插瓨鍦ㄥ悓鍚?.nfo 鏃惰嚜鍔ㄨ烦杩囷紝涓嶅啀閲嶆柊鍒墛</small>
           </div>
           <div class="form-actions">
-            <button class="btn btn-primary" @click="saveEditFolder">保存</button>
-            <button class="btn" @click="editFolderVisible=false">取消</button>
+            <button class="btn btn-primary" @click="saveEditFolder">淇濆瓨</button>
+            <button class="btn" @click="editFolderVisible=false">鍙栨秷</button>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- 刮削记录 -->
+    <!-- 鍒墛璁板綍 -->
     <section v-if="page==='records'">
-      <div class="page-header"><h1>刮削记录</h1></div>
+      <div class="page-header"><h1>鍒墛璁板綍</h1></div>
 
-      <!-- 顶部操作栏 -->
+      <!-- 椤堕儴鎿嶄綔鏍?-->
       <div class="toolbar">
         <div class="toolbar-left">
-          <button class="btn-grad btn-grad-orange btn-sm" @click="exportErrors">导出识别错误</button>
-          <button class="btn-grad btn-grad-red btn-sm" @click="batchDeleteSelected" :disabled="!selectedIds.length">删除所选记录</button>
-          <button class="btn-grad btn-grad-yellow btn-sm" @click="batchRetrySelected" :disabled="!selectedIds.length">重新整理所有</button>
-          <span class="toolbar-hint">已选择 {{selectedIds.length}} 条记录</span>
+          <button class="btn-grad btn-grad-orange btn-sm" @click="exportErrors">瀵煎嚭璇嗗埆閿欒</button>
+          <button class="btn-grad btn-grad-red btn-sm" @click="batchDeleteSelected" :disabled="!selectedIds.length">鍒犻櫎鎵€閫夎褰?/button>
+          <button class="btn-grad btn-grad-yellow btn-sm" @click="batchRetrySelected" :disabled="!selectedIds.length">閲嶆柊鏁寸悊鎵€鏈?/button>
+          <span class="toolbar-hint">宸查€夋嫨 {{selectedIds.length}} 鏉¤褰?/span>
         </div>
         <div class="toolbar-right">
-          <button class="btn-grad btn-grad-blue btn-sm" @click="toggleGroupedView">{{groupedView?'列表视图':'分组视图'}}</button>
-          <button class="btn-grad btn-grad-blue btn-sm" @click="refreshRecords">刷新</button>
-          <button class="btn-grad btn-grad-orange btn-sm" @click="clearFailed">清除失败记录</button>
-          <button class="btn-grad btn-grad-red btn-sm" @click="clearAll">清空记录</button>
+          <button class="btn-grad btn-grad-blue btn-sm" @click="toggleGroupedView">{{groupedView?'鍒楄〃瑙嗗浘':'鍒嗙粍瑙嗗浘'}}</button>
+          <button class="btn-grad btn-grad-blue btn-sm" @click="refreshRecords">鍒锋柊</button>
+          <button class="btn-grad btn-grad-orange btn-sm" @click="clearFailed">娓呴櫎澶辫触璁板綍</button>
+          <button class="btn-grad btn-grad-red btn-sm" @click="clearAll">娓呯┖璁板綍</button>
         </div>
       </div>
 
-      <!-- 筛选栏 -->
+      <!-- 绛涢€夋爮 -->
       <div class="filter-row">
-        <input v-model="recordKeyword" placeholder="按文件名模糊搜索" class="filter-input">
+        <input v-model="recordKeyword" placeholder="鎸夋枃浠跺悕妯＄硦鎼滅储" class="filter-input">
         <select v-model="recordFilter" class="filter-select">
-          <option value="">筛选状态</option>
-          <option value="success">成功</option>
-          <option value="pending_manual">待手动</option>
-          <option value="skipped">已跳过</option>
-          <option value="processing">处理中</option>
-          <option value="failed">失败</option>
+          <option value="">绛涢€夌姸鎬?/option>
+          <option value="success">鎴愬姛</option>
+          <option value="pending_manual">寰呮墜鍔?/option>
+          <option value="skipped">宸茶烦杩?/option>
+          <option value="processing">澶勭悊涓?/option>
+          <option value="failed">澶辫触</option>
         </select>
         <select v-model="recordTypeFilter" class="filter-select">
-          <option value="">筛选类型</option>
-          <option value="movie">电影</option>
-          <option value="tv">电视剧</option>
-          <option value="auto">自动</option>
+          <option value="">绛涢€夌被鍨?/option>
+          <option value="movie">鐢靛奖</option>
+          <option value="tv">鐢佃鍓?/option>
+          <option value="auto">鑷姩</option>
         </select>
         <select v-model="recordParseFilter" class="filter-select">
-          <option value="">识别来源</option>
+          <option value="">璇嗗埆鏉ユ簮</option>
           <option value="guessit">guessit</option>
           <option value="ai">AI</option>
         </select>
-        <button class="btn btn-primary btn-sm" @click="recordPage=1;groupedView?loadGroupedRecords():loadRecords()">筛选</button>
-        <button class="btn btn-sm" @click="resetRecordFilter">重置</button>
+        <button class="btn btn-primary btn-sm" @click="recordPage=1;groupedView?loadGroupedRecords():loadRecords()">绛涢€?/button>
+        <button class="btn btn-sm" @click="resetRecordFilter">閲嶇疆</button>
       </div>
 
-      <!-- 数据表格 - 列表视图 -->
+      <!-- 鏁版嵁琛ㄦ牸 - 鍒楄〃瑙嗗浘 -->
       <template v-if="!groupedView">
       <table class="table">
         <thead>
           <tr>
             <th style="width:36px"><input type="checkbox" @change="toggleSelectAll" :checked="allSelected"></th>
-            <th style="width:72px">运行状态</th>
-            <th style="width:72px">文件状态</th>
-            <th style="width:48px">类型</th>
-            <th style="width:56px">来源</th>
-            <th style="width:180px">识别信息</th>
-            <th>文件路径 / 归档路径</th>
-            <th style="width:148px">时间</th>
-            <th style="width:120px">操作</th>
+            <th style="width:72px">杩愯鐘舵€?/th>
+            <th style="width:72px">鏂囦欢鐘舵€?/th>
+            <th style="width:48px">绫诲瀷</th>
+            <th style="width:56px">鏉ユ簮</th>
+            <th style="width:180px">璇嗗埆淇℃伅</th>
+            <th>鏂囦欢璺緞 / 褰掓。璺緞</th>
+            <th style="width:148px">鏃堕棿</th>
+            <th style="width:120px">鎿嶄綔</th>
           </tr>
         </thead>
         <tbody>
@@ -299,20 +299,20 @@
             </td>
             <td class="cell-path">
               <div>{{r.original_path || '-'}}</div>
-              <div class="path-target" v-if="r.target_path">→ {{r.target_path}}</div>
+              <div class="path-target" v-if="r.target_path">鈫?{{r.target_path}}</div>
             </td>
             <td style="white-space:nowrap;font-size:12px;color:#999">{{formatTime(r.updated_at || r.created_at)}}</td>
             <td class="actions">
-              <button v-if="r.status!=='processing'" class="btn btn-sm btn-primary" @click="openManualMatch(r)">手动识别</button>
-              <button v-if="r.status==='failed'||r.status==='pending_manual'" class="btn btn-sm" @click="retryRecord(r.id)">重试</button>
-              <button class="btn btn-sm btn-danger" @click="deleteRecord(r.id)">删除</button>
+              <button v-if="r.status!=='processing'" class="btn btn-sm btn-primary" @click="openManualMatch(r)">鎵嬪姩璇嗗埆</button>
+              <button v-if="r.status==='failed'||r.status==='pending_manual'" class="btn btn-sm" @click="retryRecord(r.id)">閲嶈瘯</button>
+              <button class="btn btn-sm btn-danger" @click="deleteRecord(r.id)">鍒犻櫎</button>
             </td>
           </tr>
         </tbody>
       </table>
       <div class="empty" v-if="!records.length">No Data</div>
 
-      <!-- 分页 -->
+      <!-- 鍒嗛〉 -->
       <div class="pagination-bar">
         <span class="pagination-total">Total {{recordTotal}}</span>
         <select v-model.number="recordPageSize" @change="recordPage=1;loadRecords()" class="pagination-size">
@@ -326,26 +326,26 @@
           <span style="color:#aaa;margin:0 2px">/</span>
           <span class="pagination-total-pages">{{Math.ceil(recordTotal/recordPageSize)||1}}</span>
           <button class="btn btn-sm" :disabled="recordPage*recordPageSize>=recordTotal" @click="recordPage++;recordGoPage=recordPage;loadRecords()">&gt;</button>
-          <span style="margin-left:8px">跳至</span>
+          <span style="margin-left:8px">璺宠嚦</span>
           <input v-model.number="recordGoPage" class="pagination-goto" @keyup.enter="gotoPage">
-          <button class="btn btn-sm" @click="gotoPage">确定</button>
+          <button class="btn btn-sm" @click="gotoPage">纭畾</button>
         </div>
       </div>
       </template>
 
-      <!-- 数据表格 - 分组视图 -->
+      <!-- 鏁版嵁琛ㄦ牸 - 鍒嗙粍瑙嗗浘 -->
       <template v-else>
       <div class="empty" v-if="!groupedRecords.length">No Data</div>
       <table class="table" v-else>
         <thead>
           <tr>
             <th style="width:36px"></th>
-            <th>目录</th>
-            <th style="width:80px">总数</th>
-            <th style="width:80px">成功</th>
-            <th style="width:80px">失败</th>
-            <th style="width:80px">待手动</th>
-            <th style="width:120px">操作</th>
+            <th>鐩綍</th>
+            <th style="width:80px">鎬绘暟</th>
+            <th style="width:80px">鎴愬姛</th>
+            <th style="width:80px">澶辫触</th>
+            <th style="width:80px">寰呮墜鍔?/th>
+            <th style="width:120px">鎿嶄綔</th>
           </tr>
         </thead>
         <template v-for="g in groupedRecords" :key="g.dir_path">
@@ -353,7 +353,7 @@
             <tr class="group-row" @click="toggleGroup(g)">
               <td><input type="checkbox" :checked="isGroupAllSelected(g)" @click.stop="toggleSelectGroup(g)"></td>
               <td>
-                <span style="display:inline-block;width:18px;text-align:center;margin-right:4px">{{expandedGroups[g.dir_path]?'▼':'▶'}}</span>
+                <span style="display:inline-block;width:18px;text-align:center;margin-right:4px">{{expandedGroups[g.dir_path]?'鈻?:'鈻?}}</span>
                 <strong>{{g.dir_name}}</strong>
                 <span style="color:#999;margin-left:8px;font-size:12px">{{g.dir_path}}</span>
               </td>
@@ -362,20 +362,20 @@
               <td><span class="badge badge-danger" v-if="g.failed">{{g.failed}}</span><span v-else>-</span></td>
               <td><span class="badge badge-warning" v-if="g.pending">{{g.pending}}</span><span v-else>-</span></td>
               <td class="actions" @click.stop>
-                <button class="btn btn-sm btn-danger" @click="deleteGroup(g)">删除全组</button>
+                <button class="btn btn-sm btn-danger" @click="deleteGroup(g)">鍒犻櫎鍏ㄧ粍</button>
               </td>
             </tr>
           </tbody>
           <tbody v-if="expandedGroups[g.dir_path]">
             <tr v-if="expandedGroups[g.dir_path].loading">
-              <td colspan="7" style="text-align:center;color:#999;padding:12px">加载中...</td>
+              <td colspan="7" style="text-align:center;color:#999;padding:12px">鍔犺浇涓?..</td>
             </tr>
             <template v-else>
               <tr class="group-record-row" v-for="r in expandedGroups[g.dir_path].records" :key="r.id">
                 <td><input type="checkbox" :value="r.id" v-model="selectedIds"></td>
                 <td colspan="2" class="cell-name" style="padding-left:40px">
                   <div style="font-size:13px">{{r.original_name}}</div>
-                  <div class="path-target" v-if="r.target_path" style="font-size:12px">→ {{r.target_path}}</div>
+                  <div class="path-target" v-if="r.target_path" style="font-size:12px">鈫?{{r.target_path}}</div>
                 </td>
                 <td>
                   <span :class="['badge', statusClass(r.status)]">{{statusText(r.status)}}</span>
@@ -389,15 +389,15 @@
                 </td>
                 <td style="white-space:nowrap;font-size:12px;color:#999">{{formatTime(r.updated_at || r.created_at)}}</td>
                 <td class="actions">
-                  <button v-if="r.status!=='processing'" class="btn btn-sm btn-primary" @click="openManualMatch(r)">手动识别</button>
-                  <button class="btn btn-sm btn-danger" @click="deleteGroupRecord(g, r.id)">删除</button>
+                  <button v-if="r.status!=='processing'" class="btn btn-sm btn-primary" @click="openManualMatch(r)">鎵嬪姩璇嗗埆</button>
+                  <button class="btn btn-sm btn-danger" @click="deleteGroupRecord(g, r.id)">鍒犻櫎</button>
                 </td>
               </tr>
               <tr v-if="expandedGroups[g.dir_path].total > 50" class="group-pagination-row">
                 <td colspan="7" style="text-align:center;padding:8px">
-                  <button class="btn btn-sm" :disabled="expandedGroups[g.dir_path].page<=1" @click.stop="groupPagePrev(g)">&lt; 上一页</button>
+                  <button class="btn btn-sm" :disabled="expandedGroups[g.dir_path].page<=1" @click.stop="groupPagePrev(g)">&lt; 涓婁竴椤?/button>
                   <span style="margin:0 12px;font-size:13px;color:#666">{{expandedGroups[g.dir_path].page}} / {{Math.ceil(expandedGroups[g.dir_path].total/50)}}</span>
-                  <button class="btn btn-sm" :disabled="expandedGroups[g.dir_path].page*50>=expandedGroups[g.dir_path].total" @click.stop="groupPageNext(g)">下一页 &gt;</button>
+                  <button class="btn btn-sm" :disabled="expandedGroups[g.dir_path].page*50>=expandedGroups[g.dir_path].total" @click.stop="groupPageNext(g)">涓嬩竴椤?&gt;</button>
                 </td>
               </tr>
             </template>
@@ -407,145 +407,145 @@
       </template>
     </section>
 
-    <!-- 手动匹配弹窗 -->
+    <!-- 鎵嬪姩鍖归厤寮圭獥 -->
     <div class="modal-overlay" v-if="manualMatchVisible" @click.self="manualMatchVisible=false">
       <div class="modal">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-          <h2 style="margin:0">重新识别</h2>
+          <h2 style="margin:0">閲嶆柊璇嗗埆</h2>
           <button @click="manualMatchVisible=false" style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#999;padding:0 6px">&times;</button>
         </div>
         <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #f0f0f0">
-          <span style="color:#888;white-space:nowrap;font-size:13px;flex-shrink:0">文件名</span>
+          <span style="color:#888;white-space:nowrap;font-size:13px;flex-shrink:0">鏂囦欢鍚?/span>
           <span style="font-weight:500;word-break:break-all;font-size:14px">{{manualRecord?.original_name}}</span>
         </div>
         <div style="display:flex;align-items:center;gap:20px;margin-bottom:14px">
-          <span style="color:#888;font-size:13px;white-space:nowrap">搜索方式</span>
+          <span style="color:#888;font-size:13px;white-space:nowrap">鎼滅储鏂瑰紡</span>
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:14px">
-            <input type="radio" v-model="searchMode" value="name" style="accent-color:#1976d2"> 名称+年份
+            <input type="radio" v-model="searchMode" value="name" style="accent-color:#1976d2"> 鍚嶇О+骞翠唤
           </label>
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:14px">
             <input type="radio" v-model="searchMode" value="id" style="accent-color:#1976d2"> TMDB ID
           </label>
           <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
-            <span style="color:#888;font-size:13px">类型</span>
+            <span style="color:#888;font-size:13px">绫诲瀷</span>
             <select v-model="searchIsTv" style="padding:3px 8px;border-radius:6px;border:1px solid #d0d0d0;font-size:13px">
-              <option :value="true">电视剧</option>
-              <option :value="false">电影</option>
+              <option :value="true">鐢佃鍓?/option>
+              <option :value="false">鐢靛奖</option>
             </select>
           </div>
         </div>
         <div v-if="searchMode==='name'" style="display:flex;gap:12px;margin-bottom:14px">
           <div class="form-group" style="flex:1">
-            <label>名称</label>
-            <input v-model="searchQuery" @keyup.enter="searchCandidates" placeholder="输入标题搜索">
+            <label>鍚嶇О</label>
+            <input v-model="searchQuery" @keyup.enter="searchCandidates" placeholder="杈撳叆鏍囬鎼滅储">
           </div>
           <div class="form-group" style="flex:0 0 100px">
-            <label>年份</label>
-            <input v-model.number="searchYear" type="number" min="1900" max="2099" placeholder="可选">
+            <label>骞翠唤</label>
+            <input v-model.number="searchYear" type="number" min="1900" max="2099" placeholder="鍙€?>
           </div>
         </div>
         <div v-if="searchMode==='id'" style="margin-bottom:14px">
           <div class="form-group">
             <label>TMDB ID</label>
-            <input v-model="searchTmdbId" @keyup.enter="applyByTmdbId" placeholder="输入 TMDB ID 直接套用">
+            <input v-model="searchTmdbId" @keyup.enter="applyByTmdbId" placeholder="杈撳叆 TMDB ID 鐩存帴濂楃敤">
           </div>
         </div>
         <div style="display:flex;gap:12px;margin-bottom:14px" v-if="searchIsTv">
           <div class="form-group" style="flex:0 0 100px">
-            <label>季</label>
-            <input v-model.number="manualSeason" type="number" min="0" placeholder="自动">
+            <label>瀛?/label>
+            <input v-model.number="manualSeason" type="number" min="0" placeholder="鑷姩">
           </div>
           <div class="form-group" style="flex:0 0 120px">
-            <label>集偏移</label>
+            <label>闆嗗亸绉?/label>
             <input v-model.number="manualEpOffset" type="number" placeholder="0">
           </div>
           <div class="form-group" style="flex:1;align-self:flex-end">
-            <small style="color:#aaa">文件名 E03 + 偏移 -2 → 入库 E01</small>
+            <small style="color:#aaa">鏂囦欢鍚?E03 + 鍋忕Щ -2 鈫?鍏ュ簱 E01</small>
           </div>
         </div>
         <div class="candidates" v-if="candidates.length">
           <div class="candidate-card" :class="{selected: selectedCandidate&&selectedCandidate.id===c.id}" v-for="c in candidates" :key="c.id" @click="selectCandidate(c)">
             <img v-if="c.meta&&c.meta.poster" :src="c.meta.poster.startsWith('http')?c.meta.poster:'https://image.tmdb.org/t/p/w300'+c.meta.poster" class="candidate-poster" loading="lazy">
-            <div class="candidate-poster placeholder" v-else>无图</div>
+            <div class="candidate-poster placeholder" v-else>鏃犲浘</div>
             <div class="candidate-info">
               <strong>{{c.title}}</strong>
               <span class="candidate-meta">{{c.release}} | ID: {{c.id}}</span>
               <p class="candidate-overview" v-if="c.meta&&c.meta.overview">{{(c.meta.overview||'').slice(0,120)}}{{(c.meta.overview||'').length>120?'...':''}}</p>
             </div>
             <button class="btn btn-sm" :class="selectedCandidate&&selectedCandidate.id===c.id?'btn-success':' btn-primary'">
-              <span v-if="selectedCandidate&&selectedCandidate.id===c.id">✓ 已选</span>
-              <span v-else>选择</span>
+              <span v-if="selectedCandidate&&selectedCandidate.id===c.id">鉁?宸查€?/span>
+              <span v-else>閫夋嫨</span>
             </button>
           </div>
         </div>
-        <div class="empty" v-else-if="searchDone">无结果，请尝试其他关键词</div>
+        <div class="empty" v-else-if="searchDone">鏃犵粨鏋滐紝璇峰皾璇曞叾浠栧叧閿瘝</div>
         <div style="display:flex;align-items:center;gap:20px;margin:14px 0;padding-top:12px;border-top:1px solid #f0f0f0">
-          <span style="color:#888;font-size:13px;white-space:nowrap">整理范围</span>
+          <span style="color:#888;font-size:13px;white-space:nowrap">鏁寸悊鑼冨洿</span>
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:14px">
-            <input type="radio" v-model="manualScope" value="single" style="accent-color:#1976d2"> 仅此文件
+            <input type="radio" v-model="manualScope" value="single" style="accent-color:#1976d2"> 浠呮鏂囦欢
           </label>
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:14px">
-            <input type="radio" v-model="manualScope" value="folder" style="accent-color:#1976d2"> 目录内所有文件
+            <input type="radio" v-model="manualScope" value="folder" style="accent-color:#1976d2"> 鐩綍鍐呮墍鏈夋枃浠?
           </label>
         </div>
         <div class="form-actions" style="margin-top:16px">
-          <button class="btn" @click="manualMatchVisible=false">取消</button>
+          <button class="btn" @click="manualMatchVisible=false">鍙栨秷</button>
           <button v-if="selectedCandidate" class="btn btn-success" @click="confirmManualMatch" :disabled="searching" style="flex:1;font-weight:600">
-            <span v-if="searching">整理中...</span>
-            <span v-else>✅ 确认整理「{{selectedCandidate.title}}」</span>
+            <span v-if="searching">鏁寸悊涓?..</span>
+            <span v-else>鉁?纭鏁寸悊銆寋{selectedCandidate.title}}銆?/span>
           </button>
           <button v-else class="btn btn-primary" @click="searchMode==='id'?applyByTmdbId():searchCandidates()" :disabled="searching">
-            <span v-if="searching">处理中...</span>
-            <span v-else-if="searchMode==='id'">应用</span>
-            <span v-else>🔍 搜索</span>
+            <span v-if="searching">澶勭悊涓?..</span>
+            <span v-else-if="searchMode==='id'">搴旂敤</span>
+            <span v-else>馃攳聽鎼滅储</span>
           </button>
         </div>
       </div>
     </div>
 
-    <!-- 目录浏览弹窗 -->
+    <!-- 鐩綍娴忚寮圭獥 -->
     <div class="modal-overlay" v-if="browseVisible" @click.self="browseVisible=false" style="z-index:400">
       <div class="modal" style="width:550px">
-        <h2>选择目录</h2>
+        <h2>閫夋嫨鐩綍</h2>
         <div class="browse-path-bar">
-          <button class="btn btn-sm" @click="browseUp" :disabled="!browseCurrent">⬆ 上级</button>
-          <span class="browse-current">{{ browseCurrent || '我的电脑' }}</span>
+          <button class="btn btn-sm" @click="browseUp" :disabled="!browseCurrent">猬?涓婄骇</button>
+          <span class="browse-current">{{ browseCurrent || '鎴戠殑鐢佃剳' }}</span>
         </div>
         <div class="browse-list">
           <div class="browse-item" v-for="d in browseDirs" :key="d.path" @dblclick="browseInto(d.path)" @click="browseSelect(d)" :class="{selected: browseSelected===d.path}">
-            <span class="icon">📁</span> {{ d.name }}
+            <span class="icon">馃搧</span> {{ d.name }}
           </div>
-          <div class="empty" v-if="!browseDirs.length">此目录下无子文件夹</div>
+          <div class="empty" v-if="!browseDirs.length">姝ょ洰褰曚笅鏃犲瓙鏂囦欢澶?/div>
         </div>
         <div class="form-actions">
-          <button class="btn btn-primary" @click="browseConfirm" :disabled="!browseCurrent && !browseSelected">确认选择</button>
-          <button class="btn" @click="browseVisible=false">取消</button>
+          <button class="btn btn-primary" @click="browseConfirm" :disabled="!browseCurrent && !browseSelected">纭閫夋嫨</button>
+          <button class="btn" @click="browseVisible=false">鍙栨秷</button>
         </div>
       </div>
     </div>
 
-    <!-- 识别测试 -->
+    <!-- 璇嗗埆娴嬭瘯 -->
     <section v-if="page==='recognition_test'" class="recognition-page">
       <div class="recognition-shell">
         <div class="recognition-hero">
-          <div class="recognition-hero-icon">🧠</div>
+          <div class="recognition-hero-icon">馃</div>
           <div>
-            <div class="recognition-eyebrow">整理识别实验室</div>
-            <h1>识别测试</h1>
-            <p>输入文件名或测试集，对比 guessit、本地 AI、在线 AI 的识别率和失败原因。</p>
+            <div class="recognition-eyebrow">鏁寸悊璇嗗埆瀹為獙瀹?/div>
+            <h1>璇嗗埆娴嬭瘯</h1>
+            <p>杈撳叆鏂囦欢鍚嶆垨娴嬭瘯闆嗭紝瀵规瘮 guessit銆佹湰鍦?AI銆佸湪绾?AI 鐨勮瘑鍒巼鍜屽け璐ュ師鍥犮€?/p>
           </div>
         </div>
         <div class="recognition-body">
           <div class="recognition-tabs">
-            <button :class="{active: recognitionTab==='single'}" @click="recognitionTab='single'">单条测试</button>
-            <button :class="{active: recognitionTab==='batch'}" @click="recognitionTab='batch'">批量实验</button>
+            <button :class="{active: recognitionTab==='single'}" @click="recognitionTab='single'">鍗曟潯娴嬭瘯</button>
+            <button :class="{active: recognitionTab==='batch'}" @click="recognitionTab='batch'">鎵归噺瀹為獙</button>
           </div>
 
           <div v-if="recognitionTab==='single'">
-            <label class="recognition-label">测试名称</label>
+            <label class="recognition-label">娴嬭瘯鍚嶇О</label>
             <div class="recognition-search">
-              <input v-model="recognitionName" @keyup.enter="runRecognitionTest" placeholder="例如：CLIMAX.S01E01.2026.1080p.DSNP.WEB-DL.H264.AAC-ADWeb.mkv">
-              <button class="recognition-run" @click="runRecognitionTest" :disabled="recognitionTesting || !recognitionName.trim()">{{recognitionTesting?'识别中...':'开始识别'}}</button>
+              <input v-model="recognitionName" @keyup.enter="runRecognitionTest" placeholder="渚嬪锛欳LIMAX.S01E01.2026.1080p.DSNP.WEB-DL.H264.AAC-ADWeb.mkv">
+              <button class="recognition-run" @click="runRecognitionTest" :disabled="recognitionTesting || !recognitionName.trim()">{{recognitionTesting?'璇嗗埆涓?..':'寮€濮嬭瘑鍒?}}</button>
             </div>
 
             <div class="recognition-toggle-row">
@@ -553,24 +553,24 @@
                 <input type="checkbox" v-model="recognitionUseAi">
                 <span class="toggle-track"><span class="toggle-dot"></span></span>
                 <span>
-                  <strong>使用在线 AI 测试</strong>
-                  <small>开启后，在线 API 解析文件名，本地 Embedding 重排候选，并由在线 API 做最终判定</small>
+                  <strong>浣跨敤鍦ㄧ嚎 AI 娴嬭瘯</strong>
+                  <small>寮€鍚悗锛屽湪绾?API 瑙ｆ瀽鏂囦欢鍚嶏紝鏈湴 Embedding 閲嶆帓鍊欓€夛紝骞剁敱鍦ㄧ嚎 API 鍋氭渶缁堝垽瀹?/small>
                 </span>
               </label>
               <label class="recognition-toggle recognition-cache-toggle">
                 <input type="checkbox" v-model="recognitionBypassCache">
                 <span class="toggle-track"><span class="toggle-dot"></span></span>
                 <span>
-                  <strong>绕过 API 缓存</strong>
-                  <small>开启后，本页测试会实时请求 TMDB/BGM，不读取也不写入 api_cache.json；平常刮削不受影响</small>
+                  <strong>缁曡繃 API 缂撳瓨</strong>
+                  <small>寮€鍚悗锛屾湰椤垫祴璇曚細瀹炴椂璇锋眰 TMDB/BGM锛屼笉璇诲彇涔熶笉鍐欏叆 api_cache.json锛涘钩甯稿埉鍓婁笉鍙楀奖鍝?/small>
                 </span>
               </label>
             </div>
 
             <div class="recognition-pills">
-              <span>仅支持文件名，不支持文件夹名</span>
-              <span>自动解析季集与 TMDB</span>
-              <span>返回标准命名预览</span>
+              <span>浠呮敮鎸佹枃浠跺悕锛屼笉鏀寔鏂囦欢澶瑰悕</span>
+              <span>鑷姩瑙ｆ瀽瀛ｉ泦涓?TMDB</span>
+              <span>杩斿洖鏍囧噯鍛藉悕棰勮</span>
             </div>
 
             <div class="recognition-result-box">
@@ -599,35 +599,35 @@
                     </div>
                     <p v-if="recognitionResult.match && (recognitionResult.match.episode_plot || recognitionResult.match.overview)">{{recognitionResult.match.episode_plot || recognitionResult.match.overview}}</p>
                     <div class="recognition-preview">
-                      <div><strong>标准文件名</strong><span>{{(recognitionResult.preview && recognitionResult.preview.new_name) || '-'}}</span></div>
-                      <div><strong>归档路径预览</strong><span>{{(recognitionResult.preview && recognitionResult.preview.target_path) || '-'}}</span></div>
+                      <div><strong>鏍囧噯鏂囦欢鍚?/strong><span>{{(recognitionResult.preview && recognitionResult.preview.new_name) || '-'}}</span></div>
+                      <div><strong>褰掓。璺緞棰勮</strong><span>{{(recognitionResult.preview && recognitionResult.preview.target_path) || '-'}}</span></div>
                     </div>
                   </div>
                 </div>
 
                 <div class="recognition-detail-grid">
                   <div class="recognition-detail-card">
-                    <h3>guessit 基础解析</h3>
+                    <h3>guessit 鍩虹瑙ｆ瀽</h3>
                     <dl>
-                      <div><dt>标题</dt><dd>{{recognitionResult.guessit.title || '-'}}</dd></div>
-                      <div><dt>年份</dt><dd>{{recognitionResult.guessit.year || '-'}}</dd></div>
-                      <div><dt>季 / 集</dt><dd>S{{recognitionResult.guessit.season || '-'}} / E{{recognitionResult.guessit.episode || '-'}}</dd></div>
-                      <div><dt>是否建议 AI</dt><dd>{{recognitionResult.guessit.needs_ai_assist?'是':'否'}}</dd></div>
+                      <div><dt>鏍囬</dt><dd>{{recognitionResult.guessit.title || '-'}}</dd></div>
+                      <div><dt>骞翠唤</dt><dd>{{recognitionResult.guessit.year || '-'}}</dd></div>
+                      <div><dt>瀛?/ 闆?/dt><dd>S{{recognitionResult.guessit.season || '-'}} / E{{recognitionResult.guessit.episode || '-'}}</dd></div>
+                      <div><dt>鏄惁寤鸿 AI</dt><dd>{{recognitionResult.guessit.needs_ai_assist?'鏄?:'鍚?}}</dd></div>
                     </dl>
                   </div>
                   <div class="recognition-detail-card">
-                    <h3>最终匹配</h3>
+                    <h3>鏈€缁堝尮閰?/h3>
                     <dl>
-                      <div><dt>来源</dt><dd>{{(recognitionResult.ai && recognitionResult.ai.parse_source) || '-'}}</dd></div>
-                      <div><dt>资料库</dt><dd>{{(recognitionResult.match && recognitionResult.match.provider) || '-'}}</dd></div>
-                      <div><dt>剧集标题</dt><dd>{{(recognitionResult.match && recognitionResult.match.episode_title) || '-'}}</dd></div>
-                      <div><dt>季 / 集</dt><dd>S{{(recognitionResult.match && recognitionResult.match.season) || '-'}} / E{{(recognitionResult.match && recognitionResult.match.episode) || '-'}}</dd></div>
+                      <div><dt>鏉ユ簮</dt><dd>{{(recognitionResult.ai && recognitionResult.ai.parse_source) || '-'}}</dd></div>
+                      <div><dt>璧勬枡搴?/dt><dd>{{(recognitionResult.match && recognitionResult.match.provider) || '-'}}</dd></div>
+                      <div><dt>鍓ч泦鏍囬</dt><dd>{{(recognitionResult.match && recognitionResult.match.episode_title) || '-'}}</dd></div>
+                      <div><dt>瀛?/ 闆?/dt><dd>S{{(recognitionResult.match && recognitionResult.match.season) || '-'}} / E{{(recognitionResult.match && recognitionResult.match.episode) || '-'}}</dd></div>
                     </dl>
                   </div>
                 </div>
 
                 <details class="recognition-raw">
-                  <summary>查看原始解析数据</summary>
+                  <summary>鏌ョ湅鍘熷瑙ｆ瀽鏁版嵁</summary>
                   <pre>{{formatRecognitionRaw(recognitionResult)}}</pre>
                 </details>
               </div>
@@ -638,23 +638,23 @@
           <div v-else class="recognition-batch">
             <div class="recognition-batch-head">
               <div>
-                <h2>批量测试集</h2>
-                <p>粘贴 CSV，系统会对每条文件名同时跑 guessit、本地 AI、在线 AI，并计算准确率。</p>
+                <h2>鎵归噺娴嬭瘯闆?/h2>
+                <p>绮樿创 CSV锛岀郴缁熶細瀵规瘡鏉℃枃浠跺悕鍚屾椂璺?guessit銆佹湰鍦?AI銆佸湪绾?AI锛屽苟璁＄畻鍑嗙‘鐜囥€?/p>
               </div>
-              <button class="btn btn-sm" @click="loadRecognitionBatchSample">填入示例</button>
+              <button class="btn btn-sm" @click="loadRecognitionBatchSample">濉叆绀轰緥</button>
             </div>
             <label class="recognition-toggle recognition-cache-toggle">
               <input type="checkbox" v-model="recognitionBypassCache">
               <span class="toggle-track"><span class="toggle-dot"></span></span>
               <span>
-                <strong>绕过 API 缓存</strong>
-                <small>开启后，批量实验会实时请求 TMDB/BGM；关闭可复用缓存以减少请求量</small>
+                <strong>缁曡繃 API 缂撳瓨</strong>
+                <small>寮€鍚悗锛屾壒閲忓疄楠屼細瀹炴椂璇锋眰 TMDB/BGM锛涘叧闂彲澶嶇敤缂撳瓨浠ュ噺灏戣姹傞噺</small>
               </span>
             </label>
             <textarea v-model="recognitionBatchText" class="recognition-batch-input" rows="8" placeholder="filename,expected_title,expected_year,expected_season,expected_episode,expected_provider,expected_id,media_type&#10;The.Mandalorian.S03E04.2023.WEB-DL.mkv,The Mandalorian,2023,3,4,tmdb,82856,tv"></textarea>
             <div class="recognition-batch-actions">
-              <button class="recognition-run" @click="runRecognitionBatch" :disabled="recognitionBatchTesting || !recognitionBatchText.trim()">{{recognitionBatchTesting?'批量识别中...':'开始批量实验'}}</button>
-              <span>最多 100 条。未填写标准答案的字段不会参与对应准确率统计。</span>
+              <button class="recognition-run" @click="runRecognitionBatch" :disabled="recognitionBatchTesting || !recognitionBatchText.trim()">{{recognitionBatchTesting?'鎵归噺璇嗗埆涓?..':'寮€濮嬫壒閲忓疄楠?}}</button>
+              <span>鏈€澶?100 鏉°€傛湭濉啓鏍囧噯绛旀鐨勫瓧娈典笉浼氬弬涓庡搴斿噯纭巼缁熻銆?/span>
             </div>
             <div v-if="recognitionBatchError" class="msg msg-err">{{recognitionBatchError}}</div>
 
@@ -663,10 +663,10 @@
                 <div class="recognition-stat-card" v-for="mode in recognitionBatchResult.modes" :key="mode">
                   <h3>{{recognitionModeLabel(mode)}}</h3>
                   <strong>{{metricPercent(recognitionBatchResult.stats.modes[mode].full)}}</strong>
-                  <span>完全命中率</span>
-                  <div>标题 {{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.title)}} · ID {{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.id)}}</div>
-                  <div>年份 {{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.year)}} · 季 {{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.season)}} · 集 {{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.episode)}}</div>
-                  <div>待手动 {{recognitionBatchResult.stats.modes[mode].pending_manual}} · 错配 {{recognitionBatchResult.stats.modes[mode].wrong_match}}</div>
+                  <span>瀹屽叏鍛戒腑鐜?/span>
+                  <div>鏍囬 {{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.title)}} 路 ID {{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.id)}}</div>
+                  <div>骞翠唤 {{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.year)}} 路 瀛?{{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.season)}} 路 闆?{{metricPercent(recognitionBatchResult.stats.modes[mode].metrics.episode)}}</div>
+                  <div>寰呮墜鍔?{{recognitionBatchResult.stats.modes[mode].pending_manual}} 路 閿欓厤 {{recognitionBatchResult.stats.modes[mode].wrong_match}}</div>
                 </div>
               </div>
 
@@ -674,7 +674,7 @@
                 <table class="table recognition-compare-table">
                   <thead>
                     <tr>
-                      <th>文件名 / 标准答案</th>
+                      <th>鏂囦欢鍚?/ 鏍囧噯绛旀</th>
                       <th v-for="mode in recognitionBatchResult.modes" :key="mode">{{recognitionModeLabel(mode)}}</th>
                     </tr>
                   </thead>
@@ -682,7 +682,7 @@
                     <tr>
                       <td class="cell-path">
                         <strong>{{row.filename}}</strong>
-                        <div class="path-target">期望：{{recognitionExpectationText(row.expected)}}</div>
+                        <div class="path-target">鏈熸湜锛歿{recognitionExpectationText(row.expected)}}</div>
                       </td>
                       <td v-for="mode in recognitionBatchResult.modes" :key="mode" :class="['recognition-mode-cell', resultCellClass(row.results[mode])]">
                         <div class="recognition-cell-title">{{recognitionBrief(row.results[mode])}}</div>
@@ -693,7 +693,7 @@
                     <tr class="recognition-detail-row">
                       <td :colspan="1 + recognitionBatchResult.modes.length">
                         <details>
-                          <summary>识别过程与失败原因</summary>
+                          <summary>璇嗗埆杩囩▼涓庡け璐ュ師鍥?/summary>
                           <div class="recognition-reason-grid">
                             <div v-for="mode in recognitionBatchResult.modes" :key="mode" class="recognition-reason-card">
                               <h4>{{recognitionModeLabel(mode)}}</h4>
@@ -701,8 +701,8 @@
                                 <li v-for="reason in row.results[mode].reasons" :key="reason">{{reason}}</li>
                               </ul>
                               <div class="recognition-mini">
-                                <div>解析名：{{(row.results[mode].diagnostics && row.results[mode].diagnostics.parsed_name) || '-'}}</div>
-                                <div>搜索词：{{recognitionSearchPlan(row.results[mode])}}</div>
+                                <div>瑙ｆ瀽鍚嶏細{{(row.results[mode].diagnostics && row.results[mode].diagnostics.parsed_name) || '-'}}</div>
+                                <div>鎼滅储璇嶏細{{recognitionSearchPlan(row.results[mode])}}</div>
                               </div>
                               <pre>{{formatRecognitionRaw(row.results[mode])}}</pre>
                             </div>
@@ -719,96 +719,96 @@
       </div>
     </section>
 
-    <!-- TMDB设置 -->
+    <!-- TMDB璁剧疆 -->
     <section v-if="page==='tmdb'">
-      <div class="page-header"><h1>TMDB 设置</h1></div>
+      <div class="page-header"><h1>TMDB 璁剧疆</h1></div>
       <div class="card">
         <div class="form-group">
           <label>TMDB API Key</label>
           <div class="input-with-btn">
-            <input v-model="cfg.tmdb_api_key" :type="showTmdbKey ? 'text' : 'password'" placeholder="输入 TMDB API Key">
-            <button class="btn btn-sm" @click="showTmdbKey=!showTmdbKey">{{showTmdbKey?'隐藏':'显示'}}</button>
+            <input v-model="cfg.tmdb_api_key" :type="showTmdbKey ? 'text' : 'password'" placeholder="杈撳叆 TMDB API Key">
+            <button class="btn btn-sm" @click="showTmdbKey=!showTmdbKey">{{showTmdbKey?'闅愯棌':'鏄剧ず'}}</button>
           </div>
         </div>
         <div class="form-group">
-          <label>BGM API Key（可选）</label>
+          <label>BGM API Key锛堝彲閫夛級</label>
           <div class="input-with-btn">
-            <input v-model="cfg.bgm_api_key" :type="showBgmKey ? 'text' : 'password'" placeholder="输入 Bangumi API Key">
-            <button class="btn btn-sm" @click="showBgmKey=!showBgmKey">{{showBgmKey?'隐藏':'显示'}}</button>
+            <input v-model="cfg.bgm_api_key" :type="showBgmKey ? 'text' : 'password'" placeholder="杈撳叆 Bangumi API Key">
+            <button class="btn btn-sm" @click="showBgmKey=!showBgmKey">{{showBgmKey?'闅愯棌':'鏄剧ず'}}</button>
           </div>
         </div>
         <div class="form-actions">
-          <button class="btn btn-primary" @click="saveSettings">保存</button>
-          <button class="btn" @click="testTmdb">测试 TMDB 连接</button>
+          <button class="btn btn-primary" @click="saveSettings">淇濆瓨</button>
+          <button class="btn" @click="testTmdb">娴嬭瘯 TMDB 杩炴帴</button>
         </div>
         <div v-if="testResult" :class="['msg', testResult.ok?'msg-ok':'msg-err']">{{testResult.message}}</div>
       </div>
     </section>
 
-    <!-- AI识别设置 -->
+    <!-- AI璇嗗埆璁剧疆 -->
     <section v-if="page==='ai'">
-      <div class="page-header"><h1>AI 识别设置</h1></div>
+      <div class="page-header"><h1>AI 璇嗗埆璁剧疆</h1></div>
       <div class="card">
         <div class="form-group">
-          <label>是否启用AI识别</label>
+          <label>鏄惁鍚敤AI璇嗗埆</label>
           <div class="btn-group" style="display:flex;gap:0;margin-top:4px">
-            <button :class="['btn', cfg.ai_mode==='disabled'?'btn-primary':'']" style="border-radius:6px 0 0 6px;min-width:80px" @click="cfg.ai_mode='disabled'">禁用</button>
-            <button :class="['btn', (!cfg.ai_mode||cfg.ai_mode==='assist')?'btn-primary':'']" style="border-radius:0;min-width:80px" @click="cfg.ai_mode='assist'">辅助识别</button>
-            <button :class="['btn', cfg.ai_mode==='force'?'btn-primary':'']" style="border-radius:0 6px 6px 0;min-width:80px" @click="cfg.ai_mode='force'">强制使用</button>
+            <button :class="['btn', cfg.ai_mode==='disabled'?'btn-primary':'']" style="border-radius:6px 0 0 6px;min-width:80px" @click="cfg.ai_mode='disabled'">绂佺敤</button>
+            <button :class="['btn', (!cfg.ai_mode||cfg.ai_mode==='assist')?'btn-primary':'']" style="border-radius:0;min-width:80px" @click="cfg.ai_mode='assist'">杈呭姪璇嗗埆</button>
+            <button :class="['btn', cfg.ai_mode==='force'?'btn-primary':'']" style="border-radius:0 6px 6px 0;min-width:80px" @click="cfg.ai_mode='force'">寮哄埗浣跨敤</button>
           </div>
-          <small style="color:#888;display:block;margin-top:6px" v-if="cfg.ai_mode==='disabled'">禁用：只使用 guessit 解析文件名并搜索资料库，不调用 AI。</small>
-          <small style="color:#888;display:block;margin-top:6px" v-else-if="!cfg.ai_mode||cfg.ai_mode==='assist'">辅助识别：标准命名优先走 guessit；遇到标题不可靠、番组命名或季集不清晰时自动调用 AI。记录来源只显示 guessit 或 AI，不显示混合。</small>
-          <small style="color:#888;display:block;margin-top:6px" v-else>强制使用：始终由 AI 解析标题与季集；AI 失败时会直接记为失败或待处理。</small>
+          <small style="color:#888;display:block;margin-top:6px" v-if="cfg.ai_mode==='disabled'">绂佺敤锛氬彧浣跨敤 guessit 瑙ｆ瀽鏂囦欢鍚嶅苟鎼滅储璧勬枡搴擄紝涓嶈皟鐢?AI銆?/small>
+          <small style="color:#888;display:block;margin-top:6px" v-else-if="!cfg.ai_mode||cfg.ai_mode==='assist'">杈呭姪璇嗗埆锛氭爣鍑嗗懡鍚嶄紭鍏堣蛋 guessit锛涢亣鍒版爣棰樹笉鍙潬銆佺暘缁勫懡鍚嶆垨瀛ｉ泦涓嶆竻鏅版椂鑷姩璋冪敤 AI銆傝褰曟潵婧愬彧鏄剧ず guessit 鎴?AI锛屼笉鏄剧ず娣峰悎銆?/small>
+          <small style="color:#888;display:block;margin-top:6px" v-else>寮哄埗浣跨敤锛氬缁堢敱 AI 瑙ｆ瀽鏍囬涓庡闆嗭紱AI 澶辫触鏃朵細鐩存帴璁颁负澶辫触鎴栧緟澶勭悊銆?/small>
         </div>
         <div class="form-group">
-          <label><input type="checkbox" v-model="cfg.prefer_ollama"> 优先使用本地 Ollama</label>
+          <label><input type="checkbox" v-model="cfg.prefer_ollama"> 浼樺厛浣跨敤鏈湴 Ollama</label>
         </div>
         <fieldset class="fieldset">
-          <legend>Ollama / LM Studio（本地）</legend>
+          <legend>Ollama / LM Studio锛堟湰鍦帮級</legend>
           <div class="form-group">
-            <label>API 地址</label>
+            <label>API 鍦板潃</label>
             <input v-model="cfg.ollama_url">
           </div>
           <div class="form-row">
             <div class="form-group" style="flex:1">
-              <label>模型</label>
+              <label>妯″瀷</label>
               <select v-model="cfg.ollama_model">
-                <option value="">请选择模型</option>
+                <option value="">璇烽€夋嫨妯″瀷</option>
                 <option v-if="cfg.ollama_model && ollamaModels.indexOf(cfg.ollama_model)===-1" :value="cfg.ollama_model">{{cfg.ollama_model}}</option>
                 <option v-for="m in ollamaModels" :key="'model-'+m" :value="m">{{m}}</option>
               </select>
             </div>
             <div class="form-group">
               <label>&nbsp;</label>
-              <button class="btn btn-sm" @click="refreshOllamaModels">刷新模型列表</button>
+              <button class="btn btn-sm" @click="refreshOllamaModels">鍒锋柊妯″瀷鍒楄〃</button>
             </div>
           </div>
           <div class="form-group">
-            <label>Embedding 来源</label>
+            <label>Embedding 鏉ユ簮</label>
             <select v-model="cfg.embedding_source">
-              <option value="local">本地 Ollama / LM Studio</option>
-              <option value="online">在线 OpenAI 兼容</option>
+              <option value="local">鏈湴 Ollama / LM Studio</option>
+              <option value="online">鍦ㄧ嚎 OpenAI 鍏煎</option>
             </select>
           </div>
           <div class="form-group" v-if="!cfg.embedding_source || cfg.embedding_source==='local'">
-            <label>Embedding 模型</label>
+            <label>Embedding 妯″瀷</label>
             <select v-model="cfg.embedding_model">
-              <option value="">请选择 Embedding 模型</option>
+              <option value="">璇烽€夋嫨 Embedding 妯″瀷</option>
               <option v-if="cfg.embedding_model && ollamaModels.indexOf(cfg.embedding_model)===-1" :value="cfg.embedding_model">{{cfg.embedding_model}}</option>
               <option v-for="m in ollamaModels" :key="'embedding-'+m" :value="m">{{m}}</option>
             </select>
           </div>
           <div class="form-group">
-            <label><input type="checkbox" v-model="cfg.use_embedding_rank"> 启用 Embedding 候选重排</label>
+            <label><input type="checkbox" v-model="cfg.use_embedding_rank"> 鍚敤 Embedding 鍊欓€夐噸鎺?/label>
           </div>
         </fieldset>
         <fieldset class="fieldset">
-          <legend>OpenAI 兼容（SiliconFlow / DeepSeek 等）</legend>
+          <legend>OpenAI 鍏煎锛圫iliconFlow / DeepSeek 绛夛級</legend>
           <div class="form-group">
             <label>API Key</label>
             <div class="input-with-btn">
               <input v-model="cfg.sf_api_key" :type="showSfKey ? 'text' : 'password'">
-              <button class="btn btn-sm" @click="showSfKey=!showSfKey">{{showSfKey?'隐藏':'显示'}}</button>
+              <button class="btn btn-sm" @click="showSfKey=!showSfKey">{{showSfKey?'闅愯棌':'鏄剧ず'}}</button>
             </div>
           </div>
           <div class="form-group">
@@ -816,13 +816,13 @@
             <input v-model="cfg.sf_api_url">
           </div>
           <div class="form-group">
-            <label>模型名称</label>
+            <label>妯″瀷鍚嶇О</label>
             <input v-model="cfg.sf_model">
           </div>
           <div class="form-group" v-if="cfg.embedding_source==='online'">
-            <label>在线 Embedding 模型</label>
-            <input v-model="cfg.online_embedding_model" placeholder="例如 BAAI/bge-m3 或 openai/text-embedding-3-small">
-            <small style="color:#888;display:block;margin-top:6px">复用本区域的 API URL 和 API Key，通过 /embeddings 接口进行候选重排。</small>
+            <label>鍦ㄧ嚎 Embedding 妯″瀷</label>
+            <input v-model="cfg.online_embedding_model" placeholder="渚嬪 BAAI/bge-m3 鎴?openai/text-embedding-3-small">
+            <small style="color:#888;display:block;margin-top:6px">澶嶇敤鏈尯鍩熺殑 API URL 鍜?API Key锛岄€氳繃 /embeddings 鎺ュ彛杩涜鍊欓€夐噸鎺掋€?/small>
           </div>
         </fieldset>
         <div class="form-row">
@@ -836,20 +836,20 @@
           </div>
         </div>
         <div class="form-actions">
-          <button class="btn btn-primary" @click="saveSettings">保存</button>
-          <button class="btn" @click="testAi">测试 AI 连接</button>
-          <button class="btn btn-danger" @click="clearCache">🗑 清除 API 缓存</button>
+          <button class="btn btn-primary" @click="saveSettings">淇濆瓨</button>
+          <button class="btn" @click="testAi">娴嬭瘯 AI 杩炴帴</button>
+          <button class="btn btn-danger" @click="clearCache">馃棏 娓呴櫎 API 缂撳瓨</button>
         </div>
         <div v-if="testResult" :class="['msg', testResult.ok?'msg-ok':'msg-err']">{{testResult.message}}</div>
       </div>
 
-      <!-- 要删除的关键词 -->
+      <!-- 瑕佸垹闄ょ殑鍏抽敭璇?-->
       <div class="card" style="margin-top:16px">
         <div class="form-group">
-          <label style="font-weight:600;font-size:15px">要删除的关键词</label>
+          <label style="font-weight:600;font-size:15px">瑕佸垹闄ょ殑鍏抽敭璇?/label>
           <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-            <input v-model="newKeyword" placeholder="输入关键词" @keyup.enter="addStripKeyword" style="flex:1;max-width:260px">
-            <button class="btn btn-primary btn-sm" @click="addStripKeyword">+ 添加</button>
+            <input v-model="newKeyword" placeholder="杈撳叆鍏抽敭璇? @keyup.enter="addStripKeyword" style="flex:1;max-width:260px">
+            <button class="btn btn-primary btn-sm" @click="addStripKeyword">+ 娣诲姞</button>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px" v-if="cfg.strip_keywords&&cfg.strip_keywords.length">
             <span v-for="(kw, idx) in cfg.strip_keywords" :key="idx" style="display:inline-flex;align-items:center;padding:4px 10px;background:#e8f4fd;color:#1976d2;border-radius:14px;font-size:13px;border:1px solid #90cdf4">
@@ -857,42 +857,42 @@
               <span @click="removeStripKeyword(idx)" style="margin-left:6px;cursor:pointer;color:#999;font-size:15px;line-height:1">&times;</span>
             </span>
           </div>
-          <small style="color:#1976d2;display:block;margin-top:8px">从视频文件名中提取影视剧标题时先删除这些关键词，添加的越多识别准确率越高</small>
+          <small style="color:#1976d2;display:block;margin-top:8px">浠庤棰戞枃浠跺悕涓彁鍙栧奖瑙嗗墽鏍囬鏃跺厛鍒犻櫎杩欎簺鍏抽敭璇嶏紝娣诲姞鐨勮秺澶氳瘑鍒噯纭巼瓒婇珮</small>
         </div>
         <div class="form-actions">
-          <button class="btn btn-primary" @click="saveSettings">保存</button>
+          <button class="btn btn-primary" @click="saveSettings">淇濆瓨</button>
         </div>
       </div>
 
-      <!-- 缓存自动清除 -->
+      <!-- 缂撳瓨鑷姩娓呴櫎 -->
       <div class="card" style="margin-top:16px">
         <div class="form-group">
-          <label style="font-weight:600;font-size:15px">识别缓存自动清除</label>
+          <label style="font-weight:600;font-size:15px">璇嗗埆缂撳瓨鑷姩娓呴櫎</label>
           <select v-model.number="cfg.cache_expiry_days" style="margin-top:8px;max-width:200px">
-            <option :value="1">1 天</option>
-            <option :value="3">3 天</option>
-            <option :value="7">7 天（默认）</option>
-            <option :value="14">14 天</option>
-            <option :value="30">30 天</option>
-            <option :value="0">永不过期</option>
+            <option :value="1">1 澶?/option>
+            <option :value="3">3 澶?/option>
+            <option :value="7">7 澶╋紙榛樿锛?/option>
+            <option :value="14">14 澶?/option>
+            <option :value="30">30 澶?/option>
+            <option :value="0">姘镐笉杩囨湡</option>
           </select>
-          <small style="color:#888;display:block;margin-top:6px">设置 API 识别缓存的自动过期时间，过期后下次识别将重新向 API 请求。选择「永不过期」则只能手动清除。</small>
+          <small style="color:#888;display:block;margin-top:6px">璁剧疆 API 璇嗗埆缂撳瓨鐨勮嚜鍔ㄨ繃鏈熸椂闂达紝杩囨湡鍚庝笅娆¤瘑鍒皢閲嶆柊鍚?API 璇锋眰銆傞€夋嫨銆屾案涓嶈繃鏈熴€嶅垯鍙兘鎵嬪姩娓呴櫎銆?/small>
         </div>
         <div class="form-actions">
-          <button class="btn btn-primary" @click="saveSettings">保存</button>
+          <button class="btn btn-primary" @click="saveSettings">淇濆瓨</button>
         </div>
       </div>
     </section>
 
-    <!-- 网络代理 -->
+    <!-- 缃戠粶浠ｇ悊 -->
     <section v-if="page==='proxy'">
-      <div class="page-header"><h1>网络代理</h1></div>
+      <div class="page-header"><h1>缃戠粶浠ｇ悊</h1></div>
       <div class="card proxy-card">
         <div class="proxy-title">
-          <div class="proxy-icon">🌐</div>
+          <div class="proxy-icon">馃寪</div>
           <div>
-            <h2>网络代理</h2>
-            <p>先不填代理直接测试；如果直连失败，再填写代理地址。Docker 版通常需要手动配置。</p>
+            <h2>缃戠粶浠ｇ悊</h2>
+            <p>鍏堜笉濉唬鐞嗙洿鎺ユ祴璇曪紱濡傛灉鐩磋繛澶辫触锛屽啀濉啓浠ｇ悊鍦板潃銆侱ocker 鐗堥€氬父闇€瑕佹墜鍔ㄩ厤缃€?/p>
           </div>
         </div>
 
@@ -900,52 +900,52 @@
           <input type="checkbox" v-model="cfg.proxy_enabled">
           <span class="toggle-track"><span class="toggle-dot"></span></span>
           <span>
-            <strong>启用手动代理</strong>
-            <small>开启后，外网请求会显式使用下方代理；关闭时继续跟随系统/环境代理或直连。</small>
+            <strong>鍚敤鎵嬪姩浠ｇ悊</strong>
+            <small>寮€鍚悗锛屽缃戣姹備細鏄惧紡浣跨敤涓嬫柟浠ｇ悊锛涘叧闂椂缁х画璺熼殢绯荤粺/鐜浠ｇ悊鎴栫洿杩炪€?/small>
           </span>
         </label>
 
         <div class="form-group">
-          <label>代理地址（单地址模式）</label>
-          <input v-model="cfg.proxy_url" placeholder="例如：http://127.0.0.1:7890 或 host.docker.internal:7890">
-          <small style="color:#888;display:block;margin-top:6px">可直接填写 127.0.0.1:7890，保存时会自动补全为 http://127.0.0.1:7890。</small>
+          <label>浠ｇ悊鍦板潃锛堝崟鍦板潃妯″紡锛?/label>
+          <input v-model="cfg.proxy_url" placeholder="渚嬪锛歨ttp://127.0.0.1:7890 鎴?host.docker.internal:7890">
+          <small style="color:#888;display:block;margin-top:6px">鍙洿鎺ュ～鍐?127.0.0.1:7890锛屼繚瀛樻椂浼氳嚜鍔ㄨˉ鍏ㄤ负 http://127.0.0.1:7890銆?/small>
         </div>
 
         <div class="form-group">
-          <label>NO_PROXY（不走代理）</label>
+          <label>NO_PROXY锛堜笉璧颁唬鐞嗭級</label>
           <textarea v-model="cfg.proxy_no_proxy" rows="3" style="font-family:Consolas,Monaco,monospace;resize:vertical"></textarea>
-          <small style="color:#888;display:block;margin-top:6px">默认包含 localhost、127.0.0.1、host.docker.internal、192.168.*、10.*、172.16-31.*，避免 Ollama、Web 后端和本地服务被代理。</small>
+          <small style="color:#888;display:block;margin-top:6px">榛樿鍖呭惈 localhost銆?27.0.0.1銆乭ost.docker.internal銆?92.168.*銆?0.*銆?72.16-31.*锛岄伩鍏?Ollama銆乄eb 鍚庣鍜屾湰鍦版湇鍔¤浠ｇ悊銆?/small>
         </div>
 
         <div class="proxy-help">
-          <strong>怎么判断是否需要代理</strong>
+          <strong>鎬庝箞鍒ゆ柇鏄惁闇€瑕佷唬鐞?/strong>
           <ol>
-            <li>先保持代理地址为空，点击“测试代理/直连”。</li>
-            <li>如果测试成功，说明当前网络可用，不需要额外配置代理。</li>
-            <li>如果测试失败，再填写你的代理地址并重新测试，直到结果正常。</li>
+            <li>鍏堜繚鎸佷唬鐞嗗湴鍧€涓虹┖锛岀偣鍑烩€滄祴璇曚唬鐞?鐩磋繛鈥濄€?/li>
+            <li>濡傛灉娴嬭瘯鎴愬姛锛岃鏄庡綋鍓嶇綉缁滃彲鐢紝涓嶉渶瑕侀澶栭厤缃唬鐞嗐€?/li>
+            <li>濡傛灉娴嬭瘯澶辫触锛屽啀濉啓浣犵殑浠ｇ悊鍦板潃骞堕噸鏂版祴璇曪紝鐩村埌缁撴灉姝ｅ父銆?/li>
           </ol>
         </div>
 
         <div class="form-actions">
-          <button class="btn btn-primary" @click="saveSettings">保存</button>
-          <button class="btn" @click="testProxy" :disabled="proxyTesting">{{proxyTesting?'测试中...':'🧪 测试代理/直连'}}</button>
+          <button class="btn btn-primary" @click="saveSettings">淇濆瓨</button>
+          <button class="btn" @click="testProxy" :disabled="proxyTesting">{{proxyTesting?'娴嬭瘯涓?..':'馃И 娴嬭瘯浠ｇ悊/鐩磋繛'}}</button>
         </div>
 
         <div v-if="proxyTestResult" class="proxy-result">
           <div :class="['msg', proxyTestResult.ok?'msg-ok':'msg-err']">
-            测试完成：{{proxyModeText(proxyTestResult.proxy&&proxyTestResult.proxy.mode)}}，成功 {{proxyTestResult.summary&&proxyTestResult.summary.success}}/{{proxyTestResult.summary&&proxyTestResult.summary.total}}
-            <span v-if="proxyTestResult.summary&&proxyTestResult.summary.avg_latency_ms">，平均延迟 {{proxyTestResult.summary.avg_latency_ms}}ms</span>
+            娴嬭瘯瀹屾垚锛歿{proxyModeText(proxyTestResult.proxy&&proxyTestResult.proxy.mode)}}锛屾垚鍔?{{proxyTestResult.summary&&proxyTestResult.summary.success}}/{{proxyTestResult.summary&&proxyTestResult.summary.total}}
+            <span v-if="proxyTestResult.summary&&proxyTestResult.summary.avg_latency_ms">锛屽钩鍧囧欢杩?{{proxyTestResult.summary.avg_latency_ms}}ms</span>
           </div>
           <div class="proxy-current" v-if="proxyTestResult.proxy">
-            当前代理：{{proxyTestResult.proxy.proxy_url || '直连'}}（来源：{{proxyTestResult.proxy.source || '-'}}）
+            褰撳墠浠ｇ悊锛歿{proxyTestResult.proxy.proxy_url || '鐩磋繛'}}锛堟潵婧愶細{{proxyTestResult.proxy.source || '-'}}锛?
           </div>
           <table class="table proxy-table" v-if="proxyTestResult.results&&proxyTestResult.results.length">
             <thead>
-              <tr><th>服务</th><th>状态</th><th>延迟</th><th>备注</th></tr>
+              <tr><th>鏈嶅姟</th><th>鐘舵€?/th><th>寤惰繜</th><th>澶囨敞</th></tr>
             </thead>
             <tbody>
               <tr v-for="row in proxyTestResult.results" :key="row.name">
-                <td><span :class="['proxy-check', row.ok?'ok':'bad']">{{row.ok?'✓':'×'}}</span> {{row.name}}</td>
+                <td><span :class="['proxy-check', row.ok?'ok':'bad']">{{row.ok?'鉁?:'脳'}}</span> {{row.name}}</td>
                 <td>{{row.status}}</td>
                 <td>{{row.latency_ms}}ms</td>
                 <td>{{row.message}}</td>
@@ -956,196 +956,196 @@
       </div>
     </section>
 
-    <!-- 二级分类设置 -->
+    <!-- 浜岀骇鍒嗙被璁剧疆 -->
     <section v-if="page==='classify'">
-      <div class="page-header"><h1>二级分类设置</h1></div>
+      <div class="page-header"><h1>浜岀骇鍒嗙被璁剧疆</h1></div>
       <div class="card">
         <div class="form-group">
-          <label>TV 命名格式</label>
+          <label>TV 鍛藉悕鏍煎紡</label>
           <textarea v-model="cfg.tv_format" rows="2" style="font-family:monospace;resize:vertical"></textarea>
         </div>
         <div class="form-group">
-          <label>电影命名格式</label>
+          <label>鐢靛奖鍛藉悕鏍煎紡</label>
           <textarea v-model="cfg.movie_format" rows="2" style="font-family:monospace;resize:vertical"></textarea>
         </div>
         <div class="form-group">
-          <label>视频扩展名</label>
+          <label>瑙嗛鎵╁睍鍚?/label>
           <textarea v-model="cfg.video_exts" rows="2" style="font-family:monospace;resize:vertical"></textarea>
         </div>
         <div class="form-group">
-          <label>字幕/音频扩展名</label>
+          <label>瀛楀箷/闊抽鎵╁睍鍚?/label>
           <textarea v-model="cfg.sub_audio_exts" rows="2" style="font-family:monospace;resize:vertical"></textarea>
         </div>
         <div class="form-group">
-          <label>语言标签</label>
+          <label>璇█鏍囩</label>
           <textarea v-model="cfg.lang_tags" rows="2" style="font-family:monospace;resize:vertical"></textarea>
         </div>
         <div class="form-group">
           <label class="setting-check">
             <input type="checkbox" v-model="cfg.preserve_media_suffix">
-            <span>保留媒体信息后缀（如 2160p.TVING.WEB-DL.H.265.AAC-ColorTV）</span>
+            <span>淇濈暀濯掍綋淇℃伅鍚庣紑锛堝 2160p.TVING.WEB-DL.H.265.AAC-ColorTV锛?/span>
           </label>
-          <small style="color:#888;display:block;margin-top:6px">开启后会从原文件名提取清晰度、片源、编码、音频、发布组等信息；如果命名模板未显式写入 {media_suffix}，会自动追加到扩展名前。</small>
+          <small style="color:#888;display:block;margin-top:6px">寮€鍚悗浼氫粠鍘熸枃浠跺悕鎻愬彇娓呮櫚搴︺€佺墖婧愩€佺紪鐮併€侀煶棰戙€佸彂甯冪粍绛変俊鎭紱濡傛灉鍛藉悕妯℃澘鏈樉寮忓啓鍏?{media_suffix}锛屼細鑷姩杩藉姞鍒版墿灞曞悕鍓嶃€?/small>
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label>预览线程数</label>
+            <label>棰勮绾跨▼鏁?/label>
             <input v-model.number="cfg.preview_workers" type="number" min="1" max="10">
           </div>
           <div class="form-group">
-            <label>同步线程数</label>
+            <label>鍚屾绾跨▼鏁?/label>
             <input v-model.number="cfg.sync_workers" type="number" min="1" max="10">
           </div>
           <div class="form-group">
-            <label>执行线程数</label>
+            <label>鎵ц绾跨▼鏁?/label>
             <input v-model.number="cfg.execution_workers" type="number" min="1" max="10">
           </div>
         </div>
         <div class="form-actions">
-          <button class="btn btn-primary" @click="saveSettings">保存</button>
+          <button class="btn btn-primary" @click="saveSettings">淇濆瓨</button>
         </div>
       </div>
     </section>
 
-    <!-- TG 通知设置 -->
+    <!-- TG 閫氱煡璁剧疆 -->
     <section v-if="page==='tgnotify'">
-      <div class="page-header"><h1>Telegram 通知设置</h1></div>
+      <div class="page-header"><h1>Telegram 閫氱煡璁剧疆</h1></div>
       <div class="card">
         <div class="form-group">
-          <label><input type="checkbox" v-model="cfg.tg_notify_enabled"> 启用 Telegram 入库通知</label>
+          <label><input type="checkbox" v-model="cfg.tg_notify_enabled"> 鍚敤 Telegram 鍏ュ簱閫氱煡</label>
         </div>
         <div class="form-group">
           <label>Bot Token</label>
           <div class="input-with-btn">
-            <input v-model="cfg.tg_bot_token" :type="showTgToken ? 'text' : 'password'" placeholder="输入 Telegram Bot Token（从 @BotFather 获取）">
-            <button class="btn btn-sm" @click="showTgToken=!showTgToken">{{showTgToken?'隐藏':'显示'}}</button>
+            <input v-model="cfg.tg_bot_token" :type="showTgToken ? 'text' : 'password'" placeholder="杈撳叆 Telegram Bot Token锛堜粠 @BotFather 鑾峰彇锛?>
+            <button class="btn btn-sm" @click="showTgToken=!showTgToken">{{showTgToken?'闅愯棌':'鏄剧ず'}}</button>
           </div>
         </div>
         <div class="form-group">
           <label>Chat ID</label>
-          <input v-model="cfg.tg_chat_id" type="text" placeholder="输入目标用户/群组/频道的 Chat ID">
+          <input v-model="cfg.tg_chat_id" type="text" placeholder="杈撳叆鐩爣鐢ㄦ埛/缇ょ粍/棰戦亾鐨?Chat ID">
         </div>
         <div class="form-group">
-          <label>通知延迟（秒）</label>
+          <label>閫氱煡寤惰繜锛堢锛?/label>
           <input v-model.number="cfg.tg_notify_delay" type="number" min="10" max="600" placeholder="60">
-          <small style="color:#888;display:block;margin-top:4px">文件夹内最后一个文件处理完成后等待此秒数再发送通知，以便汇总同批次文件</small>
+          <small style="color:#888;display:block;margin-top:4px">鏂囦欢澶瑰唴鏈€鍚庝竴涓枃浠跺鐞嗗畬鎴愬悗绛夊緟姝ょ鏁板啀鍙戦€侀€氱煡锛屼互渚挎眹鎬诲悓鎵规鏂囦欢</small>
         </div>
         <div class="form-actions">
-          <button class="btn btn-primary" @click="saveSettings">保存</button>
-          <button class="btn" @click="testTelegram">测试发送</button>
+          <button class="btn btn-primary" @click="saveSettings">淇濆瓨</button>
+          <button class="btn" @click="testTelegram">娴嬭瘯鍙戦€?/button>
         </div>
         <div v-if="tgTestResult" :class="['msg', tgTestResult.ok?'msg-ok':'msg-err']">{{tgTestResult.message}}</div>
       </div>
     </section>
 
-    <!-- 导出软链接 -->
+    <!-- 瀵煎嚭杞摼鎺?-->
     <section v-if="page==='symlink_folders'">
       <div class="page-header">
-        <h1>导出软链接</h1>
-        <button class="btn btn-primary" @click="showAddSymlink=true">+ 添加目录</button>
+        <h1>瀵煎嚭杞摼鎺?/h1>
+        <button class="btn btn-primary" @click="showAddSymlink=true">+ 娣诲姞鐩綍</button>
       </div>
       <table class="table" v-if="symlinkFolders.length">
         <thead>
           <tr>
-            <th>监控路径</th><th>导出目标</th><th>状态</th><th>操作</th>
+            <th>鐩戞帶璺緞</th><th>瀵煎嚭鐩爣</th><th>鐘舵€?/th><th>鎿嶄綔</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="f in symlinkFolders" :key="f.id">
             <td>{{f.path}}</td>
             <td>{{f.target_root || '-'}}</td>
-            <td><span :class="['badge', f.enabled?'badge-success':'badge-gray']">{{f.enabled?'监控中':'已停用'}}</span></td>
+            <td><span :class="['badge', f.enabled?'badge-success':'badge-gray']">{{f.enabled?'鐩戞帶涓?:'宸插仠鐢?}}</span></td>
             <td class="actions">
-              <button class="btn btn-sm" @click="scanFolder(f.id)" title="立即扫描">🔍</button>
-              <button class="btn btn-sm" @click="toggleFolder(f)" title="启停">{{f.enabled?'⏸':'▶'}}</button>
-              <button class="btn btn-sm btn-danger" @click="deleteFolder(f.id)" title="删除">🗑</button>
+              <button class="btn btn-sm" @click="scanFolder(f.id)" title="绔嬪嵆鎵弿">馃攳</button>
+              <button class="btn btn-sm" @click="toggleFolder(f)" title="鍚仠">{{f.enabled?'鈴?:'鈻?}}</button>
+              <button class="btn btn-sm btn-danger" @click="deleteFolder(f.id)" title="鍒犻櫎">馃棏</button>
             </td>
           </tr>
         </tbody>
       </table>
-      <div class="empty" v-else>暂无软链接导出目录，点击右上角添加</div>
+      <div class="empty" v-else>鏆傛棤杞摼鎺ュ鍑虹洰褰曪紝鐐瑰嚮鍙充笂瑙掓坊鍔?/div>
 
-      <!-- 添加软链接弹窗 -->
+      <!-- 娣诲姞杞摼鎺ュ脊绐?-->
       <div class="modal-overlay" v-if="showAddSymlink" @click.self="showAddSymlink=false">
         <div class="modal" style="width:520px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-            <h2 style="margin:0">添加软链接导出目录</h2>
+            <h2 style="margin:0">娣诲姞杞摼鎺ュ鍑虹洰褰?/h2>
             <button @click="showAddSymlink=false" style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#999;padding:0 6px">&times;</button>
           </div>
           <div class="form-group">
-            <label>监控路径（原始文件所在目录）</label>
+            <label>鐩戞帶璺緞锛堝師濮嬫枃浠舵墍鍦ㄧ洰褰曪級</label>
             <div class="input-with-btn">
-              <input v-model="newSymlinkFolder.path" placeholder="例如 E:\MPSTRM" readonly>
-              <button class="btn btn-sm" @click="openBrowse('symlink_path')">浏览...</button>
+              <input v-model="newSymlinkFolder.path" placeholder="渚嬪 E:\MPSTRM" readonly>
+              <button class="btn btn-sm" @click="openBrowse('symlink_path')">娴忚...</button>
             </div>
           </div>
           <div class="form-group">
-            <label>导出目标目录（软链接创建位置）</label>
+            <label>瀵煎嚭鐩爣鐩綍锛堣蒋閾炬帴鍒涘缓浣嶇疆锛?/label>
             <div class="input-with-btn">
-              <input v-model="newSymlinkFolder.target_root" placeholder="例如 E:\STRM" readonly>
-              <button class="btn btn-sm" @click="openBrowse('symlink_target')">浏览...</button>
+              <input v-model="newSymlinkFolder.target_root" placeholder="渚嬪 E:\STRM" readonly>
+              <button class="btn btn-sm" @click="openBrowse('symlink_target')">娴忚...</button>
             </div>
-            <small style="color:#1976d2;display:block;margin-top:6px">监控路径中的文件将在目标目录创建同名软链接，保持相同的目录结构，不刮削不改名</small>
+            <small style="color:#1976d2;display:block;margin-top:6px">鐩戞帶璺緞涓殑鏂囦欢灏嗗湪鐩爣鐩綍鍒涘缓鍚屽悕杞摼鎺ワ紝淇濇寔鐩稿悓鐨勭洰褰曠粨鏋勶紝涓嶅埉鍓婁笉鏀瑰悕</small>
           </div>
           <div class="form-actions">
-            <button class="btn" @click="showAddSymlink=false">取消</button>
-            <button class="btn btn-primary" @click="addSymlinkFolder">确认添加</button>
+            <button class="btn" @click="showAddSymlink=false">鍙栨秷</button>
+            <button class="btn btn-primary" @click="addSymlinkFolder">纭娣诲姞</button>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- 软链接记录 -->
+    <!-- 杞摼鎺ヨ褰?-->
     <section v-if="page==='symlink_records'">
-      <div class="page-header"><h1>软链接记录</h1></div>
+      <div class="page-header"><h1>杞摼鎺ヨ褰?/h1></div>
       <div class="toolbar">
         <div class="toolbar-left">
-          <button class="btn-grad btn-grad-red btn-sm" @click="batchDeleteSymlinkSelected" :disabled="!symlinkSelectedIds.length">删除所选记录</button>
-          <button class="btn-grad btn-grad-yellow btn-sm" @click="retrySymlinkFailed" :disabled="!symlinkStats.failed">重试失败</button>
-          <button class="btn-grad btn-grad-blue btn-sm" @click="toggleSymlinkGroupedView">{{symlinkGroupedView?'列表视图':'分组视图'}}</button>
-          <span class="toolbar-hint">已选择 {{symlinkSelectedIds.length}} 条记录</span>
-          <span class="toolbar-hint" v-if="symlinkStats.total" style="margin-left:12px">共 {{symlinkStats.total}} 条，成功 {{symlinkStats.success || 0}}，失败 {{symlinkStats.failed || 0}}</span>
+          <button class="btn-grad btn-grad-red btn-sm" @click="batchDeleteSymlinkSelected" :disabled="!symlinkSelectedIds.length">鍒犻櫎鎵€閫夎褰?/button>
+          <button class="btn-grad btn-grad-yellow btn-sm" @click="retrySymlinkFailed" :disabled="!symlinkStats.failed">閲嶈瘯澶辫触</button>
+          <button class="btn-grad btn-grad-blue btn-sm" @click="toggleSymlinkGroupedView">{{symlinkGroupedView?'鍒楄〃瑙嗗浘':'鍒嗙粍瑙嗗浘'}}</button>
+          <span class="toolbar-hint">宸查€夋嫨 {{symlinkSelectedIds.length}} 鏉¤褰?/span>
+          <span class="toolbar-hint" v-if="symlinkStats.total" style="margin-left:12px">鍏?{{symlinkStats.total}} 鏉★紝鎴愬姛 {{symlinkStats.success || 0}}锛屽け璐?{{symlinkStats.failed || 0}}</span>
         </div>
       </div>
       <div class="filter-row">
-        <input v-model="symlinkKeyword" placeholder="按文件名模糊搜索" class="filter-input">
+        <input v-model="symlinkKeyword" placeholder="鎸夋枃浠跺悕妯＄硦鎼滅储" class="filter-input">
         <select v-model="symlinkFilter" class="filter-select">
-          <option value="">筛选状态</option>
-          <option value="success">成功</option>
-          <option value="failed">失败</option>
+          <option value="">绛涢€夌姸鎬?/option>
+          <option value="success">鎴愬姛</option>
+          <option value="failed">澶辫触</option>
         </select>
-        <button class="btn btn-primary btn-sm" @click="symlinkPage=1;symlinkGroupedView?loadSymlinkGroupedRecords():loadSymlinkRecords()">筛选</button>
-        <button class="btn btn-sm" @click="resetSymlinkFilter">重置</button>
+        <button class="btn btn-primary btn-sm" @click="symlinkPage=1;symlinkGroupedView?loadSymlinkGroupedRecords():loadSymlinkRecords()">绛涢€?/button>
+        <button class="btn btn-sm" @click="resetSymlinkFilter">閲嶇疆</button>
       </div>
       <template v-if="!symlinkGroupedView">
       <table class="table" v-if="symlinkRecords.length">
         <thead>
           <tr>
             <th style="width:36px"><input type="checkbox" @change="toggleSymlinkSelectAll" :checked="symlinkAllSelected"></th>
-            <th>状态</th>
-            <th>原始文件</th>
-            <th>软链接路径</th>
-            <th style="width:148px">时间</th>
-            <th style="width:90px">操作</th>
+            <th>鐘舵€?/th>
+            <th>鍘熷鏂囦欢</th>
+            <th>杞摼鎺ヨ矾寰?/th>
+            <th style="width:148px">鏃堕棿</th>
+            <th style="width:90px">鎿嶄綔</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="r in symlinkRecords" :key="r.id">
             <td><input type="checkbox" :value="r.id" v-model="symlinkSelectedIds"></td>
-            <td><span :class="['badge', r.status==='success'?'badge-success':'badge-danger']">{{r.status==='success'?'成功':'失败'}}</span></td>
+            <td><span :class="['badge', r.status==='success'?'badge-success':'badge-danger']">{{r.status==='success'?'鎴愬姛':'澶辫触'}}</span></td>
             <td class="cell-path">
               <div>{{r.original_path}}</div>
-              <div v-if="r.error_msg" style="color:#e53935;font-size:12px;margin-top:2px">⚠ {{r.error_msg}}</div>
+              <div v-if="r.error_msg" style="color:#e53935;font-size:12px;margin-top:2px">鈿?{{r.error_msg}}</div>
             </td>
             <td class="cell-path">{{r.link_path || '-'}}</td>
             <td style="white-space:nowrap;font-size:12px;color:#999">{{formatTime(r.created_at)}}</td>
             <td class="actions">
-              <button class="btn btn-sm btn-danger" @click="deleteSymlinkRecord(r.id)">删除</button>
+              <button class="btn btn-sm btn-danger" @click="deleteSymlinkRecord(r.id)">鍒犻櫎</button>
             </td>
           </tr>
         </tbody>
       </table>
-      <div class="empty" v-else>暂无软链接记录</div>
+      <div class="empty" v-else>鏆傛棤杞摼鎺ヨ褰?/div>
       <div class="pagination-bar">
         <span class="pagination-total">Total {{symlinkTotal}}</span>
         <select v-model.number="symlinkPageSize" @change="symlinkPage=1;loadSymlinkRecords()" class="pagination-size">
@@ -1159,9 +1159,9 @@
           <span style="color:#aaa;margin:0 2px">/</span>
           <span class="pagination-total-pages">{{Math.ceil(symlinkTotal/symlinkPageSize)||1}}</span>
           <button class="btn btn-sm" :disabled="symlinkPage*symlinkPageSize>=symlinkTotal" @click="symlinkPage++;symlinkGoPage=symlinkPage;loadSymlinkRecords()">&gt;</button>
-          <span style="margin-left:8px">跳至</span>
+          <span style="margin-left:8px">璺宠嚦</span>
           <input v-model.number="symlinkGoPage" class="pagination-goto" @keyup.enter="gotoSymlinkPage">
-          <button class="btn btn-sm" @click="gotoSymlinkPage">确定</button>
+          <button class="btn btn-sm" @click="gotoSymlinkPage">纭畾</button>
         </div>
       </div>
       </template>
@@ -1172,11 +1172,11 @@
         <thead>
           <tr>
             <th style="width:36px"></th>
-            <th>目录</th>
-            <th style="width:80px">总数</th>
-            <th style="width:80px">成功</th>
-            <th style="width:80px">失败</th>
-            <th style="width:120px">操作</th>
+            <th>鐩綍</th>
+            <th style="width:80px">鎬绘暟</th>
+            <th style="width:80px">鎴愬姛</th>
+            <th style="width:80px">澶辫触</th>
+            <th style="width:120px">鎿嶄綔</th>
           </tr>
         </thead>
         <template v-for="g in symlinkGroupedRecords" :key="g.dir_path">
@@ -1184,7 +1184,7 @@
             <tr class="group-row" @click="toggleSymlinkGroup(g)">
               <td><input type="checkbox" :checked="isSymlinkGroupAllSelected(g)" @click.stop="toggleSelectSymlinkGroup(g)"></td>
               <td>
-                <span style="display:inline-block;width:18px;text-align:center;margin-right:4px">{{symlinkExpandedGroups[g.dir_path]?'▼':'▶'}}</span>
+                <span style="display:inline-block;width:18px;text-align:center;margin-right:4px">{{symlinkExpandedGroups[g.dir_path]?'鈻?:'鈻?}}</span>
                 <strong>{{g.dir_name}}</strong>
                 <span style="color:#999;margin-left:8px;font-size:12px">{{g.dir_path}}</span>
               </td>
@@ -1192,32 +1192,32 @@
               <td><span class="badge badge-success" v-if="g.success">{{g.success}}</span><span v-else>-</span></td>
               <td><span class="badge badge-danger" v-if="g.failed">{{g.failed}}</span><span v-else>-</span></td>
               <td class="actions" @click.stop>
-                <button class="btn btn-sm btn-danger" @click="deleteSymlinkGroup(g)">删除全组</button>
+                <button class="btn btn-sm btn-danger" @click="deleteSymlinkGroup(g)">鍒犻櫎鍏ㄧ粍</button>
               </td>
             </tr>
           </tbody>
           <tbody v-if="symlinkExpandedGroups[g.dir_path]">
             <tr v-if="symlinkExpandedGroups[g.dir_path].loading">
-              <td colspan="6" style="text-align:center;color:#999;padding:12px">加载中...</td>
+              <td colspan="6" style="text-align:center;color:#999;padding:12px">鍔犺浇涓?..</td>
             </tr>
             <template v-else>
               <tr class="group-record-row" v-for="r in symlinkExpandedGroups[g.dir_path].records" :key="r.id">
                 <td><input type="checkbox" :value="r.id" v-model="symlinkSelectedIds"></td>
                 <td colspan="2" class="cell-path" style="padding-left:40px">
                   <div>{{r.original_path}}</div>
-                  <div v-if="r.error_msg" style="color:#e53935;font-size:12px;margin-top:2px">⚠ {{r.error_msg}}</div>
+                  <div v-if="r.error_msg" style="color:#e53935;font-size:12px;margin-top:2px">鈿?{{r.error_msg}}</div>
                 </td>
-                <td><span :class="['badge', r.status==='success'?'badge-success':'badge-danger']">{{r.status==='success'?'成功':'失败'}}</span></td>
+                <td><span :class="['badge', r.status==='success'?'badge-success':'badge-danger']">{{r.status==='success'?'鎴愬姛':'澶辫触'}}</span></td>
                 <td class="cell-path">{{r.link_path || '-'}}</td>
                 <td class="actions">
-                  <button class="btn btn-sm btn-danger" @click="deleteSymlinkGroupRecord(g, r.id)">删除</button>
+                  <button class="btn btn-sm btn-danger" @click="deleteSymlinkGroupRecord(g, r.id)">鍒犻櫎</button>
                 </td>
               </tr>
               <tr v-if="symlinkExpandedGroups[g.dir_path].total > 50" class="group-pagination-row">
                 <td colspan="6" style="text-align:center;padding:8px">
-                  <button class="btn btn-sm" :disabled="symlinkExpandedGroups[g.dir_path].page<=1" @click.stop="symlinkGroupPagePrev(g)">&lt; 上一页</button>
+                  <button class="btn btn-sm" :disabled="symlinkExpandedGroups[g.dir_path].page<=1" @click.stop="symlinkGroupPagePrev(g)">&lt; 涓婁竴椤?/button>
                   <span style="margin:0 12px;font-size:13px;color:#666">{{symlinkExpandedGroups[g.dir_path].page}} / {{Math.ceil(symlinkExpandedGroups[g.dir_path].total/50)}}</span>
-                  <button class="btn btn-sm" :disabled="symlinkExpandedGroups[g.dir_path].page*50>=symlinkExpandedGroups[g.dir_path].total" @click.stop="symlinkGroupPageNext(g)">下一页 &gt;</button>
+                  <button class="btn btn-sm" :disabled="symlinkExpandedGroups[g.dir_path].page*50>=symlinkExpandedGroups[g.dir_path].total" @click.stop="symlinkGroupPageNext(g)">涓嬩竴椤?&gt;</button>
                 </td>
               </tr>
             </template>
@@ -1231,7 +1231,7 @@
     <div v-for="toast in toasts" :key="toast.id" :class="['app-toast', 'toast-' + toast.type]">
       <span class="toast-dot"></span>
       <span class="toast-text">{{toast.message}}</span>
-      <button class="toast-close" @click="removeToast(toast.id)" title="关闭">×</button>
+      <button class="toast-close" @click="removeToast(toast.id)" title="鍏抽棴">脳</button>
     </div>
   </div>
   <div class="app-confirm-mask" v-if="confirmDialog.visible" @click.self="resolveConfirm(false)">
@@ -1248,3 +1248,4 @@
 <script src="app.js"></script>
 </body>
 </html>
+

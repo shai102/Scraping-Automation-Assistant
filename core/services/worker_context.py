@@ -64,6 +64,7 @@ from utils.helpers import (
     normalize_compare_text,
     safe_filename,
     safe_int,
+    safe_str,
     text_mentions_extra_title,
     write_nfo,
     save_image,
@@ -411,6 +412,59 @@ class WorkerContext:
     # DB matching (headless: auto-pick only, no manual popup)
     # ------------------------------------------------------------------
 
+    def _pick_strong_tmdb_direct_hit(self, query_titles, year, candidates):
+        """Trust a direct TMDb rank-1 hit before semantic rerank/model override.
+
+        TMDb can correctly recall a localized title by alias/romanization while
+        the visible zh-CN/original names differ from the query text. In that
+        case lexical similarity, embedding rerank, or a chat model can
+        mistakenly flip the result to a more popular but wrong title.
+        """
+        requested_year = safe_str(year).strip()
+        preferred_norms = []
+        seen_norms = set()
+        for raw in query_titles or []:
+            text = str(raw or "").strip()
+            norm = normalize_compare_text(text)
+            if not norm or len(norm) < 6 or norm in seen_norms:
+                continue
+            seen_norms.add(norm)
+            preferred_norms.append(norm)
+
+        if not preferred_norms:
+            return None, ""
+
+        grouped = {}
+        for candidate in candidates or []:
+            meta = candidate.get("meta") or {}
+            search_query = str(meta.get("search_query") or "").strip()
+            search_norm = normalize_compare_text(search_query)
+            if not search_norm:
+                continue
+            grouped.setdefault(search_norm, []).append(candidate)
+
+        for norm in preferred_norms:
+            hits = grouped.get(norm) or []
+            if not hits:
+                continue
+
+            hits = sorted(
+                hits,
+                key=lambda cand: (
+                    safe_int((cand.get("meta") or {}).get("search_rank"), 999),
+                    -float(cand.get("rating") or 0),
+                ),
+            )
+            top = hits[0]
+            top_meta = top.get("meta") or {}
+            top_rank = safe_int(top_meta.get("search_rank"), 999)
+            top_year = extract_year_from_release(top.get("release") or "")
+            year_ok = not requested_year or not top_year or top_year == requested_year
+            if top_rank == 1 and year_ok:
+                return top, str(top_meta.get("search_query") or "")
+
+        return None, ""
+
     def _resolve_db_match(self, item, query_title, year, is_tv, mode, ai_data, g):
         source_name = "TMDb" if mode == "siliconflow_tmdb" else "BGM"
         query_groups = build_db_query_plan(item, query_title, ai_data, g)
@@ -433,6 +487,11 @@ class WorkerContext:
                         continue
                     seen_ids.add(cid)
                     found.append(cand)
+                if (
+                    mode == "siliconflow_tmdb"
+                    and self._pick_strong_tmdb_direct_hit([q], year, cur)[0] is not None
+                ):
+                    break
                 if len(found) >= limit:
                     break
             return found
@@ -573,6 +632,19 @@ class WorkerContext:
             if _exact is not None:
                 return candidate_to_result(_exact, f"标题匹配/{source_name}命中")
 
+        if source_name.startswith("TMDb") and rank_pick_allowed:
+            direct_hit, matched_query = self._pick_strong_tmdb_direct_hit(
+                [query_title, recognized_title], year, candidates
+            )
+            if direct_hit is not None:
+                hit_msg = f"TMDb直搜首位/{source_name}命中"
+                if matched_query and (
+                    normalize_compare_text(matched_query)
+                    != normalize_compare_text(query_title)
+                ):
+                    hit_msg += " (别名直搜)"
+                return candidate_to_result(direct_hit, hit_msg)
+
         prefer_ollama = bool(self.prefer_ollama.get())
         online_ready = self._can_use_online_model_for_pick()
         ollama_ready = self._can_use_ollama_for_pick()
@@ -624,7 +696,7 @@ class WorkerContext:
             query_title, year, source_name, ranked
         )
         if auto_pick:
-            hit_msg = f"自动评分判定/{source_name}鍛戒腑"
+            hit_msg = f"自动评分判定/{source_name}命中"
             if emb_msg:
                 hit_msg += f" ({emb_msg})"
             if reason:

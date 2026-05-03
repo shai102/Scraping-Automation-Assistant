@@ -7,6 +7,7 @@ import difflib
 import requests
 
 from utils.helpers import (
+    build_fallback_token_queries,
     ERROR_CODE_CONFIG,
     ERROR_CODE_HTTP,
     ERROR_CODE_INVALID,
@@ -20,6 +21,7 @@ from utils.helpers import (
     clean_search_title,
     format_error_message,
     get_cache_key,
+    normalize_search_query_title,
     session,
     text_mentions_extra_title,
     TIMEOUT_DB_DETAIL,
@@ -170,6 +172,7 @@ def fetch_bgm_by_id(subject_id, api_key=""):
 
 
 def fetch_bgm_candidates_raw(title, year=None, api_key=""):
+    title = normalize_search_query_title(title)
     q = clean_search_title(title)
     q_norm = re.sub(r"[\W_]+", "", str(q).lower())
     headers = {"User-Agent": USER_AGENT}
@@ -248,11 +251,10 @@ def fetch_bgm_candidates_raw(title, year=None, api_key=""):
                 return candidates
 
         # Fuzzy fallback: 拆词后重排
-        token_queries = []
-        for token in re.split(r"\s+", q):
-            t = token.strip()
-            if len(t) >= 2 and t.lower() != q.lower() and t not in token_queries:
-                token_queries.append(t)
+        token_queries = [
+            t for t in build_fallback_token_queries(q, min_length=2)
+            if t.lower() != q.lower()
+        ]
 
         fuzzy_pool = []
         seen = set()
@@ -289,6 +291,7 @@ def fetch_bgm_candidates_raw(title, year=None, api_key=""):
 
 
 def fetch_bgm_candidates(title, year=None, api_key=""):
+    title = normalize_search_query_title(title)
     return cached_request(
         fetch_bgm_candidates_raw,
         get_cache_key("bgm_candidates_v2", f"{title}_{year}"),
@@ -646,6 +649,7 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
     if not api_key or not api_key.strip():
         return []
 
+    title = normalize_search_query_title(title)
     q = clean_search_title(title)
     stype = "tv" if is_tv else "movie"
     raw_query = str(title or "").strip()
@@ -684,7 +688,7 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
                     or item.get("original_title")
                     or "",
                     "id": cid,
-                    "msg": f"TMDb{'鍓ч泦' if is_tv else '鐢靛奖'}候选",
+                    "msg": f"TMDb{'剧集' if is_tv else '电影'}候选",
                     "rating": rating,
                     "release": release,
                     "meta": meta,
@@ -881,11 +885,10 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
                 if quality[0] >= 1.0 or quality[2] >= 0.72:
                     return _items_to_candidates(results, query)
 
-        token_queries = []
-        for token in re.split(r"\s+", q):
-            t = token.strip()
-            if len(t) >= 4 and t.lower() != q.lower() and t not in token_queries:
-                token_queries.append(t)
+        token_queries = [
+            t for t in build_fallback_token_queries(q, min_length=4)
+            if t.lower() != q.lower()
+        ]
 
         token_candidates = []
         fuzzy_pool = []
@@ -928,19 +931,20 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
     except requests.exceptions.HTTPError as err:
         snippet = _response_body_snippet(getattr(err, "response", None))
         if snippet:
-            logging.warning(f"TMDb鎼滅储HTTP澶辫触锛岃繑鍥炲唴瀹? {snippet}")
+            logging.warning(f"TMDb搜索HTTP失败，返回内容: {snippet}")
         return []
     except ValueError:
         snippet = _response_body_snippet(locals().get("response"))
         if snippet:
-            logging.warning(f"TMDb鎼滅储瑙ｆ瀽澶辫触锛岃繑鍥炲唴瀹? {snippet}")
+            logging.warning(f"TMDb搜索解析失败，返回内容: {snippet}")
         return []
     except Exception as err:
-        logging.error(f"TMDb鎼滅储澶辫触: {err}")
+        logging.error(f"TMDb搜索失败: {err}")
         return []
 
 
 def fetch_tmdb_candidates(title, year=None, is_tv=True, api_key=""):
+    title = normalize_search_query_title(title)
     return cached_request(
         fetch_tmdb_candidates_raw,
         get_cache_key("tmdb_candidates_v6", f"{title}_{year}_{is_tv}"),

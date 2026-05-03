@@ -70,6 +70,19 @@ INVALID_QUERY_TITLES = {
     "na",
     "nan",
     "未知",
+    "test",
+    "tests",
+    "sample",
+    "samples",
+    "tmp",
+    "temp",
+    "newfolder",
+    "新建文件夹",
+    "电视剧",
+    "电视剧集",
+    "电影",
+    "动漫",
+    "动画",
 }
 INVALID_QUERY_TITLES_NORMALIZED = set(INVALID_QUERY_TITLES)
 
@@ -93,6 +106,9 @@ BRACKET_NOISE_RE = re.compile(
     )$
     """
 )
+QUERY_SEASON_EP_RE = re.compile(
+    r"(?ix)\b(?:S\d{1,2}E\d{1,4}|Season\s*\d{1,2}|S\d{1,2}|Episode\s*\d{1,4}|EP?\s*\d{1,4})\b"
+)
 EXTRA_TITLE_MARKER_RE = re.compile(
     r"(?i)(?:总集|總集|総集|recap|summary|compilation|digest|特别篇|特別編|特別篇|specials?|ova|oad|prologue|nc\.?\s*ver|creditless)"
 )
@@ -103,6 +119,13 @@ VARIANT_TITLE_MARKERS = {
 
 VERSION_TAG_RE = re.compile(r"\[(NC\.Ver|SP|OVA|Extra|Special|OAD|Creditless)\]", re.I)
 EPISODE_NOISE_NUMBERS = {2160, 1080, 720, 480, 265, 264}
+MEDIA_NOISE_TOKEN_RE = re.compile(
+    r"""(?ix)^(
+        NF|NETFLIX|AMZN|AMAZON|DSNP|DISNEY|TVING|WEB|WEBDL|WEBRIP|BLURAY|BDRIP|BDREMUX|REMUX|UHD
+        |X264|X265|H264|H265|HEVC|AV1|HDR|HDR10|DV
+        |AAC\d*|DDP\d*|DD\d*|DTS(?:HD)?\d*|TRUEHD\d*|ATMOS
+    )$"""
+)
 
 ERROR_CODE_TIMEOUT = "TIMEOUT"
 ERROR_CODE_CONFIG = "CONFIG"
@@ -555,6 +578,99 @@ def unique_keep_order(values):
     return out
 
 
+def _normalize_query_token(token):
+    return re.sub(r"[\W_]+", "", str(token or "").strip())
+
+
+def _query_token_is_noise(token):
+    raw = str(token or "").strip()
+    if not raw:
+        return True
+    compact = _normalize_query_token(raw)
+    if not compact:
+        return True
+    if BRACKET_NOISE_RE.match(raw) or BRACKET_NOISE_RE.match(compact):
+        return True
+    if MEDIA_NOISE_TOKEN_RE.match(compact.upper()):
+        return True
+    if QUERY_SEASON_EP_RE.fullmatch(raw):
+        return True
+    if LANG_TAG_TOKEN_RE.fullmatch(raw):
+        return True
+    if compact.isdigit() and 1900 <= int(compact) <= 2099:
+        return True
+    return False
+
+
+def _looks_like_trailing_release_group_token(token):
+    raw = str(token or "").strip()
+    if not raw:
+        return False
+    compact = _normalize_query_token(raw)
+    if len(compact) < 3 or len(compact) > 24:
+        return False
+    if BRACKET_NOISE_RE.match(raw) or BRACKET_NOISE_RE.match(compact):
+        return True
+    if compact.isupper():
+        return True
+    suffixes = ("TV", "RAW", "RAWS", "SUB", "FANSUB", "STUDIO")
+    upper_compact = compact.upper()
+    for suffix in suffixes:
+        if upper_compact.endswith(suffix):
+            prefix = compact[: -len(suffix)]
+            if len(prefix) >= 2 and not prefix.islower():
+                return True
+    if re.search(r"[a-z]", raw) and re.search(r"[A-Z]{2,}", raw):
+        return True
+    return False
+
+
+def normalize_search_query_title(title):
+    """Normalize search titles by stripping season/episode and release noise."""
+    text = clean_search_title(title)
+    if not text:
+        return ""
+
+    text = re.sub(r"[._]+", " ", text)
+    text = QUERY_SEASON_EP_RE.sub(" ", text)
+    tokens = [tok for tok in re.split(r"\s+", text) if tok]
+    filtered = []
+    for idx, token in enumerate(tokens):
+        if _query_token_is_noise(token):
+            continue
+        if len(tokens) >= 2 and idx == len(tokens) - 1 and _looks_like_trailing_release_group_token(token):
+            continue
+        filtered.append(token)
+
+    normalized = clean_search_title(" ".join(filtered))
+    if normalized and is_meaningful_query_title(normalized):
+        return normalized
+    return clean_search_title(text)
+
+
+def build_fallback_token_queries(title, min_length=4):
+    """Build safe fallback token queries from a normalized title."""
+    text = normalize_search_query_title(title)
+    latin_word_tokens = [tok for tok in re.split(r"\s+", text) if re.search(r"[A-Za-z]", tok)]
+    has_cjk = bool(re.search(r"[\u4e00-\u9fff\u3040-\u30ff]", text))
+    if not has_cjk and len(latin_word_tokens) >= 2:
+        return []
+    seen = set()
+    queries = []
+    for raw in re.split(r"\s+", text):
+        token = clean_search_title(raw)
+        compact = normalize_compare_text(token)
+        if not token or len(compact) < min_length:
+            continue
+        if _query_token_is_noise(token):
+            continue
+        if compact in seen:
+            continue
+        seen.add(compact)
+        queries.append(token)
+    return queries
+
+
 # ---------------------------------------------------------------------------
 # Decimal-episode detection (小数集如 4.5 属总集篇)
 # ---------------------------------------------------------------------------
@@ -785,8 +901,45 @@ def build_query_titles(item, query_title, ai_data, g):
             split_titles = split_mixed_title(candidate)
             candidates.extend(split_titles)
 
-    ordered = unique_keep_order(candidates)
-    return [c for c in ordered if is_meaningful_query_title(c)]
+    expanded_candidates = []
+    for candidate in candidates:
+        raw_clean = clean_search_title(candidate)
+        normalized = normalize_search_query_title(candidate)
+        raw_norm = normalize_compare_text(raw_clean)
+        normalized_norm = normalize_compare_text(normalized)
+        preserve_raw_alias = (
+            raw_clean
+            and normalized
+            and raw_norm
+            and normalized_norm
+            and raw_norm != normalized_norm
+            and bool(re.search(r"[._/]", raw_clean))
+            and len(raw_norm) <= len(normalized_norm) + 4
+        )
+        if raw_clean and preserve_raw_alias:
+            expanded_candidates.append(raw_clean)
+        if normalized:
+            expanded_candidates.append(normalized)
+
+    ordered = unique_keep_order(expanded_candidates)
+    strong_norms = [
+        normalize_compare_text(text)
+        for text in ordered
+        if len(str(text or "").split()) >= 2 or len(normalize_compare_text(text)) >= 8
+    ]
+    filtered = []
+    for text in ordered:
+        if not is_meaningful_query_title(text):
+            continue
+        norm = normalize_compare_text(text)
+        if (
+            len(str(text or "").split()) == 1
+            and len(norm) < 8
+            and any(norm != strong and norm in strong for strong in strong_norms)
+        ):
+            continue
+        filtered.append(text)
+    return filtered
 
 
 def build_db_query_plan(item, query_title, ai_data, g):
@@ -890,6 +1043,95 @@ def safe_int(value, default=1):
         return default
 
 
+_MOJIBAKE_SUSPECT_CHARS = set(
+    "\u0447\u20ac\u50a8\u53a4\u546e\u589c\u5956\u59af\u5bf0\u612d\u6212\u6b13"
+    "\u6ce6\u6ec5\u6fb6\u703d\u70ba\u72b5\u7459\u7487\u7730\u7966\u7ca8\u7f03"
+    "\u8151\u89e6\u8fac\u934a\u9353\u9354\u935b\u9365\u93bc\u93c3\u93c8\u93cb"
+    "\u9422\u950b\u95c4\u975b\ue048\uff46"
+)
+_MOJIBAKE_TEXT_REPLACEMENTS = {
+    "\u935b\u6212\u8151": "命中",
+    "\u9353\u0447\u6ce6": "剧集",
+    "\u9422\u975b\u5956": "电影",
+    "\u93bc\u6ec5\u50a8": "搜索",
+    "\u6fb6\u8fac\u89e6": "失败",
+    "\u93c8\ue048\u53a4\u7f03": "未配置",
+    "\u7487\u950b\u7730": "请求",
+    "\u7459\uff46\u703d": "解析",
+    "\u9365\u70ba\u20ac": "回退",
+    "\u934a\u6b13\u20ac": "候选",
+    "\u59af\u2033\u7037": "模型",
+    "\u9352\u3085\u757e": "判定",
+    "\u9477\ue044\u59e9": "自动",
+    "\u7487\u55d7\u57c6": "识别",
+    "\u93c3\u72b5\u7ca8\u93cb": "无结果",
+    "\u93c3\u72b3\u6665": "无效",
+    "\u95c4\u612d\u7966": "限流",
+    "\u5bf0\u546e\u589c\u9354": "待手动",
+    "\u7f02\u64b3\u74e8": "缓存",
+}
+
+
+def _looks_like_mojibake(text):
+    sample = str(text or "")
+    if not sample:
+        return False
+    return any(ch in _MOJIBAKE_SUSPECT_CHARS for ch in sample)
+
+
+def _score_human_readable_text(text):
+    sample = str(text or "")
+    if not sample:
+        return 0
+    score = 0
+    for ch in sample:
+        code = ord(ch)
+        if 0x4E00 <= code <= 0x9FFF:
+            score += 3
+        elif ch.isascii() and (ch.isalnum() or ch in " -_:/.,()[]{}+&!?"):
+            score += 1
+        elif ch in "\r\n\t":
+            score += 0
+        else:
+            score -= 1
+    return score
+
+
+def _repair_mojibake_text(text):
+    sample = str(text or "")
+    if not _looks_like_mojibake(sample):
+        return sample
+    replaced = sample
+    for old, new in _MOJIBAKE_TEXT_REPLACEMENTS.items():
+        replaced = replaced.replace(old, new)
+    if replaced != sample and not _looks_like_mojibake(replaced):
+        return replaced
+    try:
+        repaired = sample.encode("gbk", errors="strict").decode("utf-8", errors="strict")
+    except Exception:
+        return replaced
+    if not repaired or repaired == sample:
+        return replaced
+    if _score_human_readable_text(repaired) < _score_human_readable_text(sample):
+        return replaced
+    return repaired
+
+
+def _repair_legacy_cache_strings(value):
+    if isinstance(value, str):
+        return _repair_mojibake_text(value)
+    if isinstance(value, list):
+        return [_repair_legacy_cache_strings(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_repair_legacy_cache_strings(v) for v in value)
+    if isinstance(value, dict):
+        return {
+            _repair_legacy_cache_strings(k): _repair_legacy_cache_strings(v)
+            for k, v in value.items()
+        }
+    return value
+
+
 def load_cache():
     with _cache_file_lock:
         _ensure_cache_loaded_unlocked()
@@ -913,7 +1155,9 @@ def _load_cache_from_disk():
             with open(CACHE_FILE, "rb") as f:
                 content = f.read().decode("utf-8", errors="ignore")
             cache = json.loads(content)
-        return cache if isinstance(cache, dict) else {}
+        if not isinstance(cache, dict):
+            return {}
+        return _repair_legacy_cache_strings(cache)
     except Exception as err:
         logging.error(f"加载缓存失败: {err}")
         return {}
