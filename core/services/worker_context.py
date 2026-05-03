@@ -467,6 +467,7 @@ class WorkerContext:
 
     def _resolve_db_match(self, item, query_title, year, is_tv, mode, ai_data, g):
         source_name = "TMDb" if mode == "siliconflow_tmdb" else "BGM"
+        db_year = None if is_tv else year
         query_groups = build_db_query_plan(item, query_title, ai_data, g)
         merged, seen_ids = [], set()
         used_query, _first_hit = query_title, False
@@ -489,7 +490,7 @@ class WorkerContext:
                     found.append(cand)
                 if (
                     mode == "siliconflow_tmdb"
-                    and self._pick_strong_tmdb_direct_hit([q], year, cur)[0] is not None
+                    and self._pick_strong_tmdb_direct_hit([q], db_year, cur)[0] is not None
                 ):
                     break
                 if len(found) >= limit:
@@ -501,13 +502,13 @@ class WorkerContext:
                 current = _search_queries(
                     query_titles,
                     lambda q: fetch_tmdb_candidates(
-                        q, year, is_tv, self.tmdb_api_key.get()
+                        q, db_year, is_tv, self.tmdb_api_key.get()
                     ),
                 )
             else:
                 current = _search_queries(
                     query_titles,
-                    lambda q: fetch_bgm_candidates(q, year, self.bgm_api_key.get()),
+                    lambda q: fetch_bgm_candidates(q, db_year, self.bgm_api_key.get()),
                 )
             if current:
                 merged.extend(current)
@@ -519,7 +520,7 @@ class WorkerContext:
             for query_titles in query_groups:
                 current = _search_queries(
                     query_titles,
-                    lambda q: fetch_bgm_candidates(q, year, self.bgm_api_key.get()),
+                    lambda q: fetch_bgm_candidates(q, db_year, self.bgm_api_key.get()),
                 )
                 if current:
                     merged.extend(current)
@@ -530,7 +531,7 @@ class WorkerContext:
 
         if merged:
             t_hit, tid_hit, msg_hit, meta_hit = self._select_best_db_match(
-                item, used_query, year, is_tv, source_name, merged,
+                item, used_query, db_year, is_tv, source_name, merged,
                 recognized_title=query_title,
             )
             if tid_hit != "None" and normalize_compare_text(used_query) != normalize_compare_text(query_title):
@@ -540,7 +541,7 @@ class WorkerContext:
                 # 封面/背景图仍从 TMDb 获取
                 if self.tmdb_api_key.get().strip():
                     _tmdb_cands = fetch_tmdb_candidates(
-                        t_hit or used_query, year, is_tv, self.tmdb_api_key.get()
+                        t_hit or used_query, db_year, is_tv, self.tmdb_api_key.get()
                     )
                     if _tmdb_cands:
                         _tc_meta = _tmdb_cands[0].get("meta") or {}
@@ -648,18 +649,12 @@ class WorkerContext:
         prefer_ollama = bool(self.prefer_ollama.get())
         online_ready = self._can_use_online_model_for_pick()
         ollama_ready = self._can_use_ollama_for_pick()
-        reason = ""
 
-        # Embedding rerank. When a chat model is available, embedding only
-        # changes candidate order; the chat model remains the final judge.
-        ranked, emb_pick, emb_msg = self._rerank_candidates_with_embedding(
+        # Embedding only reorders ambiguous candidates for the downstream AI
+        # judge. It must never be the final decider for high-risk matches.
+        ranked, _emb_pick, emb_msg = self._rerank_candidates_with_embedding(
             item, query_title, year, is_tv, source_name, candidates
         )
-        if emb_pick and not (online_ready or ollama_ready):
-            hit_msg = f"Embedding判定/{source_name}命中"
-            if emb_msg:
-                hit_msg += f" ({emb_msg})"
-            return candidate_to_result(emb_pick, hit_msg)
 
         def _candidate_result_from_model(label, chosen, reason):
             hit_msg = f"{label}/{source_name}命中"
@@ -669,79 +664,42 @@ class WorkerContext:
                 hit_msg += f" ({reason})"
             return candidate_to_result(chosen, hit_msg)
 
+        ai_attempted = False
+
         if prefer_ollama and ollama_ready:
+            ai_attempted = True
             chosen, reason = self._pick_candidate_with_ollama(
                 item, query_title, year, is_tv, source_name, ranked
             )
             if chosen:
                 return _candidate_result_from_model("Ollama判定", chosen, reason)
-            online_ready = False
 
         if online_ready:
+            ai_attempted = True
             chosen, reason = self._pick_candidate_with_online_model(
                 item, query_title, year, is_tv, source_name, ranked
             )
             if chosen:
                 return _candidate_result_from_model("在线模型判定", chosen, reason)
-            online_ready = False  # 在线模型未能判定，允许后续兜底逻辑生效
 
-        if (not prefer_ollama) and (not online_ready) and ollama_ready:
+        if (not prefer_ollama) and ollama_ready:
+            ai_attempted = True
             chosen, reason = self._pick_candidate_with_ollama(
                 item, query_title, year, is_tv, source_name, ranked
             )
             if chosen:
                 return _candidate_result_from_model("Ollama判定", chosen, reason)
 
-        auto_pick, auto_reason = self._auto_pick_candidate_by_score(
-            query_title, year, source_name, ranked
-        )
-        if auto_pick:
-            hit_msg = f"自动评分判定/{source_name}命中"
-            if emb_msg:
-                hit_msg += f" ({emb_msg})"
-            if reason:
-                hit_msg += f" ({reason})"
-            if auto_reason:
-                hit_msg += f" ({auto_reason})"
-            return candidate_to_result(auto_pick, hit_msg)
-
-        # TMDb can return the correct anime by romanized alias while the visible
-        # zh-CN/original titles are Chinese/Japanese. Use this only as a final
-        # fallback after embedding/model judgement has had a chance to decide.
-        if False and (
-            rank_pick_allowed
-            and source_name.startswith("TMDb")
-            and not online_ready
-            and _q_norm
-            and len(_q_norm) >= 6
-        ):
-            primary_hits = []
-            for _c in ranked:
-                _meta = _c.get("meta") or {}
-                _sq_norm = re.sub(
-                    r"[\W_]+",
-                    "",
-                    str(_meta.get("search_query") or "").lower(),
-                )
-                if _sq_norm == _q_norm:
-                    primary_hits.append(_c)
-            primary_hits.sort(
-                key=lambda c: safe_int((c.get("meta") or {}).get("search_rank"), 999)
-            )
-            if primary_hits:
-                _top = primary_hits[0]
-                _top_meta = _top.get("meta") or {}
-                _top_rank = safe_int(_top_meta.get("search_rank"), 999)
-                _top_year = extract_year_from_release(_top.get("release") or "")
-                _year_ok = not year or not _top_year or _top_year == str(year).strip()
-                if _top_rank == 1 and _year_ok:
-                    hit_msg = f"TMDb首位候选/{source_name}命中"
-                    if emb_msg:
-                        hit_msg += f" ({emb_msg})"
-                    return candidate_to_result(_top, hit_msg)
+        pending_reason = "候选存在歧义，需手动确认"
+        if ai_attempted:
+            pending_reason = "候选存在歧义，AI未能稳定判定"
+        elif not (online_ready or ollama_ready):
+            pending_reason = "候选存在歧义，未启用AI自动判定"
+        if emb_msg:
+            pending_reason += f" ({emb_msg})"
 
         # --- Headless mode: no manual popup, return pending ---
-        return query_title, "None", "待手动确认", {}
+        return query_title, "None", pending_reason, {}
 
     def _rerank_candidates_with_embedding(self, item, query_title, year, is_tv,
                                           source_name, candidates):
