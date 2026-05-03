@@ -18,6 +18,7 @@ from ai.ollama_ai import fetch_siliconflow_info, is_ai_rate_limited_error
 from core.services.matcher_service import (
     auto_pick_candidate_by_score,
     get_embedding,
+    get_online_embedding,
     pick_candidate_with_openai_compatible,
     parse_with_ollama,
     pick_candidate_with_ollama,
@@ -365,16 +366,36 @@ class WorkerContext:
         )
 
     def _can_use_embedding_rank(self):
+        if not self.use_embedding_rank.get():
+            return False
+
+        source = str(self.embedding_source.get() or "local").strip().lower()
+        if source == "online":
+            return bool(
+                self.sf_api_url.get().strip()
+                and self.sf_api_key.get().strip()
+                and self.online_embedding_model.get().strip()
+            )
+
         return bool(
-            self.use_embedding_rank.get()
-            and self.prefer_ollama.get()
-            and self.ollama_url.get().strip()
+            self.ollama_url.get().strip()
             and self.embedding_model.get().strip()
         )
 
     def _get_embedding(self, text):
         if not self._can_use_embedding_rank():
             return None
+        source = str(self.embedding_source.get() or "local").strip().lower()
+        if source == "online":
+            return get_online_embedding(
+                self.sf_api_url.get().strip(),
+                self.sf_api_key.get().strip(),
+                self.online_embedding_model.get().strip(),
+                text,
+                self.embedding_cache,
+                self.cache_lock,
+            )
+
         emb, endpoint = get_embedding(
             self.ollama_url.get().strip(),
             self.embedding_model.get().strip(),

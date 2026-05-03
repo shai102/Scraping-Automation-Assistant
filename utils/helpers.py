@@ -644,23 +644,17 @@ def extract_episode_number(pure_name, guess_data=None, ai_data=None):
 
 def derive_title_from_filename(pure_name):
     text = str(pure_name or "")
-    leading_title = extract_title_after_leading_release_group(text)
-    if leading_title:
-        return leading_title
-
+    leading_group_title = extract_title_after_leading_release_group(text)
+    if leading_group_title:
+        return leading_group_title
     bracket_title = extract_bracket_title_from_filename(text)
     if bracket_title:
         return bracket_title
-
     text = text.replace("_", " ").replace(".", " ")
     text = re.sub(r"(?i)\bS\d{1,2}E\d{1,4}\b.*$", "", text)
     text = re.sub(r"(?i)\bEP?\s*\d{1,4}\b.*$", "", text)
     text = re.sub(r"(?i)第\s*\d{1,4}\s*[集话話].*$", "", text)
     text = re.sub(r"(?i)[\[\(（]\s*\d{1,4}(?:v\d+)?\s*[\]\)）]\s*$", "", text)
-    # 去除末尾横线集号，如 " - 01"、" - 12v2"
-    text = re.sub(r"\s*[-–]\s*\d{1,3}(?:v\d)?\s*$", "", text).strip()
-    # 去除末尾独立季号，如 " S2"、" S12"
-    text = re.sub(r"(?i)\s+S\d{1,2}\s*$", "", text).strip()
     return clean_search_title(text)
 
 
@@ -777,6 +771,8 @@ def build_query_titles(item, query_title, ai_data, g):
         query_title,
         (ai_data or {}).get("title") if isinstance(ai_data, dict) else None,
         guess_title,
+        extract_title_after_leading_release_group(pure),
+        extract_bracket_title_from_filename(pure),
         derive_title_from_filename(pure),
         show_dir_title,
         clean_search_title(dir_title),

@@ -151,8 +151,6 @@ web/
     app.js                      # Vue 应用逻辑
     style.css                   # 样式
     vue.global.prod.js          # Vue 3 本地构建（离线可用）
-tests/
-  test_smoke.py                 # 冒烟测试
 ```
 
 > 当前仓库已完全移除旧 Tk 桌面界面代码，运行入口为 Web 服务 + 系统托盘壳；核心识别/归档逻辑已完成无 GUI 化，不再依赖旧桌面窗口。
