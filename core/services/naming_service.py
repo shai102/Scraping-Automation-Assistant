@@ -64,6 +64,11 @@ MEDIA_SUFFIX_START_RE = re.compile(
     )
     """,
 )
+LEGACY_EXT_PLACEHOLDER_RE = re.compile(r"(\s*-\s*)?\{ext\}")
+JINJA_EXT_PLACEHOLDER_RE = re.compile(r"(\s*-\s*)?\{\{\s*ext\s*\}\}")
+MEDIA_SUFFIX_PLACEHOLDER_RE = re.compile(
+    r"\{media_suffix\}|\{\{\s*media_suffix\s*\}\}"
+)
 
 
 def extract_lang_and_ext(filename, lang_tags):
@@ -117,21 +122,48 @@ def cleanup_rendered_filename(text):
     cleaned = re.sub(r"\s*[\(\[]\s*[\)\]]", "", cleaned)
     cleaned = re.sub(r"\s*\{\s*\}", "", cleaned)
     cleaned = re.sub(r"\s*\(\s*\)", "", cleaned)
+    cleaned = re.sub(r"\s+-\s*-\s+", " - ", cleaned)
     cleaned = re.sub(r"\s*-\s*(?=\.)|\s*-\s*$", "", cleaned)
     cleaned = re.sub(r"\s+(?=\.)", "", cleaned)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
     return cleaned.strip()
 
 
+def _inject_media_suffix_before_ext(
+    template, ext_pattern, media_suffix_placeholder, ext_placeholder
+):
+    """Insert a media suffix before the extension while reusing existing separators."""
+    working = str(template or "")
+    match = ext_pattern.search(working)
+    if match:
+        separator = match.group(1) or " - "
+        replacement = f"{separator}{media_suffix_placeholder}{ext_placeholder}"
+        return ext_pattern.sub(replacement, working, count=1)
+
+    if re.search(r"\s*-\s*$", working):
+        return working + media_suffix_placeholder
+    return working + f" - {media_suffix_placeholder}"
+
+
 def apply_media_suffix_template(template, media_suffix, preserve_media_suffix):
     """Auto-append media suffix before extension when enabled and template omits it."""
     working = str(template or "")
     suffix = str(media_suffix or "").strip()
-    if preserve_media_suffix and suffix and "{media_suffix}" not in working:
-        if "{ext}" in working:
-            working = working.replace("{ext}", " - {media_suffix}{ext}", 1)
+    if preserve_media_suffix and suffix and not MEDIA_SUFFIX_PLACEHOLDER_RE.search(working):
+        if _is_jinja2_template(working):
+            working = _inject_media_suffix_before_ext(
+                working,
+                JINJA_EXT_PLACEHOLDER_RE,
+                "{{ media_suffix }}",
+                "{{ ext }}",
+            )
         else:
-            working = working + " - {media_suffix}"
+            working = _inject_media_suffix_before_ext(
+                working,
+                LEGACY_EXT_PLACEHOLDER_RE,
+                "{media_suffix}",
+                "{ext}",
+            )
     return working
 
 

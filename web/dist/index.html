@@ -16,7 +16,7 @@
         <div class="app-brand-mark">🎬</div>
         <div>
           <h2>刮削助手</h2>
-          <span>v3.4</span>
+          <span>v3.5</span>
         </div>
       </div>
     </div>
@@ -963,10 +963,16 @@
         <div class="form-group">
           <label>TV 命名格式</label>
           <textarea v-model="cfg.tv_format" rows="2" style="font-family:monospace;resize:vertical"></textarea>
+          <div class="template-preview-trigger">
+            <button class="btn btn-sm" @click="previewFilenameTemplate(true)">预览</button>
+          </div>
         </div>
         <div class="form-group">
           <label>电影命名格式</label>
           <textarea v-model="cfg.movie_format" rows="2" style="font-family:monospace;resize:vertical"></textarea>
+          <div class="template-preview-trigger">
+            <button class="btn btn-sm" @click="previewFilenameTemplate(false)">预览</button>
+          </div>
         </div>
         <div class="form-group">
           <label>视频扩展名</label>
@@ -1232,6 +1238,43 @@
       <span class="toast-dot"></span>
       <span class="toast-text">{{toast.message}}</span>
       <button class="toast-close" @click="removeToast(toast.id)" title="关闭">×</button>
+    </div>
+  </div>
+  <div class="modal-overlay" v-if="templatePreviewVisible" @click.self="templatePreviewVisible=false">
+    <div class="modal template-preview-modal">
+      <div class="template-preview-head">
+        <div>
+          <h2>{{templatePreviewData && templatePreviewData.is_tv ? 'TV 命名模板预览' : '电影命名模板预览'}}</h2>
+          <p>使用当前页面未保存的模板内容即时渲染示例文件名。</p>
+        </div>
+        <button class="template-preview-close" @click="templatePreviewVisible=false">&times;</button>
+      </div>
+      <div v-if="templatePreviewLoading" class="template-preview-loading">正在生成预览...</div>
+      <div v-else-if="templatePreviewData" class="template-preview-content">
+        <div v-if="templatePreviewData.ok" class="template-preview-grid">
+          <div class="template-preview-block">
+            <strong>当前模板</strong>
+            <pre>{{templatePreviewData.template}}</pre>
+          </div>
+          <div class="template-preview-block">
+            <strong>预览结果</strong>
+            <pre>{{templatePreviewData.preview_name}}</pre>
+          </div>
+          <div class="template-preview-block">
+            <strong>示例变量</strong>
+            <dl class="template-preview-dl">
+              <div><dt>title</dt><dd>{{templatePreviewData.sample.title}}</dd></div>
+              <div><dt>year</dt><dd>{{templatePreviewData.sample.year}}</dd></div>
+              <div><dt>season</dt><dd>{{templatePreviewData.sample.season}}</dd></div>
+              <div><dt>episode</dt><dd>{{templatePreviewData.sample.episode}}</dd></div>
+              <div><dt>ep_name</dt><dd>{{templatePreviewData.sample.ep_name || '(空)'}}</dd></div>
+              <div><dt>ext</dt><dd>{{templatePreviewData.sample.ext}}</dd></div>
+              <div><dt>media_suffix</dt><dd>{{templatePreviewData.media_suffix || '未启用 / 未提取'}}</dd></div>
+            </dl>
+          </div>
+        </div>
+        <div v-else class="msg msg-err" style="margin-top:0">{{templatePreviewData.error}}</div>
+      </div>
     </div>
   </div>
   <div class="app-confirm-mask" v-if="confirmDialog.visible" @click.self="resolveConfirm(false)">

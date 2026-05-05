@@ -60,6 +60,9 @@ const app = Vue.createApp({
       // Settings
       cfg: {},
       testResult: null,
+      templatePreviewVisible: false,
+      templatePreviewLoading: false,
+      templatePreviewData: null,
       proxyTestResult: null,
       proxyTesting: false,
       tgTestResult: null,
@@ -1121,6 +1124,31 @@ const app = Vue.createApp({
         await this.api('PUT', '/api/settings', this.cfg);
         this.testResult = { ok: true, message: '配置已保存并生效' };
       } catch (e) { this.testResult = { ok: false, message: e.message }; }
+    },
+    async previewFilenameTemplate(isTv) {
+      var template = isTv ? this.cfg.tv_format : this.cfg.movie_format;
+      if (!String(template || '').trim()) {
+        this.notify('请先输入命名模板', 'warning');
+        return;
+      }
+      this.templatePreviewLoading = true;
+      this.templatePreviewVisible = true;
+      this.templatePreviewData = null;
+      try {
+        this.templatePreviewData = await this.api('POST', '/api/settings/preview-filename', {
+          template: template,
+          is_tv: !!isTv,
+          preserve_media_suffix: !!this.cfg.preserve_media_suffix,
+        });
+      } catch (e) {
+        this.templatePreviewData = {
+          ok: false,
+          is_tv: !!isTv,
+          template: template,
+          error: e.message,
+        };
+      }
+      this.templatePreviewLoading = false;
     },
     async testTmdb() {
       this.testResult = null;
