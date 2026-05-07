@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 import shutil
 import threading
 import uuid
@@ -10,6 +11,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import Optional
 
 from core.models.media_item import MediaItem
@@ -137,8 +139,12 @@ def list_records(
         norm_dir = os.path.normpath(dir)
         # 用 SQL LIKE 过滤，避免全表加载到内存
         q = q.filter(
-            ScrapeRecord.original_path.like(norm_dir.replace('\\', '/') + '/%') |
-            ScrapeRecord.original_path.like(norm_dir + os.sep + '%')
+            or_(
+                ScrapeRecord.target_path.like(norm_dir.replace('\\', '/') + '/%'),
+                ScrapeRecord.target_path.like(norm_dir + os.sep + '%'),
+                ScrapeRecord.original_path.like(norm_dir.replace('\\', '/') + '/%'),
+                ScrapeRecord.original_path.like(norm_dir + os.sep + '%'),
+            )
         )
     total = q.count()
     rows = q.order_by(ScrapeRecord.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
@@ -158,7 +164,7 @@ def list_records_grouped(
     parse_source: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    """Return records grouped by source directory (summary only, no full records)."""
+    """Return records grouped by output directory when available."""
     q = db.query(ScrapeRecord)
     if status:
         q = q.filter(ScrapeRecord.status == status)
@@ -172,7 +178,7 @@ def list_records_grouped(
 
     groups: dict = {}
     for r in rows:
-        dir_path = os.path.normpath(os.path.dirname(r.original_path))
+        dir_path = _record_output_group_dir(r)
         if dir_path not in groups:
             groups[dir_path] = {
                 "dir_path": dir_path,
@@ -211,12 +217,289 @@ class BatchDeleteBody(BaseModel):
     ids: list[int]
 
 
+class GroupDeleteBody(BaseModel):
+    ids: list[int]
+    group_dir: str
+
+
+def _normcase_path(path: str) -> str:
+    return os.path.normcase(os.path.normpath(str(path or "")))
+
+
+def _record_output_group_dir(row: ScrapeRecord) -> str:
+    target = str(row.target_path or "").strip()
+    if target:
+        return os.path.normpath(os.path.dirname(target))
+    return os.path.normpath(os.path.dirname(row.original_path))
+
+
+def _record_output_cleanup_paths(row: ScrapeRecord) -> list[str]:
+    target = str(row.target_path or "").strip()
+    if not target:
+        return []
+
+    paths = [target]
+    stem, _ = os.path.splitext(target)
+    for suffix in (".nfo", "-thumb.jpg"):
+        paths.append(stem + suffix)
+    return paths
+
+
+def _directory_has_media(directory: str) -> bool:
+    if not os.path.isdir(directory):
+        return False
+    for dirpath, _, filenames in os.walk(directory):
+        for fn in filenames:
+            if fn.lower().endswith(_MEDIA_EXTS):
+                return True
+    return False
+
+
+def _delete_dir_sidecars_only(directory: str) -> int:
+    if not os.path.isdir(directory):
+        return 0
+
+    deleted = 0
+    try:
+        names = os.listdir(directory)
+    except Exception as err:
+        logger.warning("Failed to list group directory %s: %s", directory, err)
+        return 0
+
+    for fn in names:
+        fp = os.path.join(directory, fn)
+        if not os.path.isfile(fp):
+            continue
+        fn_lower = fn.lower()
+        should_remove = fn_lower in _DIR_SIDECAR_EXACT
+        if not should_remove:
+            for prefix, suffixes in _DIR_SIDECAR_PATTERNS:
+                if fn_lower.startswith(prefix) and fn_lower.endswith(suffixes):
+                    should_remove = True
+                    break
+        if not should_remove:
+            continue
+        if _safe_remove_file(fp):
+            deleted += 1
+    return deleted
+
+
+def _safe_remove_file(path: str) -> bool:
+    try:
+        if os.path.isfile(path) or os.path.islink(path):
+            os.remove(path)
+            return True
+    except Exception as err:
+        logger.warning("Failed to remove file %s: %s", path, err)
+    return False
+
+
+def _cleanup_empty_group_dir(group_dir: str) -> bool:
+    try:
+        if not os.path.isdir(group_dir):
+            return False
+        if os.listdir(group_dir):
+            return False
+        os.rmdir(group_dir)
+        return True
+    except Exception as err:
+        logger.warning("Failed to remove group directory %s: %s", group_dir, err)
+        return False
+
+
+def _extract_group_season_number(group_dir: str, rows: list[ScrapeRecord]) -> Optional[int]:
+    for row in rows:
+        if not row.metadata_json:
+            continue
+        try:
+            meta = json.loads(row.metadata_json)
+        except Exception:
+            continue
+        value = meta.get("s")
+        try:
+            season_num = int(value)
+        except Exception:
+            continue
+        if season_num >= 0:
+            return season_num
+
+    base = os.path.basename(os.path.normpath(group_dir))
+    match = re.match(r"^(?:Season\s*|S)(\d+)$", base, re.I)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except Exception:
+        return None
+
+
+def _season_root_sidecar_paths(group_dir: str, season_num: Optional[int]) -> list[str]:
+    if season_num is None:
+        return []
+    show_root = os.path.dirname(os.path.normpath(group_dir))
+    if not show_root or show_root == group_dir:
+        return []
+    season_fmt = f"{int(season_num):02d}"
+    return [
+        os.path.join(show_root, f"season{season_fmt}.nfo"),
+        os.path.join(show_root, f"season{season_fmt}-poster.jpg"),
+    ]
+
+
+def _resolve_group_cleanup_root(rows: list[ScrapeRecord], folders_by_id: dict[int, MonitorFolder]) -> Optional[str]:
+    roots = set()
+    for row in rows:
+        folder = folders_by_id.get(row.folder_id) if row.folder_id else None
+        if not folder:
+            continue
+        organize_mode = getattr(folder, "organize_mode", "move") or "move"
+        candidate = folder.path if organize_mode == "rename" else folder.target_root
+        candidate = os.path.normpath(str(candidate or "").strip())
+        if candidate:
+            roots.add(os.path.normcase(candidate))
+    if len(roots) != 1:
+        return None
+
+    only_root = next(iter(roots))
+    for row in rows:
+        folder = folders_by_id.get(row.folder_id) if row.folder_id else None
+        if not folder:
+            continue
+        organize_mode = getattr(folder, "organize_mode", "move") or "move"
+        candidate = folder.path if organize_mode == "rename" else folder.target_root
+        candidate = os.path.normpath(str(candidate or "").strip())
+        if os.path.normcase(candidate) == only_root:
+            return candidate
+    return None
+
+
+def _cleanup_parent_show_dir(
+    group_dir: str,
+    season_num: Optional[int],
+    cleanup_root: Optional[str],
+) -> tuple[int, bool]:
+    show_root = os.path.dirname(os.path.normpath(group_dir))
+    if not show_root or show_root == group_dir:
+        return 0, False
+
+    files_deleted = 0
+    if not _directory_has_media(group_dir):
+        for path in _season_root_sidecar_paths(group_dir, season_num):
+            if _safe_remove_file(path):
+                files_deleted += 1
+
+    if _directory_has_media(show_root):
+        return files_deleted, False
+
+    files_deleted += _delete_dir_sidecars_only(show_root)
+
+    dir_deleted = False
+    if cleanup_root:
+        from monitor.watcher import _remove_empty_dirs
+
+        before_exists = os.path.isdir(show_root)
+        _remove_empty_dirs(show_root, stop_at=cleanup_root)
+        dir_deleted = before_exists and not os.path.exists(show_root)
+    else:
+        dir_deleted = _cleanup_empty_group_dir(show_root)
+
+    return files_deleted, dir_deleted
+
+
 @router.post("/batch-delete")
 def batch_delete(body: BatchDeleteBody, db: Session = Depends(get_db)):
     """Delete multiple records by IDs."""
     deleted = db.query(ScrapeRecord).filter(ScrapeRecord.id.in_(body.ids)).delete(synchronize_session=False)
     db.commit()
     return {"ok": True, "deleted": deleted}
+
+
+@router.post("/delete-group")
+def delete_group(body: GroupDeleteBody, db: Session = Depends(get_db)):
+    group_dir = os.path.normpath(str(body.group_dir or "").strip())
+    if not group_dir:
+        raise HTTPException(400, detail="分组目录不能为空")
+    if not body.ids:
+        return {
+            "ok": True,
+            "deleted": 0,
+            "files_deleted": 0,
+            "dir_deleted": False,
+            "group_dir": group_dir,
+        }
+
+    rows = db.query(ScrapeRecord).filter(ScrapeRecord.id.in_(body.ids)).all()
+    if not rows:
+        return {
+            "ok": True,
+            "deleted": 0,
+            "files_deleted": 0,
+            "dir_deleted": False,
+            "group_dir": group_dir,
+        }
+
+    folder_ids = {row.folder_id for row in rows if row.folder_id}
+    folders_by_id = {}
+    if folder_ids:
+        folders = db.query(MonitorFolder).filter(MonitorFolder.id.in_(folder_ids)).all()
+        folders_by_id = {folder.id: folder for folder in folders}
+    cleanup_root = _resolve_group_cleanup_root(rows, folders_by_id)
+    season_num = _extract_group_season_number(group_dir, rows)
+
+    expected_group = _normcase_path(group_dir)
+    files_to_delete = []
+    for row in rows:
+        row_group = _normcase_path(_record_output_group_dir(row))
+        if row_group != expected_group:
+            raise HTTPException(400, detail="分组记录与目标目录不匹配，已取消删除")
+        files_to_delete.extend(_record_output_cleanup_paths(row))
+
+    other_rows = db.query(ScrapeRecord).filter(~ScrapeRecord.id.in_(body.ids)).all()
+    blocked_files = set()
+    for row in other_rows:
+        row_group = _normcase_path(_record_output_group_dir(row))
+        if row_group != expected_group:
+            continue
+        for path in _record_output_cleanup_paths(row):
+            blocked_files.add(_normcase_path(path))
+
+    can_touch_group_dir = bool(files_to_delete)
+    files_deleted = 0
+    visited = set()
+    for path in files_to_delete:
+        norm_path = _normcase_path(path)
+        if not norm_path or norm_path in visited or norm_path in blocked_files:
+            continue
+        visited.add(norm_path)
+        if _safe_remove_file(path):
+            files_deleted += 1
+
+    if can_touch_group_dir:
+        files_deleted += _delete_dir_sidecars_only(group_dir)
+
+    deleted = (
+        db.query(ScrapeRecord)
+        .filter(ScrapeRecord.id.in_(body.ids))
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    dir_deleted = _cleanup_empty_group_dir(group_dir) if can_touch_group_dir else False
+    parent_files_deleted = 0
+    parent_dir_deleted = False
+    if can_touch_group_dir:
+        parent_files_deleted, parent_dir_deleted = _cleanup_parent_show_dir(
+            group_dir,
+            season_num,
+            cleanup_root,
+        )
+        files_deleted += parent_files_deleted
+    return {
+        "ok": True,
+        "deleted": deleted,
+        "files_deleted": files_deleted,
+        "dir_deleted": dir_deleted or parent_dir_deleted,
+        "group_dir": group_dir,
+    }
 
 
 @router.post("/clear-failed")

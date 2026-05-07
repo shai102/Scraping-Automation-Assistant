@@ -5,13 +5,51 @@ import threading
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from typing import Optional, List
 
 from db.database import get_db, vacuum_db
 from db.scrape_models import SymlinkRecord, MonitorFolder
 
 router = APIRouter(prefix="/api/symlinks", tags=["symlinks"])
+
+
+class GroupDeleteBody(BaseModel):
+    ids: List[int]
+    group_dir: str
+
+
+def _normcase_path(path: str) -> str:
+    return os.path.normcase(os.path.normpath(str(path or "")))
+
+
+def _symlink_group_dir(row: SymlinkRecord) -> str:
+    link_path = str(row.link_path or "").strip()
+    if link_path:
+        return os.path.normpath(os.path.dirname(link_path))
+    return os.path.normpath(os.path.dirname(row.original_path))
+
+
+def _safe_remove_path(path: str) -> bool:
+    try:
+        if os.path.isfile(path) or os.path.islink(path):
+            os.remove(path)
+            return True
+    except Exception:
+        return False
+    return False
+
+
+def _cleanup_empty_group_dir(group_dir: str) -> bool:
+    try:
+        if not os.path.isdir(group_dir):
+            return False
+        if os.listdir(group_dir):
+            return False
+        os.rmdir(group_dir)
+        return True
+    except Exception:
+        return False
 
 
 class SymlinkOut(BaseModel):
@@ -47,8 +85,12 @@ def list_symlinks(
     if dir:
         norm_dir = os.path.normpath(dir)
         q = q.filter(
-            SymlinkRecord.original_path.like(norm_dir.replace('\\', '/') + '/%') |
-            SymlinkRecord.original_path.like(norm_dir + os.sep + '%')
+            or_(
+                SymlinkRecord.link_path.like(norm_dir.replace('\\', '/') + '/%'),
+                SymlinkRecord.link_path.like(norm_dir + os.sep + '%'),
+                SymlinkRecord.original_path.like(norm_dir.replace('\\', '/') + '/%'),
+                SymlinkRecord.original_path.like(norm_dir + os.sep + '%'),
+            )
         )
     total = q.count()
     rows = q.order_by(SymlinkRecord.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
@@ -82,7 +124,7 @@ def list_symlinks_grouped(
     keyword: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    """Return symlink records grouped by original source directory."""
+    """Return symlink records grouped by output directory when available."""
     q = db.query(SymlinkRecord)
     if folder_id:
         q = q.filter(SymlinkRecord.folder_id == folder_id)
@@ -94,7 +136,7 @@ def list_symlinks_grouped(
 
     groups: dict = {}
     for r in rows:
-        dir_path = os.path.normpath(os.path.dirname(r.original_path))
+        dir_path = _symlink_group_dir(r)
         if dir_path not in groups:
             groups[dir_path] = {
                 "dir_path": dir_path,
@@ -144,6 +186,77 @@ def batch_delete(body: dict, db: Session = Depends(get_db)):
     deleted = db.query(SymlinkRecord).filter(SymlinkRecord.id.in_(ids)).delete(synchronize_session=False)
     db.commit()
     return {"ok": True, "deleted": deleted}
+
+
+@router.post("/delete-group")
+def delete_group(body: GroupDeleteBody, db: Session = Depends(get_db)):
+    group_dir = os.path.normpath(str(body.group_dir or "").strip())
+    if not group_dir:
+        raise HTTPException(400, detail="分组目录不能为空")
+    if not body.ids:
+        return {
+            "ok": True,
+            "deleted": 0,
+            "files_deleted": 0,
+            "dir_deleted": False,
+            "group_dir": group_dir,
+        }
+
+    rows = db.query(SymlinkRecord).filter(SymlinkRecord.id.in_(body.ids)).all()
+    if not rows:
+        return {
+            "ok": True,
+            "deleted": 0,
+            "files_deleted": 0,
+            "dir_deleted": False,
+            "group_dir": group_dir,
+        }
+
+    expected_group = _normcase_path(group_dir)
+    files_to_delete = []
+    for row in rows:
+        row_group = _normcase_path(_symlink_group_dir(row))
+        if row_group != expected_group:
+            raise HTTPException(400, detail="分组记录与目标目录不匹配，已取消删除")
+        link_path = str(row.link_path or "").strip()
+        if link_path:
+            files_to_delete.append(link_path)
+
+    other_rows = db.query(SymlinkRecord).filter(~SymlinkRecord.id.in_(body.ids)).all()
+    blocked_files = set()
+    for row in other_rows:
+        row_group = _normcase_path(_symlink_group_dir(row))
+        if row_group != expected_group:
+            continue
+        link_path = str(row.link_path or "").strip()
+        if link_path:
+            blocked_files.add(_normcase_path(link_path))
+
+    can_touch_group_dir = bool(files_to_delete)
+    files_deleted = 0
+    visited = set()
+    for path in files_to_delete:
+        norm_path = _normcase_path(path)
+        if not norm_path or norm_path in visited or norm_path in blocked_files:
+            continue
+        visited.add(norm_path)
+        if _safe_remove_path(path):
+            files_deleted += 1
+
+    deleted = (
+        db.query(SymlinkRecord)
+        .filter(SymlinkRecord.id.in_(body.ids))
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    dir_deleted = _cleanup_empty_group_dir(group_dir) if can_touch_group_dir else False
+    return {
+        "ok": True,
+        "deleted": deleted,
+        "files_deleted": files_deleted,
+        "dir_deleted": dir_deleted,
+        "group_dir": group_dir,
+    }
 
 
 @router.post("/clear-failed")

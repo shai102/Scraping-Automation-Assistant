@@ -1,6 +1,8 @@
 /* app.js — Vue 3 SPA (Vue is loaded via <script> in index.html) */
 
 const API = window.location.origin;
+const GROUPED_VIEW_KEY = 'scraping_records_grouped_view';
+const SYMLINK_GROUPED_VIEW_KEY = 'scraping_symlink_grouped_view';
 
 const app = Vue.createApp({
   data() {
@@ -108,11 +110,20 @@ const app = Vue.createApp({
     };
   },
   mounted() {
+    try {
+      this.groupedView = localStorage.getItem(GROUPED_VIEW_KEY) === '1';
+      this.symlinkGroupedView = localStorage.getItem(SYMLINK_GROUPED_VIEW_KEY) === '1';
+    } catch (e) {}
     this.loadSettings();
     this.loadFolders();
-    this.loadRecords();
     this.connectWs();
     // Load page-specific data on initial mount (handles F5 refresh)
+    if (this.page === 'records') {
+      if (this.groupedView) this.loadGroupedRecords();
+      else this.loadRecords();
+    } else {
+      this.loadRecords();
+    }
     if (this.page === 'symlink_records') {
       if (this.symlinkGroupedView) this.loadSymlinkGroupedRecords();
       else this.loadSymlinkRecords();
@@ -122,6 +133,10 @@ const app = Vue.createApp({
     // Keep hash in sync when page changes, so F5 restores correctly
     this.$watch('page', function(val) {
       location.hash = val;
+      if (val === 'records') {
+        if (this.groupedView) this.loadGroupedRecords();
+        else this.loadRecords();
+      }
       if (val === 'symlink_records') {
         if (this.symlinkGroupedView) this.loadSymlinkGroupedRecords();
         else this.loadSymlinkRecords();
@@ -416,6 +431,7 @@ const app = Vue.createApp({
     },
     toggleSymlinkGroupedView() {
       this.symlinkGroupedView = !this.symlinkGroupedView;
+      try { localStorage.setItem(SYMLINK_GROUPED_VIEW_KEY, this.symlinkGroupedView ? '1' : '0'); } catch (e) {}
       this.symlinkSelectedIds = [];
       if (this.symlinkGroupedView) this.loadSymlinkGroupedRecords();
       else this.loadSymlinkRecords();
@@ -567,15 +583,16 @@ const app = Vue.createApp({
     },
     async deleteSymlinkGroup(g) {
       if (!(await this.confirmAction({
-        title: '删除软链接分组',
-        message: '确认删除「' + g.dir_name + '」内的全部 ' + g.total + ' 条软链接记录？',
-        confirmText: '删除',
+        title: '删除软连接分组并清理目录',
+        message: '确认删除“' + g.dir_name + '”内的全部 ' + g.total + ' 条软连接记录，并同步清理目录中的软连接文件？\n\n目录：' + g.dir_path,
+        confirmText: '删除并清理',
         danger: true,
       }))) return;
       try {
-        await this.api('POST', '/api/symlinks/batch-delete', { ids: g.ids });
+        var res = await this.api('POST', '/api/symlinks/delete-group', { ids: g.ids, group_dir: g.dir_path });
         this.loadSymlinkGroupedRecords();
         this.loadSymlinkStats();
+        this.notify('已删除 ' + (res.deleted || 0) + ' 条记录，清理 ' + (res.files_deleted || 0) + ' 个文件' + (res.dir_deleted ? '，并删除空目录' : ''), 'success');
       } catch (e) { this.notify(e.message, 'error'); }
     },
     async deleteSymlinkGroupRecord(g, id) {
@@ -922,6 +939,7 @@ const app = Vue.createApp({
     // --- Grouped View ---
     toggleGroupedView() {
       this.groupedView = !this.groupedView;
+      try { localStorage.setItem(GROUPED_VIEW_KEY, this.groupedView ? '1' : '0'); } catch (e) {}
       this.selectedIds = [];
       if (this.groupedView) {
         this.loadGroupedRecords();
@@ -997,14 +1015,15 @@ const app = Vue.createApp({
     },
     async deleteGroup(g) {
       if (!(await this.confirmAction({
-        title: '删除分组记录',
-        message: '确认删除「' + g.dir_name + '」内的全部 ' + g.total + ' 条记录？',
-        confirmText: '删除',
+        title: '删除刮削分组并清理目录',
+        message: '确认删除“' + g.dir_name + '”内的全部 ' + g.total + ' 条刮削记录，并同步清理该输出目录下的归档文件？\n\n目录：' + g.dir_path,
+        confirmText: '删除并清理',
         danger: true,
       }))) return;
       try {
-        await this.api('POST', '/api/records/batch-delete', { ids: g.ids });
+        var res = await this.api('POST', '/api/records/delete-group', { ids: g.ids, group_dir: g.dir_path });
         this.loadGroupedRecords();
+        this.notify('已删除 ' + (res.deleted || 0) + ' 条记录，清理 ' + (res.files_deleted || 0) + ' 个文件' + (res.dir_deleted ? '，并删除空目录' : ''), 'success');
       } catch (e) { this.notify(e.message, 'error'); }
     },
     async deleteGroupRecord(g, id) {

@@ -1342,6 +1342,9 @@ def save_image(path, url_part):
         )
         if os.path.exists(path):
             return
+        parent_dir = os.path.dirname(path)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
 
         with _image_semaphore:
             time.sleep(0.3)  # 限速间隔，避免并发请求触发 TMDB CDN 的 10054 RST
