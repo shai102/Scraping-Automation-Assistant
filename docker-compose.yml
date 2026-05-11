@@ -1,0 +1,63 @@
+services:
+  scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: media-scraper:latest
+    container_name: media-scraper
+    restart: unless-stopped
+
+    ports:
+      - "8090:8090"           # Web 管理界面
+
+    environment:
+      - DATA_DIR=/data        # 持久化数据目录（DB、配置、缓存、日志）
+      - TZ=Asia/Shanghai      # 时区
+      # - PORT=8090           # 修改监听端口（同时改 ports 映射）
+
+      # HTTP 代理（可选，用于访问 TMDB / AI API）
+      # - HTTP_PROXY=http://your-proxy:7890
+      # - HTTPS_PROXY=http://your-proxy:7890
+      # - NO_PROXY=localhost,127.0.0.1
+
+    volumes:
+      # ── 持久化数据（必须挂载，否则重启后数据丢失）──
+      - scraper_data:/data
+
+      # ── 媒体文件目录（按需挂载）──────────────────
+      # 格式: <宿主机路径>:<容器内路径>
+      # 在「监控目录」配置页面填写容器内路径（冒号右侧的路径）。
+      #
+      # 示例：
+      # - /your/downloads:/downloads:rw   # 监控目录（读写，用于 move/copy 模式）
+      # - /your/media:/media:rw           # 整理目标目录
+      #
+      # 只读挂载示例（symlink 模式时源目录可只读）：
+      # - /your/downloads:/downloads:ro
+      #
+      # ⚠️  硬链接（hardlink）模式注意：
+      #     os.link() 要求源文件和目标文件在同一文件系统。
+      #     若监控目录和整理目标是两个独立 volume 挂载，会报
+      #     "EXDEV: cross-device link not permitted" 错误。
+      #     解决方法：将两个目录挂到同一宿主机路径下，例如：
+      #       - /your/disk:/disk:rw
+      #     然后监控目录配 /disk/downloads，整理目标配 /disk/media。
+      #
+      # ⚠️  Docker Desktop for Windows 实时监控注意：
+      #     Docker Desktop 使用虚拟机，Windows 宿主机的文件写入事件
+      #     无法触发容器内 inotify，watchdog 实时事件可能收不到。
+      #     不会丢文件——程序内置 120 秒轮询兜底，但实时性最多延迟 2 分钟。
+      #     标准 Linux 宿主机上直接运行 Docker 不存在此问题。
+
+    # 健康检查：确认 Web 服务可用
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8090/api/settings')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  scraper_data:
+    driver: local

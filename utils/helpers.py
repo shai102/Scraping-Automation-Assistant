@@ -23,7 +23,7 @@ import sys as _sys
 if getattr(_sys, 'frozen', False):
     _CFG_DIR = os.path.dirname(_sys.executable)
 else:
-    _CFG_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _CFG_DIR = os.environ.get('DATA_DIR') or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CONFIG_FILE = os.path.join(_CFG_DIR, 'renamer_config.json')
 CACHE_FILE = os.path.join(_CFG_DIR, 'api_cache.json')
@@ -125,7 +125,8 @@ MEDIA_NOISE_TOKEN_RE = re.compile(
     r"""(?ix)^(
         NF|NETFLIX|AMZN|AMAZON|DSNP|DISNEY|TVING|WEB|WEBDL|WEBRIP|BLURAY|BDRIP|BDREMUX|REMUX|UHD
         |X264|X265|H264|H265|HEVC|AV1|HDR|HDR10|DV
-        |AAC\d*|DDP\d*|DD\d*|DTS(?:HD)?\d*|TRUEHD\d*|ATMOS
+        |AAC\d*|DDP\d*|DD\d*|DTS(?:HD)?\d*|TRUEHD\d*|ATMOS|MA
+        |PROPER|REPACK|RERIP|INTERNAL|LIMITED|EXTENDED|UNCUT|UNRATED|HYBRID
     )$"""
 )
 
@@ -876,6 +877,9 @@ def build_query_titles(item, query_title, ai_data, g):
 
     dir_title = os.path.basename(item_dir)
     guess_title = clean_search_title((g.get("title") if g else None) or "")
+    ai_title = clean_search_title(
+        (ai_data or {}).get("title") if isinstance(ai_data, dict) else ""
+    )
 
     # 若直接父目录是 Season 文件夹（Season 2 / S02 / 第2季），向上取祖父目录作为剧名
     show_dir_title = ""
@@ -924,6 +928,11 @@ def build_query_titles(item, query_title, ai_data, g):
             expanded_candidates.append(normalized)
 
     ordered = unique_keep_order(expanded_candidates)
+    protected_norms = {
+        normalize_compare_text(text)
+        for text in (clean_search_title(query_title), guess_title, ai_title)
+        if is_meaningful_query_title(text)
+    }
     strong_norms = [
         normalize_compare_text(text)
         for text in ordered
@@ -937,6 +946,7 @@ def build_query_titles(item, query_title, ai_data, g):
         if (
             len(str(text or "").split()) == 1
             and len(norm) < 8
+            and norm not in protected_norms
             and any(norm != strong and norm in strong for strong in strong_norms)
         ):
             continue

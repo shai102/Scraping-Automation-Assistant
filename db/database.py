@@ -4,11 +4,12 @@ import sys
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
-# When frozen by PyInstaller, place the DB next to the .exe
+# When frozen by PyInstaller, place the DB next to the .exe.
+# In Docker mode, DATA_DIR env var redirects persistent files to a mounted volume.
 if getattr(sys, 'frozen', False):
     _BASE_DIR = os.path.dirname(sys.executable)
 else:
-    _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _BASE_DIR = os.environ.get('DATA_DIR') or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DB_PATH = os.path.join(_BASE_DIR, 'media_renamer.db')
 DATABASE_URL = f'sqlite:///{DB_PATH}'
