@@ -945,6 +945,13 @@ def build_query_titles(item, query_title, ai_data, g):
         norm = normalize_compare_text(text)
         if (
             len(str(text or "").split()) == 1
+            and len(norm) <= 2
+            and re.fullmatch(r"[A-Za-z']+", str(text or ""))
+            and norm not in protected_norms
+        ):
+            continue
+        if (
+            len(str(text or "").split()) == 1
             and len(norm) < 8
             and norm not in protected_norms
             and any(norm != strong and norm in strong for strong in strong_norms)

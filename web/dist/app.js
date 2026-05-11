@@ -68,12 +68,14 @@ const app = Vue.createApp({
       proxyTestResult: null,
       proxyTesting: false,
       tgTestResult: null,
+      embyTestResult: null,
       ollamaModels: [],
       // API key visibility (default hidden)
       showTmdbKey: false,
       showBgmKey: false,
       showSfKey: false,
       showTgToken: false,
+      showEmbyKey: false,
       // Recognition test
       recognitionTab: 'single',
       recognitionName: '',
@@ -1248,6 +1250,14 @@ const app = Vue.createApp({
         var r = await this.api('POST', '/api/settings/test-telegram');
         this.tgTestResult = r;
       } catch (e) { this.tgTestResult = { ok: false, message: e.message }; }
+    },
+    async testEmby() {
+      this.embyTestResult = null;
+      try {
+        await this.api('PUT', '/api/settings', this.cfg);
+        var r = await this.api('POST', '/api/settings/test-emby');
+        this.embyTestResult = r;
+      } catch (e) { this.embyTestResult = { ok: false, message: e.message }; }
     },
   },
 });

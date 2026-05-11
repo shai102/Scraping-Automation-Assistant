@@ -16,7 +16,7 @@
         <div class="app-brand-mark">🎬</div>
         <div>
           <h2>刮削助手</h2>
-          <span>v3.7</span>
+          <span>v3.8</span>
         </div>
       </div>
     </div>
@@ -53,6 +53,9 @@
       </li>
       <li :class="{active: page==='tgnotify'}" @click="page='tgnotify'">
         <span class="icon">📨</span> TG 通知
+      </li>
+      <li :class="{active: page==='embynotify'}" @click="page='embynotify'">
+        <span class="icon">📡</span> Emby 通知
       </li>
     </ul>
   </nav>
@@ -1041,6 +1044,40 @@
           <button class="btn" @click="testTelegram">测试发送</button>
         </div>
         <div v-if="tgTestResult" :class="['msg', tgTestResult.ok?'msg-ok':'msg-err']">{{tgTestResult.message}}</div>
+      </div>
+    </section>
+
+    <!-- Emby / Jellyfin 通知设置 -->
+    <section v-if="page==='embynotify'">
+      <div class="page-header"><h1>Emby / Jellyfin 入库通知</h1></div>
+      <div class="card">
+        <div class="form-group">
+          <label><input type="checkbox" v-model="cfg.emby_notify_enabled"> 启用入库后自动搜媒体库</label>
+          <small style="color:#888;display:block;margin-top:4px">刮削成功后自动触发 Emby / Jellyfin 扫描，无需手动刷新媒体库。支持 Emby 和 Jellyfin。</small>
+        </div>
+        <div class="form-group">
+          <label>Emby / Jellyfin 地址</label>
+          <input v-model="cfg.emby_url" type="text" placeholder="例如： http://192.168.1.100:8096">
+          <small style="color:#888;display:block;margin-top:4px">填入服务器地址，含协议与端口，末尾不加斜杠</small>
+        </div>
+        <div class="form-group">
+          <label>API Key</label>
+          <div class="input-with-btn">
+            <input v-model="cfg.emby_api_key" :type="showEmbyKey ? 'text' : 'password'" placeholder="在 Emby 管理后台《 API 密鑰 》页面生成">
+            <button class="btn btn-sm" @click="showEmbyKey=!showEmbyKey">{{showEmbyKey?'隐藏':'显示'}}</button>
+          </div>
+          <small style="color:#888;display:block;margin-top:4px">Emby: 管理后台 → 高级 → API 密鑰；Jellyfin: 管理后台 → API 密鑰</small>
+        </div>
+        <div class="form-group">
+          <label>通知延迟（秒）</label>
+          <input v-model.number="cfg.emby_notify_delay" type="number" min="5" max="300" placeholder="30">
+          <small style="color:#888;display:block;margin-top:4px">最后一个文件刮削完成后等待此秒数再触发扫描，同批文件只触发一次</small>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" @click="saveSettings">保存</button>
+          <button class="btn" @click="testEmby">测试连接</button>
+        </div>
+        <div v-if="embyTestResult" :class="['msg', embyTestResult.ok?'msg-ok':'msg-err']">{{embyTestResult.message}}</div>
       </div>
     </section>
 

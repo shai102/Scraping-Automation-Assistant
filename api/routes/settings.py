@@ -57,6 +57,10 @@ class SettingsModel(BaseModel):
     tg_chat_id: Optional[str] = None
     tg_notify_enabled: Optional[bool] = None
     tg_notify_delay: Optional[int] = None
+    emby_url: Optional[str] = None
+    emby_api_key: Optional[str] = None
+    emby_notify_enabled: Optional[bool] = None
+    emby_notify_delay: Optional[int] = None
     strip_keywords: Optional[List[str]] = None
     cache_expiry_days: Optional[int] = None
     proxy_enabled: Optional[bool] = None
@@ -419,6 +423,20 @@ def test_proxy(body: Optional[SettingsModel] = None):
         "proxy": summary,
         "results": results,
     }
+
+
+@router.post("/test-emby")
+def test_emby():
+    cfg = _load()
+    url = (cfg.get("emby_url") or "").strip()
+    api_key = (cfg.get("emby_api_key") or "").strip()
+    if not url:
+        raise HTTPException(400, detail="Emby/Jellyfin 地址未配置")
+    if not api_key:
+        raise HTTPException(400, detail="Emby/Jellyfin API Key 未配置")
+    from utils.emby_notify import test_emby_connection
+    ok, message = test_emby_connection(url, api_key)
+    return {"ok": ok, "message": message}
 
 
 @router.post("/clear-cache")

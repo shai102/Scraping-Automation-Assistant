@@ -25,6 +25,7 @@ from db.database import SessionLocal
 from db.scrape_models import MonitorFolder, ScrapeRecord, SymlinkRecord
 from utils.helpers import normalize_parse_source
 from utils.telegram_notify import NotificationBatcher
+from utils.emby_notify import EmbyNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -275,6 +276,9 @@ class FolderWatcher:
         self._poll_thread: Optional[threading.Thread] = None
         self._symlink_export_paths: Set[str] = set()
         self._tg_batcher = NotificationBatcher(
+            cfg_getter=lambda: self._worker_ctx._cfg if self._worker_ctx else {}
+        )
+        self._emby_notifier = EmbyNotifier(
             cfg_getter=lambda: self._worker_ctx._cfg if self._worker_ctx else {}
         )
 
@@ -1119,6 +1123,12 @@ class FolderWatcher:
                     )
                 except Exception as _tg_err:
                     logger.debug(f"TG 通知排队失败: {_tg_err}")
+
+                # Emby / Jellyfin library refresh notification
+                try:
+                    self._emby_notifier.notify_success(target)
+                except Exception as _emby_err:
+                    logger.debug(f"Emby 通知失败: {_emby_err}")
 
             except Exception as e:
                 logger.error(f"Archive failed for {path}: {e}")
