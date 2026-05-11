@@ -10,6 +10,7 @@ TG 问题反馈群：<https://t.me/+Wx34NdYY_x1iNjg1>
 
 <p>
   <a href="#安装">安装</a> |
+  <a href="#docker-部署">Docker 部署</a> |
   <a href="#运行">运行</a> |
   <a href="#界面预览">界面预览</a> |
   <a href="#功能概览">功能概览</a> |
@@ -171,6 +172,117 @@ pip install -r requirements.txt
 安装并启动.bat
 ```
 
+## Docker 部署
+
+适合希望长期后台运行、集中挂载媒体目录、统一持久化配置的场景。
+
+### 1. 准备
+
+- 已安装 Docker / Docker Compose
+- 规划好宿主机上的媒体目录
+- 确认 TMDB / BGM / AI 所需网络访问正常
+
+### 2. 直接使用 compose
+
+仓库已提供：
+
+- `Dockerfile`
+- `docker-compose.yml`
+- `docker_main.py`
+- `requirements-docker.txt`
+
+启动：
+
+```bash
+docker compose up -d --build
+```
+
+默认监听：
+
+- `http://127.0.0.1:8090`
+
+停止：
+
+```bash
+docker compose down
+```
+
+### 3. 持久化目录
+
+容器内通过 `DATA_DIR=/data` 保存这些文件：
+
+- `media_renamer.db`
+- `renamer_config.json`
+- `api_cache.json`
+- `media_renamer.log`
+
+`docker-compose.yml` 默认已挂载：
+
+```yaml
+volumes:
+  - scraper_data:/data
+```
+
+这意味着：
+
+- 重启容器后配置、数据库、缓存不会丢
+- 不建议删除这个 volume，除非你就是要清空程序数据
+
+### 4. 媒体目录挂载
+
+真正需要监控和整理的目录，要额外挂到容器里。
+
+例如：
+
+```yaml
+volumes:
+  - scraper_data:/data
+  - /your/downloads:/downloads:rw
+  - /your/media:/media:rw
+```
+
+然后在 Web 界面的“监控目录”配置页面中填写：
+
+- 监控路径：`/downloads`
+- 归档目标根目录：`/media`
+
+注意，这里填写的是**容器内路径**，不是宿主机路径。
+
+### 5. Windows / Docker Desktop 注意事项
+
+如果你是在 Windows 上使用 Docker Desktop：
+
+- Windows 宿主机写入文件时，容器内不一定能即时收到 watchdog 事件
+- 程序不会漏文件，因为内置了 120 秒轮询兜底
+- 但实时刮削可能有最多约 2 分钟延迟
+
+如果你追求真正实时，建议：
+
+- 直接在 Windows 本机运行 Python / EXE 版
+- 或在标准 Linux 宿主机上运行 Docker
+
+### 6. 硬链接模式注意事项
+
+`hardlink` 模式要求：
+
+- 源目录和目标目录必须在同一文件系统
+
+如果你把两个路径挂成两个独立 volume，可能会报：
+
+- `EXDEV: cross-device link not permitted`
+
+推荐把它们挂到同一个宿主机根路径下，例如：
+
+```yaml
+volumes:
+  - /your/disk:/disk:rw
+```
+
+然后在程序里配置：
+
+- 监控路径：`/disk/downloads`
+- 归档目标根目录：`/disk/media`
+
 ## 运行
 
 ```bash
@@ -183,6 +295,12 @@ python main.py
 
 ```bash
 python -m uvicorn server:app --host 0.0.0.0 --port 8090
+```
+
+Docker 方式运行时，直接访问：
+
+```text
+http://127.0.0.1:8090
 ```
 
 ## 打包为 EXE
@@ -220,6 +338,8 @@ python -m uvicorn server:app --host 0.0.0.0 --port 8090
 | 缓存过期天数 | API 查询缓存自动清理周期（0 = 永不过期） |
 | Telegram Bot Token / Chat ID | 归档完成后发送 TG 通知 |
 
+> Docker 模式下，这些配置同样写入 `DATA_DIR` 下的 `renamer_config.json`，不是写回镜像内部。
+
 ### 监控目录配置
 
 | 字段 | 说明 |
@@ -231,6 +351,8 @@ python -m uvicorn server:app --host 0.0.0.0 --port 8090
 | 数据源 | AI + TMDb 或 AI + BGM |
 
 > **导出软链接**目录在侧栏「导出软链接」页面单独管理（只需填监控路径 + 目标路径），不在「刮削目录」列表中显示。软链接操作记录独立保存在「软链接记录」页面，与刮削记录完全分离。
+>
+> Docker 模式下，这里的路径必须填写容器内路径，例如 `/downloads`、`/media`，不要直接填写宿主机的 `D:\下载`、`E:\媒体库`。
 
 #### 导出软链接 + 原地整理拆分方案
 
