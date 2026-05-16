@@ -1159,8 +1159,29 @@ def _delete_per_file_sidecars(file_path: str):
                 logger.warning(f"删除伴随文件失败 {sidecar}: {e}")
 
 
+# Windows / macOS auto-generated metadata files that should be ignored when
+# deciding whether a directory is "effectively empty".
+_IGNORABLE_FILES = frozenset({
+    "desktop.ini", "thumbs.db", ".ds_store", "picasa.ini",
+    ".picasa.ini", "folder.jpg", ".bridgesort",
+})
+
+
+def _dir_real_entries(dir_path: str) -> list[str]:
+    """Return entries in *dir_path* that are NOT ignorable system metadata files."""
+    try:
+        return [n for n in os.listdir(dir_path) if n.lower() not in _IGNORABLE_FILES]
+    except Exception:
+        return ["<error>"]  # treat as non-empty on error
+
+
 def _remove_empty_dirs(start_dir: str, stop_at: Optional[str] = None):
     """Walk upward from *start_dir* removing each directory that is empty.
+
+    Directories containing only ignorable system files (desktop.ini, Thumbs.db,
+    .DS_Store, …) are treated as effectively empty: those files are removed first
+    and then the directory itself is deleted.
+
     Stops before removing *stop_at* (the monitored root folder itself).
     """
     current = os.path.normpath(start_dir)
@@ -1171,11 +1192,19 @@ def _remove_empty_dirs(start_dir: str, stop_at: Optional[str] = None):
         if parent == current:
             break  # filesystem root
         try:
-            if os.path.isdir(current) and not os.listdir(current):
-                os.rmdir(current)
-                logger.debug(f"Removed empty dir: {current}")
-            else:
-                break  # directory not empty, stop climbing
+            if not os.path.isdir(current):
+                break
+            real_entries = _dir_real_entries(current)
+            if real_entries:
+                break  # directory has real content, stop climbing
+            # Only ignorable system files remain — delete them first, then rmdir
+            for name in os.listdir(current):
+                try:
+                    os.remove(os.path.join(current, name))
+                except Exception:
+                    pass
+            os.rmdir(current)
+            logger.debug(f"Removed empty dir: {current}")
         except Exception as e:
             logger.warning(f"Could not remove dir {current}: {e}")
             break

@@ -169,23 +169,65 @@ def clear_all(db: Session = Depends(get_db)):
 
 
 @router.delete("/{record_id}")
-def delete_symlink(record_id: int, db: Session = Depends(get_db)):
+def delete_symlink(
+    record_id: int,
+    delete_files: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
     row = db.query(SymlinkRecord).get(record_id)
     if not row:
         raise HTTPException(404, detail="记录不存在")
+    files_deleted = 0
+    if delete_files:
+        link = str(row.link_path or "").strip()
+        if link and _safe_remove_path(link):
+            files_deleted += 1
+            try:
+                from monitor.watcher import _remove_empty_dirs
+                _remove_empty_dirs(os.path.dirname(link), stop_at=None)
+            except Exception:
+                pass
     db.delete(row)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "files_deleted": files_deleted}
+
+
+class BatchDeleteBody(BaseModel):
+    ids: List[int]
+    delete_files: bool = False
 
 
 @router.post("/batch-delete")
-def batch_delete(body: dict, db: Session = Depends(get_db)):
-    ids = body.get("ids", [])
-    if not ids:
-        return {"ok": True, "deleted": 0}
-    deleted = db.query(SymlinkRecord).filter(SymlinkRecord.id.in_(ids)).delete(synchronize_session=False)
+def batch_delete(body: BatchDeleteBody, db: Session = Depends(get_db)):
+    if not body.ids:
+        return {"ok": True, "deleted": 0, "files_deleted": 0}
+    files_deleted = 0
+    affected_dirs: list[str] = []
+    if body.delete_files:
+        rows = db.query(SymlinkRecord).filter(SymlinkRecord.id.in_(body.ids)).all()
+        for row in rows:
+            link = str(row.link_path or "").strip()
+            if not link:
+                continue
+            dir_path = os.path.dirname(link)
+            if _safe_remove_path(link):
+                files_deleted += 1
+            affected_dirs.append(dir_path)
+        # Clean up empty directories once, after all symlinks are removed
+        try:
+            from monitor.watcher import _remove_empty_dirs
+            seen_dirs: set[str] = set()
+            for dir_path in affected_dirs:
+                norm = os.path.normcase(dir_path)
+                if norm in seen_dirs:
+                    continue
+                seen_dirs.add(norm)
+                _remove_empty_dirs(dir_path, stop_at=None)
+        except Exception:
+            pass
+    deleted = db.query(SymlinkRecord).filter(SymlinkRecord.id.in_(body.ids)).delete(synchronize_session=False)
     db.commit()
-    return {"ok": True, "deleted": deleted}
+    return {"ok": True, "deleted": deleted, "files_deleted": files_deleted}
 
 
 @router.post("/delete-group")

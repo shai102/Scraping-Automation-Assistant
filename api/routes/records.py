@@ -204,17 +204,25 @@ def list_records_grouped(
 
 
 @router.delete("/{record_id}")
-def delete_record(record_id: int, db: Session = Depends(get_db)):
+def delete_record(
+    record_id: int,
+    delete_files: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
     row = db.query(ScrapeRecord).get(record_id)
     if not row:
         raise HTTPException(404)
+    files_deleted = 0
+    if delete_files:
+        files_deleted = _delete_record_files(row, db)
     db.delete(row)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "files_deleted": files_deleted}
 
 
 class BatchDeleteBody(BaseModel):
     ids: list[int]
+    delete_files: bool = False
 
 
 class GroupDeleteBody(BaseModel):
@@ -294,12 +302,81 @@ def _safe_remove_file(path: str) -> bool:
     return False
 
 
+def _delete_record_files(row: ScrapeRecord, db: Session, cleanup_dirs: bool = True) -> int:
+    """Delete local files associated with a single record (target + sidecars).
+
+    Works for all organize_modes:
+    - move/rename/copy/hardlink: removes target_path and its sidecar files,
+      then cleans up empty directories.
+    - symlink: removes the symlink at target_path and its sidecar files.
+    - If target_path is absent or gone, does nothing (safe to call regardless).
+
+    When cleanup_dirs=False the caller is responsible for directory cleanup
+    (use this in batch operations so dirs are cleaned once after all files
+    are deleted, rather than after each individual file).
+
+    Returns the number of files actually removed from disk.
+    """
+    target = str(row.target_path or "").strip()
+    if not target:
+        return 0
+
+    deleted = 0
+    paths = _record_output_cleanup_paths(row)
+    for p in paths:
+        if _safe_remove_file(p):
+            deleted += 1
+
+    # Clean up empty directories up to the target_root / monitor folder root
+    if cleanup_dirs and target and deleted:
+        folder = db.query(MonitorFolder).get(row.folder_id) if row.folder_id else None
+        watch_root = None
+        if folder:
+            organize_mode = getattr(folder, "organize_mode", "move") or "move"
+            watch_root = os.path.normpath(
+                folder.path if organize_mode == "rename" else (folder.target_root or folder.path)
+            )
+        try:
+            from monitor.watcher import _remove_empty_dirs
+            _remove_empty_dirs(os.path.dirname(target), stop_at=watch_root)
+        except Exception as e:
+            logger.debug("Failed to clean empty dirs after delete: %s", e)
+
+    return deleted
+
+
+_IGNORABLE_NAMES = frozenset({
+    "desktop.ini", "thumbs.db", ".ds_store", "picasa.ini",
+    ".picasa.ini", "folder.jpg", ".bridgesort",
+})
+
+
+def _dir_has_real_content(dir_path: str) -> bool:
+    """Return True if the directory contains files other than ignorable system metadata."""
+    try:
+        return any(n.lower() not in _IGNORABLE_NAMES for n in os.listdir(dir_path))
+    except Exception:
+        return True  # treat as non-empty on error
+
+
 def _cleanup_empty_group_dir(group_dir: str) -> bool:
+    """Remove *group_dir* if it contains no real files (ignores system metadata files).
+
+    If only ignorable system files (desktop.ini, Thumbs.db, …) remain they are
+    deleted first so that the directory can then be removed with os.rmdir.
+    Returns True when the directory was successfully deleted.
+    """
     try:
         if not os.path.isdir(group_dir):
             return False
-        if os.listdir(group_dir):
+        if _dir_has_real_content(group_dir):
             return False
+        # Remove any lingering system metadata files
+        for name in os.listdir(group_dir):
+            try:
+                os.remove(os.path.join(group_dir, name))
+            except Exception:
+                pass
         os.rmdir(group_dir)
         return True
     except Exception as err:
@@ -408,10 +485,46 @@ def _cleanup_parent_show_dir(
 
 @router.post("/batch-delete")
 def batch_delete(body: BatchDeleteBody, db: Session = Depends(get_db)):
-    """Delete multiple records by IDs."""
+    """Delete multiple records by IDs, optionally also deleting local files."""
+    files_deleted = 0
+    if body.delete_files:
+        rows = db.query(ScrapeRecord).filter(ScrapeRecord.id.in_(body.ids)).all()
+
+        # Collect (target_dir, watch_root) pairs before deleting files
+        dir_roots: list[tuple[str, Optional[str]]] = []
+        for row in rows:
+            target = str(row.target_path or "").strip()
+            if not target:
+                continue
+            folder = db.query(MonitorFolder).get(row.folder_id) if row.folder_id else None
+            watch_root = None
+            if folder:
+                organize_mode = getattr(folder, "organize_mode", "move") or "move"
+                watch_root = os.path.normpath(
+                    folder.path if organize_mode == "rename" else (folder.target_root or folder.path)
+                )
+            dir_roots.append((os.path.dirname(target), watch_root))
+
+        # Delete all files first (cleanup_dirs=False, do it once after all deletions)
+        for row in rows:
+            files_deleted += _delete_record_files(row, db, cleanup_dirs=False)
+
+        # Now clean up empty directories once, after all files are gone
+        try:
+            from monitor.watcher import _remove_empty_dirs
+            seen_dirs: set[str] = set()
+            for dir_path, watch_root in dir_roots:
+                norm = os.path.normcase(dir_path)
+                if norm in seen_dirs:
+                    continue
+                seen_dirs.add(norm)
+                _remove_empty_dirs(dir_path, stop_at=watch_root)
+        except Exception as e:
+            logger.debug("Failed to clean empty dirs after batch delete: %s", e)
+
     deleted = db.query(ScrapeRecord).filter(ScrapeRecord.id.in_(body.ids)).delete(synchronize_session=False)
     db.commit()
-    return {"ok": True, "deleted": deleted}
+    return {"ok": True, "deleted": deleted, "files_deleted": files_deleted}
 
 
 @router.post("/delete-group")

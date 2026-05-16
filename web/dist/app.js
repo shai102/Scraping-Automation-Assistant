@@ -107,6 +107,8 @@ const app = Vue.createApp({
         confirmText: '确认',
         cancelText: '取消',
         danger: false,
+        checkboxLabel: '',
+        checkboxValue: false,
         resolver: null,
       },
     };
@@ -186,15 +188,20 @@ const app = Vue.createApp({
           confirmText: opts.confirmText || '确认',
           cancelText: opts.cancelText || '取消',
           danger: !!opts.danger,
+          checkboxLabel: opts.checkboxLabel || '',
+          checkboxValue: !!opts.checkboxDefault,
           resolver: resolve,
         };
       });
     },
     resolveConfirm(value) {
       var resolver = this.confirmDialog && this.confirmDialog.resolver;
+      var checked = this.confirmDialog ? !!this.confirmDialog.checkboxValue : false;
       this.confirmDialog.visible = false;
       this.confirmDialog.resolver = null;
-      if (resolver) resolver(!!value);
+      this.confirmDialog.checkboxLabel = '';
+      this.confirmDialog.checkboxValue = false;
+      if (resolver) resolver(value ? { confirmed: true, checked: checked } : false);
     },
 
     // --- API helpers ---
@@ -506,14 +513,18 @@ const app = Vue.createApp({
       }
     },
     async deleteSymlinkRecord(id) {
-      if (!(await this.confirmAction({
+      var result = await this.confirmAction({
         title: '删除软链接记录',
         message: '确认删除该记录？',
         confirmText: '删除',
         danger: true,
-      }))) return;
+        checkboxLabel: '同时删除本地软链接文件',
+        checkboxDefault: false,
+      });
+      if (!result) return;
       try {
-        await this.api('DELETE', '/api/symlinks/' + id);
+        var url = '/api/symlinks/' + id + (result.checked ? '?delete_files=true' : '');
+        await this.api('DELETE', url);
         if (this.symlinkGroupedView) this.loadSymlinkGroupedRecords();
         else this.loadSymlinkRecords();
         this.loadSymlinkStats();
@@ -528,14 +539,17 @@ const app = Vue.createApp({
     },
     async batchDeleteSymlinkSelected() {
       if (!this.symlinkSelectedIds.length) return;
-      if (!(await this.confirmAction({
+      var result = await this.confirmAction({
         title: '批量删除软链接记录',
         message: '确认删除选中的 ' + this.symlinkSelectedIds.length + ' 条记录？',
         confirmText: '删除',
         danger: true,
-      }))) return;
+        checkboxLabel: '同时删除本地软链接文件',
+        checkboxDefault: false,
+      });
+      if (!result) return;
       try {
-        await this.api('POST', '/api/symlinks/batch-delete', { ids: this.symlinkSelectedIds });
+        await this.api('POST', '/api/symlinks/batch-delete', { ids: this.symlinkSelectedIds, delete_files: !!result.checked });
         if (this.symlinkGroupedView) this.loadSymlinkGroupedRecords();
         else this.loadSymlinkRecords();
         this.loadSymlinkStats();
@@ -598,14 +612,18 @@ const app = Vue.createApp({
       } catch (e) { this.notify(e.message, 'error'); }
     },
     async deleteSymlinkGroupRecord(g, id) {
-      if (!(await this.confirmAction({
+      var result = await this.confirmAction({
         title: '删除软链接记录',
         message: '确认删除该记录？',
         confirmText: '删除',
         danger: true,
-      }))) return;
+        checkboxLabel: '同时删除本地软链接文件',
+        checkboxDefault: false,
+      });
+      if (!result) return;
       try {
-        await this.api('DELETE', '/api/symlinks/' + id);
+        var url = '/api/symlinks/' + id + (result.checked ? '?delete_files=true' : '');
+        await this.api('DELETE', url);
         this.loadSymlinkGroupedRecords();
         this.loadSymlinkStats();
       } catch (e) { this.notify(e.message, 'error'); }
@@ -657,13 +675,20 @@ const app = Vue.createApp({
       this.loadSymlinkRecords();
     },
     async deleteRecord(id) {
-      if (!(await this.confirmAction({
+      var result = await this.confirmAction({
         title: '删除刮削记录',
         message: '确认删除该记录？',
         confirmText: '删除',
         danger: true,
-      }))) return;
-      try { await this.api('DELETE', '/api/records/' + id); this.loadRecords(); } catch (e) { this.notify(e.message, 'error'); }
+        checkboxLabel: '同时删除本地文件（目标文件及 NFO/缩略图）',
+        checkboxDefault: false,
+      });
+      if (!result) return;
+      try {
+        var url = '/api/records/' + id + (result.checked ? '?delete_files=true' : '');
+        await this.api('DELETE', url);
+        this.loadRecords();
+      } catch (e) { this.notify(e.message, 'error'); }
     },
     async retryRecord(id) {
       try { await this.api('POST', '/api/records/' + id + '/retry'); this.loadRecords(); } catch (e) { this.notify(e.message, 'error'); }
@@ -678,14 +703,17 @@ const app = Vue.createApp({
     },
     async batchDeleteSelected() {
       if (!this.selectedIds.length) return;
-      if (!(await this.confirmAction({
+      var result = await this.confirmAction({
         title: '批量删除刮削记录',
         message: '确认删除选中的 ' + this.selectedIds.length + ' 条记录？',
         confirmText: '删除',
         danger: true,
-      }))) return;
+        checkboxLabel: '同时删除本地文件（目标文件及 NFO/缩略图）',
+        checkboxDefault: false,
+      });
+      if (!result) return;
       try {
-        await this.api('POST', '/api/records/batch-delete', { ids: this.selectedIds });
+        await this.api('POST', '/api/records/batch-delete', { ids: this.selectedIds, delete_files: !!result.checked });
         if (this.groupedView) this.loadGroupedRecords();
         else this.loadRecords();
       } catch (e) { this.notify(e.message, 'error'); }
@@ -1029,14 +1057,18 @@ const app = Vue.createApp({
       } catch (e) { this.notify(e.message, 'error'); }
     },
     async deleteGroupRecord(g, id) {
-      if (!(await this.confirmAction({
+      var result = await this.confirmAction({
         title: '删除刮削记录',
         message: '确认删除该记录？',
         confirmText: '删除',
         danger: true,
-      }))) return;
+        checkboxLabel: '同时删除本地文件（目标文件及 NFO/缩略图）',
+        checkboxDefault: false,
+      });
+      if (!result) return;
       try {
-        await this.api('DELETE', '/api/records/' + id);
+        var url = '/api/records/' + id + (result.checked ? '?delete_files=true' : '');
+        await this.api('DELETE', url);
         this.loadGroupedRecords();
         if (this.expandedGroups[g.dir_path]) this.loadGroupRecords(g);
       } catch (e) { this.notify(e.message, 'error'); }

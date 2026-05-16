@@ -16,7 +16,7 @@
         <div class="app-brand-mark">🎬</div>
         <div>
           <h2>刮削助手</h2>
-          <span>v3.8</span>
+          <span>v3.9</span>
         </div>
       </div>
     </div>
@@ -1318,6 +1318,12 @@
     <div class="app-confirm">
       <h3>{{confirmDialog.title}}</h3>
       <p>{{confirmDialog.message}}</p>
+      <div v-if="confirmDialog.checkboxLabel" class="form-group" style="margin:10px 0 4px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px">
+          <input type="checkbox" v-model="confirmDialog.checkboxValue" style="width:15px;height:15px">
+          {{confirmDialog.checkboxLabel}}
+        </label>
+      </div>
       <div class="app-confirm-actions">
         <button class="btn" @click="resolveConfirm(false)">{{confirmDialog.cancelText}}</button>
         <button :class="['btn', confirmDialog.danger ? 'btn-danger-solid' : 'btn-primary']" @click="resolveConfirm(true)">{{confirmDialog.confirmText}}</button>
