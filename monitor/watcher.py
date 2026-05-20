@@ -68,6 +68,46 @@ def _is_already_scraped(filepath: str, sub_audio_exts: tuple) -> bool:
     return _has_nfo(filepath)
 
 
+def _symlink_record_needs_repair(row) -> bool:
+    if not row or str(getattr(row, "status", "") or "").lower() != "success":
+        return False
+    original_path = str(getattr(row, "original_path", "") or "").strip()
+    link_path = str(getattr(row, "link_path", "") or "").strip()
+    if not original_path or not os.path.isfile(original_path):
+        return False
+    if not link_path:
+        return True
+    return not os.path.lexists(link_path)
+
+
+def _scrape_record_needs_repair(row, ctx) -> bool:
+    if not row or str(getattr(row, "status", "") or "").lower() != "success":
+        return False
+
+    target_path = str(getattr(row, "target_path", "") or "").strip()
+    original_path = str(getattr(row, "original_path", "") or "").strip()
+    sub_audio_exts = ctx.get_sub_audio_exts() if ctx else ()
+
+    if target_path and os.path.isfile(target_path):
+        return not _is_already_scraped(target_path, sub_audio_exts)
+
+    if original_path and os.path.isfile(original_path):
+        return True
+
+    return False
+
+
+def _reset_scrape_record_for_rebuild(record):
+    record._repairing = True
+    record._previous_target = str(getattr(record, "target_path", "") or "")
+    record.status = "processing"
+    record.matched_title = None
+    record.matched_id = None
+    record.matched_provider = None
+    record.metadata_json = None
+    record.error_msg = None
+
+
 def _try_nfo_fast_path(item, ctx) -> bool:
     """Try to resolve subtitle/audio file metadata from an existing tvshow.nfo.
 
@@ -715,18 +755,26 @@ class FolderWatcher:
                 skip_scraped = getattr(folder, 'skip_if_scraped', False) and not is_sl_export
                 # 批量加载已记录路径，避免逐文件查 DB（N+1 问题）
                 if is_sl_export:
-                    recorded = set(
-                        r.original_path for r in
-                        db.query(SymlinkRecord.original_path)
-                        .filter(SymlinkRecord.folder_id == folder.id).all()
-                    )
+                    recorded = set()
+                    rows = db.query(SymlinkRecord).filter(
+                        SymlinkRecord.folder_id == folder.id
+                    ).all()
+                    for row in rows:
+                        if _symlink_record_needs_repair(row):
+                            continue
+                        if row.original_path:
+                            recorded.add(row.original_path)
                 else:
-                    recorded = set(
-                        r for row in
-                        db.query(ScrapeRecord.original_path, ScrapeRecord.target_path)
-                        .filter(ScrapeRecord.folder_id == folder.id).all()
-                        for r in (row.original_path, row.target_path) if r
-                    )
+                    recorded = set()
+                    rows = db.query(ScrapeRecord).filter(
+                        ScrapeRecord.folder_id == folder.id
+                    ).all()
+                    for row in rows:
+                        if _scrape_record_needs_repair(row, self._worker_ctx):
+                            continue
+                        for recorded_path in (row.original_path, row.target_path):
+                            if recorded_path:
+                                recorded.add(recorded_path)
                 for dirpath, _, filenames in os.walk(folder.path):
                     for fn in filenames:
                         if not is_sl_export and not fn.lower().endswith(exts):
@@ -769,18 +817,26 @@ class FolderWatcher:
             skip_scraped = getattr(folder, 'skip_if_scraped', False) and not is_sl_export
             # 批量加载已记录路径，避免逐文件查 DB（N+1 问题）
             if is_sl_export:
-                recorded = set(
-                    r.original_path for r in
-                    db.query(SymlinkRecord.original_path)
-                    .filter(SymlinkRecord.folder_id == folder.id).all()
-                )
+                recorded = set()
+                rows = db.query(SymlinkRecord).filter(
+                    SymlinkRecord.folder_id == folder.id
+                ).all()
+                for row in rows:
+                    if _symlink_record_needs_repair(row):
+                        continue
+                    if row.original_path:
+                        recorded.add(row.original_path)
             else:
-                recorded = set(
-                    r for row in
-                    db.query(ScrapeRecord.original_path)
-                    .filter(ScrapeRecord.folder_id == folder.id).all()
-                    for r in (row.original_path,) if r
-                )
+                recorded = set()
+                rows = db.query(ScrapeRecord).filter(
+                    ScrapeRecord.folder_id == folder.id
+                ).all()
+                for row in rows:
+                    if _scrape_record_needs_repair(row, self._worker_ctx):
+                        continue
+                    for recorded_path in (row.original_path, row.target_path):
+                        if recorded_path:
+                            recorded.add(recorded_path)
             for dirpath, _, filenames in os.walk(folder.path):
                 for fn in filenames:
                     if not is_sl_export and not fn.lower().endswith(exts):
@@ -839,15 +895,47 @@ class FolderWatcher:
         try:
             # Check for duplicate
             folder = self._find_folder(path, db)
+            record = None
 
             # For symlink_export, check SymlinkRecord instead of ScrapeRecord
             organize_mode_check = getattr(folder, 'organize_mode', 'move') or 'move' if folder else 'move'
             if organize_mode_check == 'symlink_export':
-                existing = db.query(SymlinkRecord).filter(SymlinkRecord.original_path == path).first()
+                from sqlalchemy import or_
+
+                existing = db.query(SymlinkRecord).filter(
+                    or_(
+                        SymlinkRecord.original_path == path,
+                        SymlinkRecord.link_path == path,
+                    )
+                ).first()
             else:
-                existing = db.query(ScrapeRecord).filter(ScrapeRecord.original_path == path).first()
+                from sqlalchemy import or_
+
+                existing = db.query(ScrapeRecord).filter(
+                    or_(
+                        ScrapeRecord.original_path == path,
+                        ScrapeRecord.target_path == path,
+                    )
+                ).first()
             if existing:
-                return
+                if organize_mode_check == 'symlink_export':
+                    if _symlink_record_needs_repair(existing):
+                        logger.info(f"检测到缺失的软链接产物，准备自动重建: {existing.original_path}")
+                        db.delete(existing)
+                        db.commit()
+                    else:
+                        return
+                else:
+                    if _scrape_record_needs_repair(existing, self._worker_ctx):
+                        logger.info(f"检测到缺失的刮削产物，准备自动修复: {path}")
+                        if existing.target_path and os.path.isfile(existing.target_path):
+                            path = existing.target_path
+                        record = existing
+                        _reset_scrape_record_for_rebuild(record)
+                        db.commit()
+                        self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
+                    else:
+                        return
 
             # skip_if_scraped: 文件旁已有同名 .nfo（视频）或目录内有 season.nfo/集数 .nfo（字幕/音频）则跳过
             is_sl_export_check = organize_mode_check == 'symlink_export'
@@ -972,16 +1060,17 @@ class FolderWatcher:
                 return
 
             # Create record
-            record = ScrapeRecord(
-                folder_id=folder.id if folder else None,
-                original_path=path,
-                original_name=os.path.basename(path),
-                status="processing",
-            )
-            db.add(record)
-            db.commit()
-            db.refresh(record)
-            self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
+            if record is None:
+                record = ScrapeRecord(
+                    folder_id=folder.id if folder else None,
+                    original_path=path,
+                    original_name=os.path.basename(path),
+                    status="processing",
+                )
+                db.add(record)
+                db.commit()
+                db.refresh(record)
+                self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
 
             # Build a per-call WorkerContext to avoid concurrent mutation of shared state.
             # Each thread gets its own copy of the config; the global _worker_ctx is only
@@ -1024,6 +1113,7 @@ class FolderWatcher:
                 ext=os.path.splitext(path)[1],
             )
             ctx.file_list = [item]
+            logger.info(f"开始识别: {path}")
 
             # === NFO fast-path for subtitle/audio sidecar files ===
             # If the parent Season folder already has a tvshow.nfo with a TMDB ID,
@@ -1049,6 +1139,11 @@ class FolderWatcher:
             tid = (item.metadata or {}).get("id", "None")
             if tid == "None" or not item.new_name_only:
                 meta = item.metadata or {}
+                logger.warning(
+                    "识别失败: %s 未匹配到 %s 媒体信息，跳过文件整理",
+                    path,
+                    "TMDB" if getattr(folder, "data_source", "siliconflow_tmdb") == "siliconflow_tmdb" else "BGM",
+                )
                 record.matched_title = meta.get("title")
                 record.matched_provider = meta.get("provider")
                 record.metadata_json = json.dumps(meta, ensure_ascii=False)
@@ -1063,6 +1158,26 @@ class FolderWatcher:
                 self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
                 return
 
+            meta = item.metadata or {}
+            logger.info(
+                "识别完成: title=%s | path=%s | name=%s | year=%s | type=%s | season=%s | episode=%s | provider=%s | id=%s | parse_source=%s | resolution=%s | source=%s | video_codec=%s | audio_codec=%s | release_group=%s",
+                meta.get("title") or "",
+                path,
+                item.new_name_only or "",
+                meta.get("year") or "",
+                meta.get("type") or "",
+                meta.get("s") if meta.get("s") is not None else "",
+                meta.get("e") if meta.get("e") is not None else "",
+                meta.get("provider") or "",
+                tid,
+                meta.get("parse_source") or "",
+                meta.get("resolution") or "",
+                meta.get("source") or "",
+                meta.get("video_codec") or "",
+                meta.get("audio_codec") or "",
+                meta.get("release_group") or "",
+            )
+
             # === Archive (move + sidecar) ===
             try:
                 organize_mode = getattr(folder, 'organize_mode', 'move') or 'move' if folder else 'move'
@@ -1073,7 +1188,26 @@ class FolderWatcher:
                     os.makedirs(target_dir, exist_ok=True)
 
                 if os.path.normcase(item.path) != os.path.normcase(target):
-                    if os.path.exists(target):
+                    target_exists = os.path.exists(target)
+                    target_lexists = os.path.lexists(target)
+                    is_repair_target = (
+                        getattr(record, "_repairing", False)
+                        and os.path.normcase(getattr(record, "_previous_target", ""))
+                        == os.path.normcase(target)
+                    )
+                    if target_lexists and is_repair_target and target_exists:
+                        item.path = target
+                    elif target_lexists and is_repair_target and not target_exists:
+                        try:
+                            os.remove(target)
+                        except Exception as e:
+                            record.status = "failed"
+                            record.target_path = target
+                            record.error_msg = f"清理失效目标失败: {e}"
+                            db.commit()
+                            self._broadcast({"type": "record_update", "data": _record_to_dict(record)})
+                            return
+                    if target_exists and not is_repair_target:
                         record.status = "failed"
                         record.target_path = target
                         record.error_msg = f"目标文件已存在: {target}"
@@ -1082,7 +1216,9 @@ class FolderWatcher:
                         return
                     src_dir = os.path.dirname(item.path)
 
-                    if organize_mode == 'copy':
+                    if os.path.normcase(item.path) == os.path.normcase(target):
+                        pass
+                    elif organize_mode == 'copy':
                         shutil.copy2(item.path, target)
                     elif organize_mode == 'symlink':
                         os.symlink(os.path.abspath(item.path), target)
@@ -1093,7 +1229,7 @@ class FolderWatcher:
                         shutil.move(item.path, target)
 
                     # For modes that keep the source file, don't clean up source dirs
-                    if organize_mode not in ('copy', 'symlink', 'hardlink'):
+                    if os.path.normcase(item.path) != os.path.normcase(target) and organize_mode not in ('copy', 'symlink', 'hardlink'):
                         item.path = target
                         watch_root = os.path.normpath(folder.path) if folder else None
                         _remove_empty_dirs(src_dir, stop_at=watch_root)

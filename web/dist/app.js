@@ -40,6 +40,14 @@ const app = Vue.createApp({
       recordTotal: 0,
       selectedIds: [],
       recordGoPage: 1,
+      // Logs
+      logEntries: [],
+      logLoading: false,
+      logLevel: '',
+      logKeyword: '',
+      logLimit: 200,
+      logPath: '',
+      logAutoRefreshEnabled: true,
       // Grouped view
       groupedView: false,
       groupedRecords: [],
@@ -133,6 +141,7 @@ const app = Vue.createApp({
       else this.loadSymlinkRecords();
       this.loadSymlinkStats();
     }
+    if (this.page === 'logs') { this.loadLogs(); this.startLogAutoRefresh(); }
     if (this.page === 'symlink_folders') { this.loadFolders(); }
     // Keep hash in sync when page changes, so F5 restores correctly
     this.$watch('page', function(val) {
@@ -146,8 +155,17 @@ const app = Vue.createApp({
         else this.loadSymlinkRecords();
         this.loadSymlinkStats();
       }
+      if (val === 'logs') {
+        this.loadLogs();
+        this.startLogAutoRefresh();
+      } else {
+        this.stopLogAutoRefresh();
+      }
       if (val === 'symlink_folders') { this.loadFolders(); }
     });
+  },
+  beforeUnmount() {
+    this.stopLogAutoRefresh();
   },
   computed: {
     allSelected: function() {
@@ -793,6 +811,47 @@ const app = Vue.createApp({
       if (!p) return '';
       var parts = p.replace(/\\/g, '/').split('/');
       return parts.length > 3 ? '.../' + parts.slice(-3).join('/') : p;
+    },
+    async loadLogs() {
+      this.logLoading = true;
+      try {
+        var params = new URLSearchParams({ limit: this.logLimit, kind: 'scrape' });
+        if (this.logLevel) params.set('level', this.logLevel);
+        if (this.logKeyword) params.set('keyword', this.logKeyword);
+        var data = await this.api('GET', '/api/logs?' + params.toString());
+        this.logEntries = data.items || [];
+        this.logPath = data.path || '';
+      } catch (e) {
+        this.notify(e.message, 'error');
+      }
+      this.logLoading = false;
+    },
+    refreshLogs() {
+      this.loadLogs();
+    },
+    startLogAutoRefresh() {
+      this.stopLogAutoRefresh();
+      if (!this.logAutoRefreshEnabled) return;
+      var self = this;
+      this._logRefreshTimer = setInterval(function() {
+        if (self.page === 'logs' && !self.logLoading) self.loadLogs();
+      }, 3000);
+    },
+    stopLogAutoRefresh() {
+      if (this._logRefreshTimer) {
+        clearInterval(this._logRefreshTimer);
+        this._logRefreshTimer = null;
+      }
+    },
+    resetLogFilter() {
+      this.logLevel = '';
+      this.logKeyword = '';
+      this.logLimit = 200;
+      this.loadLogs();
+    },
+    logLevelClass(level) {
+      var map = { INFO: 'badge-success', WARNING: 'badge-warning', ERROR: 'badge-danger' };
+      return map[String(level || '').toUpperCase()] || 'badge-gray';
     },
 
     // --- Recognition Test ---

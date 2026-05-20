@@ -16,7 +16,7 @@
         <div class="app-brand-mark">🎬</div>
         <div>
           <h2>刮削助手</h2>
-          <span>v3.9</span>
+          <span>v4.0</span>
         </div>
       </div>
     </div>
@@ -27,6 +27,9 @@
       </li>
       <li :class="{active: page==='records'}" @click="page='records'">
         <span class="icon">📋</span> 刮削记录
+      </li>
+      <li :class="{active: page==='logs'}" @click="page='logs'">
+        <span class="icon">📝</span> 刮削日志
       </li>
       <li class="nav-section">工具</li>
       <li :class="{active: page==='recognition_test'}" @click="page='recognition_test'">
@@ -526,6 +529,53 @@
         </div>
       </div>
     </div>
+
+    <!-- 刮削日志 -->
+    <section v-if="page==='logs'">
+      <div class="page-header"><h1>刮削日志</h1></div>
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <span class="toolbar-hint" v-if="logPath">日志文件：{{logPath}}</span>
+          <span class="toolbar-hint" v-if="logAutoRefreshEnabled" style="margin-left:12px">自动刷新中（3秒）</span>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn-grad btn-grad-blue btn-sm" @click="refreshLogs" :disabled="logLoading">{{logLoading?'加载中...':'刷新'}}</button>
+        </div>
+      </div>
+      <div class="filter-row">
+        <select v-model="logLevel" class="filter-select">
+          <option value="">全部级别</option>
+          <option value="INFO">INFO</option>
+          <option value="WARNING">WARNING</option>
+          <option value="ERROR">ERROR</option>
+        </select>
+        <select v-model.number="logLimit" class="filter-select">
+          <option :value="100">最近 100 条</option>
+          <option :value="200">最近 200 条</option>
+          <option :value="500">最近 500 条</option>
+        </select>
+        <input v-model="logKeyword" placeholder="按关键字搜索日志内容" class="filter-input">
+        <button class="btn btn-primary btn-sm" @click="loadLogs">筛选</button>
+        <button class="btn btn-sm" @click="resetLogFilter">重置</button>
+      </div>
+      <table class="table" v-if="logEntries.length">
+        <thead>
+          <tr>
+            <th style="width:110px">级别</th>
+            <th style="width:180px">时间</th>
+            <th>日志内容</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(log, idx) in logEntries" :key="idx">
+            <td><span :class="['badge', logLevelClass(log.level)]">{{log.level || 'INFO'}}</span></td>
+            <td style="white-space:nowrap;font-size:12px;color:#999">{{log.timestamp || '-'}}</td>
+            <td style="font-family:Consolas,'Courier New',monospace;font-size:12px;line-height:1.5;word-break:break-all">{{log.message}}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="empty" v-else>{{logLoading?'日志加载中...':'暂无日志数据'}}</div>
+    </section>
 
     <!-- 识别测试 -->
     <section v-if="page==='recognition_test'" class="recognition-page">

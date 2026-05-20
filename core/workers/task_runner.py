@@ -37,6 +37,8 @@ from utils.helpers import (
     safe_str,
 )
 
+logger = logging.getLogger(__name__)
+
 
 SPECIAL_TAG_RE = re.compile(
     r"(?i)(?<![A-Z0-9])(?:PROLOGUE|OVA|OAD|SP|SPECIAL|NC\.VER|EXTRA)(?![A-Z0-9])"
@@ -1096,6 +1098,27 @@ def process_task(gui, i, advance_progress=True):
             db_c = (t, "None", "待手动确认", {})
 
         std_t, tid, db_m, meta = db_c
+        provider_name = meta.get("_provider") or ("tmdb" if mode == "siliconflow_tmdb" else "bgm")
+        if tid and tid != "None":
+            logger.info(
+                "资料库匹配: parsed_title=%s | query_title=%s | matched_title=%s | matched_id=%s | provider=%s | result=%s | path=%s",
+                guess_title or "",
+                t or "",
+                std_t or "",
+                tid,
+                provider_name,
+                db_m or "",
+                item.path,
+            )
+        else:
+            logger.warning(
+                "资料库匹配失败: parsed_title=%s | query_title=%s | provider=%s | reason=%s | path=%s",
+                guess_title or "",
+                t or "",
+                provider_name,
+                db_m or "未命中",
+                item.path,
+            )
 
         # 当 TMDb 无结果回退到 BGM 时，meta 中会有 _provider="bgm" 标记
         _is_bgm_fallback = (meta.get("_provider") == "bgm")
