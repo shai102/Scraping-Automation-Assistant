@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 _DEBOUNCE_SECONDS = 5.0
 
 # Polling: scan folders every N seconds to catch network-written files
-_POLL_INTERVAL_SECONDS = 120.0
+_POLL_INTERVAL_SECONDS = 30.0
 
 
 def _has_nfo(filepath: str) -> bool:
@@ -78,6 +78,32 @@ def _symlink_record_needs_repair(row) -> bool:
     if not link_path:
         return True
     return not os.path.lexists(link_path)
+
+
+def _symlink_record_consumed_downstream(row, db, ctx) -> bool:
+    """Return True when a missing exported link was intentionally moved/renamed
+    by another monitored folder and already has a healthy downstream record.
+    """
+    if db is None:
+        return False
+
+    link_path = str(getattr(row, "link_path", "") or "").strip()
+    if not link_path:
+        return False
+
+    downstream = (
+        db.query(ScrapeRecord)
+        .filter(
+            ScrapeRecord.original_path == link_path,
+            ScrapeRecord.status == "success",
+        )
+        .order_by(ScrapeRecord.id.desc())
+        .first()
+    )
+    if not downstream:
+        return False
+
+    return not _scrape_record_needs_repair(downstream, ctx)
 
 
 def _scrape_record_needs_repair(row, ctx) -> bool:
@@ -760,7 +786,10 @@ class FolderWatcher:
                         SymlinkRecord.folder_id == folder.id
                     ).all()
                     for row in rows:
-                        if _symlink_record_needs_repair(row):
+                        if (
+                            _symlink_record_needs_repair(row)
+                            and not _symlink_record_consumed_downstream(row, db, self._worker_ctx)
+                        ):
                             continue
                         if row.original_path:
                             recorded.add(row.original_path)
@@ -822,7 +851,10 @@ class FolderWatcher:
                     SymlinkRecord.folder_id == folder.id
                 ).all()
                 for row in rows:
-                    if _symlink_record_needs_repair(row):
+                    if (
+                        _symlink_record_needs_repair(row)
+                        and not _symlink_record_consumed_downstream(row, db, self._worker_ctx)
+                    ):
                         continue
                     if row.original_path:
                         recorded.add(row.original_path)
@@ -919,7 +951,10 @@ class FolderWatcher:
                 ).first()
             if existing:
                 if organize_mode_check == 'symlink_export':
-                    if _symlink_record_needs_repair(existing):
+                    if (
+                        _symlink_record_needs_repair(existing)
+                        and not _symlink_record_consumed_downstream(existing, db, self._worker_ctx)
+                    ):
                         logger.info(f"检测到缺失的软链接产物，准备自动重建: {existing.original_path}")
                         db.delete(existing)
                         db.commit()
