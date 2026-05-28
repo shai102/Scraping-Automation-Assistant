@@ -331,15 +331,28 @@ class WorkerContext:
     def _build_status_text(self, *messages):
         return build_status_text(*messages)
 
-    def _resolve_media_type(self, guess_data=None):
+    def _resolve_media_type(self, guess_data=None, pure_name=None, extracted_ep=None):
         override = str(self.media_type_override.get() or "").strip()
         if override == "电影":
             return "movie"
         if override == "电视剧":
             return "episode"
-        guessed_type = str((guess_data or {}).get("type") or "episode").strip().lower()
+        guessed_type = str((guess_data or {}).get("type") or "").strip().lower()
         if guessed_type in ("movie", "film"):
             return "movie"
+        if guessed_type == "episode":
+            return "episode"
+        # Heuristic: if guessit couldn't determine type, use file signals
+        if pure_name is not None:
+            text = str(pure_name or "")
+            has_season_ep = bool(re.search(r'(?i)\bS\d{1,2}E\d{1,4}\b', text))
+            has_ep_marker = bool(re.search(r'(?i)(?:\bEP?\d{1,4}\b|第\s*\d{1,4}\s*[集话話])', text))
+            has_season_marker = bool(re.search(r'(?i)(?:\bS\d{1,2}\b|Season\s*\d|第\s*\d{1,2}\s*季)', text))
+            if has_season_ep or has_ep_marker or has_season_marker:
+                return "episode"
+            # No episode/season markers and no explicit guessit type → likely movie
+            if extracted_ep is None:
+                return "movie"
         return "episode"
 
     # ------------------------------------------------------------------
@@ -514,6 +527,23 @@ class WorkerContext:
                 merged.extend(current)
                 break
 
+        # TMDb: flip tv/movie type and retry when primary type yields nothing
+        type_flipped = False
+        if not merged and mode == "siliconflow_tmdb":
+            flipped_tv = not is_tv
+            flipped_year = None if flipped_tv else year
+            for query_titles in query_groups:
+                current = _search_queries(
+                    query_titles,
+                    lambda q: fetch_tmdb_candidates(
+                        q, flipped_year, flipped_tv, self.tmdb_api_key.get()
+                    ),
+                )
+                if current:
+                    merged.extend(current)
+                    type_flipped = True
+                    break
+
         # TMDb 无结果时，以 BGM 作为回退数据源
         bgm_fallback = False
         if not merged and mode == "siliconflow_tmdb":
@@ -536,6 +566,8 @@ class WorkerContext:
             )
             if tid_hit != "None" and normalize_compare_text(used_query) != normalize_compare_text(query_title):
                 msg_hit += " (备选标题)"
+            if type_flipped and tid_hit != "None":
+                msg_hit += " (类型翻转)"
             if bgm_fallback and tid_hit != "None":
                 meta_hit["_provider"] = "bgm"
                 # 封面/背景图仍从 TMDb 获取
@@ -610,25 +642,38 @@ class WorkerContext:
         # Title exact / high-confidence
         import difflib as _difflib
         _q_norm = re.sub(r"[\W_]+", "", str(query_title or "").lower())
+        _requested_year = str(year).strip() if year else ""
+
+        def _year_compatible(candidate):
+            """Check if candidate year matches requested year (or no year constraint)."""
+            if not _requested_year:
+                return True
+            cand_year = extract_year_from_release(candidate.get("release") or "")
+            if not cand_year:
+                return True  # no year info = don't penalize
+            return cand_year == _requested_year
+
         if _q_norm:
             _exact = None
             _scores = []
             for _c in candidates:
                 _ct = re.sub(r"[\W_]+", "", str(_c.get("title") or "").lower())
                 _ca = re.sub(r"[\W_]+", "", str(_c.get("alt_title") or "").lower())
+                _co = re.sub(r"[\W_]+", "", str((_c.get("meta") or {}).get("original_title") or "").lower())
                 _s = max(
                     _difflib.SequenceMatcher(None, _q_norm, _ct).ratio() if _ct else 0.0,
                     _difflib.SequenceMatcher(None, _q_norm, _ca).ratio() if _ca else 0.0,
+                    _difflib.SequenceMatcher(None, _q_norm, _co).ratio() if _co else 0.0,
                 )
                 _scores.append((_s, _c))
-                if _ct == _q_norm or _ca == _q_norm:
+                if (_ct == _q_norm or _ca == _q_norm or _co == _q_norm) and _year_compatible(_c):
                     _exact = _c
                     break
             if _exact is None and _scores:
                 _scores.sort(key=lambda x: x[0], reverse=True)
                 _top_s, _top_c = _scores[0]
                 _second_s = _scores[1][0] if len(_scores) > 1 else 0.0
-                if _top_s >= 0.90 and (_top_s - _second_s) >= 0.20:
+                if _top_s >= 0.90 and (_top_s - _second_s) >= 0.20 and _year_compatible(_top_c):
                     _exact = _top_c
             if _exact is not None:
                 return candidate_to_result(_exact, f"标题匹配/{source_name}命中")
@@ -645,6 +690,13 @@ class WorkerContext:
                 ):
                     hit_msg += " (别名直搜)"
                 return candidate_to_result(direct_hit, hit_msg)
+
+        # --- Rule-based scoring (no AI needed) ---
+        score_pick, score_reason = self._auto_pick_candidate_by_score(
+            query_title, year, source_name, candidates
+        )
+        if score_pick is not None:
+            return candidate_to_result(score_pick, f"自动评分/{source_name}命中 ({score_reason})")
 
         prefer_ollama = bool(self.prefer_ollama.get())
         online_ready = self._can_use_online_model_for_pick()

@@ -25,6 +25,8 @@ MEDIA_SUFFIX_START_RE = re.compile(
     (?:^|[.\s_\-\[\(])
     (
         \d{3,4}p
+        |fhd
+        |2k|qhd
         |web[.\s_-]?dl
         |web[.\s_-]?rip
         |blu[.\s_-]?ray
@@ -33,6 +35,8 @@ MEDIA_SUFFIX_START_RE = re.compile(
         |bdremux
         |remux
         |hdtv
+        |uhdtv
+        |hddvd
         |hdrip
         |dvdrip
         |uhd
@@ -42,25 +46,60 @@ MEDIA_SUFFIX_START_RE = re.compile(
         |h[.\s_-]?265
         |h[.\s_-]?264
         |av1
+        |avs\+?
+        |avs[23]
+        |vc[.\s_-]?1
+        |mpeg\d?
+        |divx
+        |xvid
         |hdr10\+?
+        |hdr
         |dolby[.\s_-]?vision
+        |dovi
         |dv
+        |hlg
+        |edr
+        |sdr
+        |imax
+        |3d
         |aac(?:[.\-_]?\d\.\d)?
         |ddp(?:[.\-_]?\d\.\d)?
         |dd(?:[.\-_]?\d\.\d)?
-        |dts(?:[.\-_]?hd)?
+        |dts(?:[.\-_]?hd)?(?:[.\-_]?ma)?
+        |eac3
+        |ac3
         |truehd
         |atmos
+        |dolby[.\s_-]?atmos
+        |lpcm
+        |opus
+        |vorbis
+        |flac
+        |pcm
         |tving
         |nf
         |netflix
         |amzn
         |amazon
         |dsnp
-        |disney
+        |disney\+?
         |hmax
+        |hbo[.\s_-]?max
         |hulu
         |colortv
+        |atvp
+        |apple[.\s_-]?tv
+        |pmtp
+        |paramount\+?
+        |itunes
+        |max
+        |diy
+        |repack
+        |proper
+        |rerip
+        |hq
+        |10bit
+        |12bit
     )
     """,
 )

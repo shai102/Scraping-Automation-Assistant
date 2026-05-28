@@ -96,13 +96,24 @@ BRACKET_NOISE_RE = re.compile(
     r"""(?ix)^
     (?:
         \d{1,4}(?:v\d+)?
-        | \d{3,4}p | \d{2,3}\s*fps | 4k | 8k | 10bit | hdr | dv
-        | web[-_. ]?dl | web | bdrip | bluray | blu[-_. ]?ray | bd | dvd | hdtv
-        | x264 | x265 | h\.?264 | h\.?265 | hevc | avc | aac | flac | truehd | atmos | ddp?
-        | chs | cht | sc | tc | gb | big5 | zh[-_. ]?(?:cn|tw)?
-        | jpsc | jptc | jap | eng | sub | subs | 字幕 | 简繁 | 内封
-        | baha | b-global | bilibili | netflix | nf | dsnp | disney | amzn | prime
-        | mp4 | mkv | avi | ts
+        | \d{3,4}p | \d{2,3}\s*fps | 4k | 8k | 2k | 10bit | 12bit | hdr\d* | hdr10\+? | dv | dovi
+        | dolby(?:\s*vision)? | hlg | edr | sdr | 3d | fhd | uhd | qhd | imax
+        | web[-_. ]?dl | web[-_. ]?rip | web | bdrip | bluray | blu[-_. ]?ray | bd | dvd | dvdrip
+        | hdtv | uhdtv | hddvd | remux | bdremux | hdrip
+        | x264 | x265 | h\.?264 | h\.?265 | hevc | avc | av1
+        | avs\+? | avs[23] | vc[-_. ]?1 | mpeg\d? | divx | xvid
+        | aac\d? | flac\d? | truehd\d? | atmos | dolby\s*atmos | ddp?\d?
+        | dts(?:[-_. ]?hd)?(?:[-_. ]?ma)? | eac3 | ac3 | lpcm\d? | opus\d? | vorbis\d?
+        | dd\+?\d? | ma\d? | hr\d? | pcm
+        | diy | repack | hq | proper | rerip | internal | limited | extended | uncut | unrated | hybrid
+        | chs | cht | sc | tc | gb | big5 | zh[-_. ]?(?:cn|tw|hans|hant)?
+        | jpsc | jptc | jap | jpn | eng | kor | chi | zho
+        | sub | subs | 字幕 | 简繁 | 内封 | 内嵌 | 外挂 | 简体 | 繁体 | 简日 | 繁日 | 简中 | 繁中
+        | baha | b-global | bilibili | netflix | nf | dsnp | disney\+? | amzn | amazon | prime
+        | atvp | apple\s*tv\+? | hmax | hbo\s*max | hulu | tving | colortv
+        | pmtp | paramount\+? | itunes | max
+        | part\d* | cd\d* | disc\d* | disk\d*
+        | mp4 | mkv | avi | ts | flv | rmvb | wmv | m2ts | iso
     )$
     """
 )
@@ -120,13 +131,80 @@ VARIANT_TITLE_MARKERS = {
 }
 
 VERSION_TAG_RE = re.compile(r"\[(NC\.Ver|SP|OVA|Extra|Special|OAD|Creditless)\]", re.I)
+
+# ---------------------------------------------------------------------------
+# Streaming platform prefix detection — strip platform tags that pollute title
+# ---------------------------------------------------------------------------
+PLATFORM_PREFIX_RE = re.compile(
+    r"""(?ix)
+    ^(?P<prefix>
+        HBO\s*MAX|HBOMAX|MAX|ITUNES|I[Tt]
+        |NF|NETFLIX|AMZN|AMAZON
+        |ATVP|APPLE\s*TV\+?
+        |DSNP|DISNEY\+?
+        |PMTP|PARAMOUNT\+?
+        |HMAX|HULU|TVING|COLORTV
+        |B-GLOBAL|BILIBILI|BAHA
+        |KKTV|LINETV|FRIDAY|CATCHPLAY
+        |CRAVE|STAN|MUBI|PEACOCK|STARZ
+    )
+    [\s._\-]+(?P<rest>.+)$
+    """,
+)
+
+# Exact-match set for known platform abbreviations (used when splitting on dots/underscores)
+_PLATFORM_ABBREVS = frozenset({
+    "nf", "netflix", "amzn", "amazon", "dsnp", "disney", "atvp", "hmax",
+    "hulu", "pmtp", "paramount", "tving", "colortv", "hbomax", "max",
+    "itunes", "bilibili", "baha", "kktv", "linetv", "friday", "catchplay",
+    "crave", "stan", "mubi", "peacock", "starz",
+})
+
+
+def strip_platform_prefix(text):
+    """Remove streaming platform prefix from a title string.
+
+    Examples:
+        "NF.The.Witcher.S03E01" -> "The.Witcher.S03E01"
+        "DSNP The Mandalorian S03" -> "The Mandalorian S03"
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return raw
+    m = PLATFORM_PREFIX_RE.match(raw)
+    if m:
+        return m.group("rest").strip()
+    # Also check for a leading dot-separated platform token: "NF.Title.2024"
+    first_dot = raw.find(".")
+    first_space = raw.find(" ")
+    sep_pos = -1
+    if first_dot > 0 and (first_space < 0 or first_dot < first_space):
+        sep_pos = first_dot
+    elif first_space > 0:
+        sep_pos = first_space
+    if sep_pos > 0:
+        token = raw[:sep_pos].strip()
+        lowered = token.lower().rstrip("+")
+        # Avoid stripping short ambiguous words like "max" that are common in titles
+        if lowered in _PLATFORM_ABBREVS and lowered not in ("max", "it", "stan"):
+            # Extra safety: if the rest after stripping looks like just noise (year+resolution),
+            # don't strip — it's likely a title starting with the platform name
+            rest = raw[sep_pos + 1:].strip()
+            rest_tokens = [t for t in re.split(r"[\s._-]+", rest) if t]
+            if rest_tokens and not re.fullmatch(r"(?i)\d{4}", rest_tokens[0]):
+                return rest
+    return raw
 EPISODE_NOISE_NUMBERS = {2160, 1080, 720, 480, 265, 264}
 MEDIA_NOISE_TOKEN_RE = re.compile(
     r"""(?ix)^(
         NF|NETFLIX|AMZN|AMAZON|DSNP|DISNEY|TVING|WEB|WEBDL|WEBRIP|BLURAY|BDRIP|BDREMUX|REMUX|UHD
-        |X264|X265|H264|H265|HEVC|AV1|HDR|HDR10|DV
-        |AAC\d*|DDP\d*|DD\d*|DTS(?:HD)?\d*|TRUEHD\d*|ATMOS|MA
-        |PROPER|REPACK|RERIP|INTERNAL|LIMITED|EXTENDED|UNCUT|UNRATED|HYBRID
+        |HBOMAX|HBO|MAX|ITUNES|ATVP|PMTP|PARAMOUNT|HMAX|HULU|COLORTV
+        |X264|X265|H264|H265|HEVC|AVC|AV1|DIVX|XVID|VC1|MPEG\d?|AVS\d?
+        |HDR|HDR10|HDR10PLUS|DV|DOVI|DOLBY|HLG|EDR|SDR|3D|FHD|QHD|IMAX
+        |AAC\d*|DDP\d*|DD\d*|DTS(?:HD)?(?:MA)?\d*|TRUEHD\d*|ATMOS|MA|EAC3|AC3
+        |LPCM\d*|OPUS\d*|VORBIS\d*|FLAC\d*|PCM
+        |PROPER|REPACK|RERIP|INTERNAL|LIMITED|EXTENDED|UNCUT|UNRATED|HYBRID|DIY|HQ
+        |10BIT|12BIT|8BIT
     )$"""
 )
 
@@ -453,18 +531,29 @@ def center_window(window, parent, width, height):
 def clean_search_title(title):
     if not title:
         return ""
+    # Strip streaming platform prefix before cleaning
+    text = strip_platform_prefix(title)
     # Keep bracket content (often contains series title), only remove bracket chars.
-    text = re.sub(r"[\[\]\(\)（）]", " ", title)
+    text = re.sub(r"[\[\]\(\)（）]", " ", text)
     # Drop common release group tags like UHA-WINGS, KTXP, or VC-BETA.
     text = re.sub(r"(?<![a-z0-9])[A-Z0-9]{2,}(?:-[A-Z0-9]{2,})+(?![a-z0-9])", " ", text)
+    # Drop @-style release group tags like Thor@HDSky, Pure@HDSWEB
+    text = re.sub(r"(?<![a-z0-9])\w+@\w+(?![a-z0-9])", " ", text)
     text = LANG_TAG_COMBO_RE.sub(" ", text)
+    # Normalize dots/underscores to spaces before noise removal so tokens are
+    # correctly matched by word boundaries.  Keep dots inside version numbers
+    # (e.g. "5.1") by only replacing dots surrounded by non-digit chars.
+    text = re.sub(r"(?<!\d)\.(?!\d)", " ", text)
+    text = re.sub(r"_", " ", text)
     text = re.sub(
-        r"(?i)(?:10bit|FLAC|AAC|AVC|H\.?264|H\.?265|BluRay|1080p|2160p|720p|4K|\d{2,3}\s*FPS|SRTx?\d*|x264|x265|HEVC|Remastered|D3D-Raw|BDRip|Web-DL|Baha|NC\.Ver|完结合集|第.*?季|第.*?集|S\d{1,2}E\d{1,4}|EP?\s*\d{1,4})",
+        r"(?i)(?:10bit|12bit|FLAC|AAC|AVC|H\.?264|H\.?265|BluRay|Blu-Ray|1080p|2160p|720p|480p|4K|8K|2K|FHD|UHD|QHD|\d{2,3}\s*FPS|SRTx?\d*|x264|x265|HEVC|AV1|AVS[+23]?|VC-?1|MPEG\d?|DivX|Xvid|Remastered|D3D-Raw|BDRip|BDRemux|Web-DL|Web-Rip|HDTV|HDRip|DVDRip|REMUX|Baha|NC\.Ver|完结合集|第.*?季|第.*?集|S\d{1,2}E\d{1,4}|EP?\s*\d{1,4}|DTS(?:-?HD)?(?:-?MA)?|TrueHD|Atmos|Dolby(?:\s*Vision|\s*Atmos)?|DOVI|DDPlus|DDP?\d?|EAC3|AC3|LPCM|Opus|Vorbis|HDR10\+?|HDR|HLG|EDR|SDR|DV|IMAX|REPACK|PROPER|RERIP|DIY|HQ)",
         "",
         text,
     )
     # Remove common language tags accidentally kept from filenames, like .cht/.chs/zh-CN.
     text = LANG_TAG_TOKEN_RE.sub(" ", text)
+    # Remove trailing file extension fragments like .mkv, .mp4
+    text = re.sub(r"(?i)\.?\s*(?:mkv|mp4|avi|ts|rmvb|wmv|flv|m2ts|iso|strm|mov|mpg|mpeg|3gp|asf|m4v|f4v)\s*$", "", text)
     text = re.sub(r"^[\W_]+|[\W_]+$", "", text, flags=re.UNICODE)
     text = re.sub(r"\s+", " ", text).strip()
     return text
@@ -505,6 +594,33 @@ def _looks_like_release_group(text):
     if re.search(r"[!?！？]", raw):
         return False
     compact = re.sub(r"[\s._-]+", "", raw)
+    # Known PT site release groups and fansub groups
+    if re.fullmatch(
+        r"""(?ix)
+        CHD(?:Bits|PAD|TV|WEB|HKTV)?
+        |HDS(?:ky|TV|Pad|WEB)?
+        |HDH(?:ome|Pad|TV|WEB)?
+        |MTeam(?:TV)?
+        |PTer(?:DIY|Game|TV|MTV|WEB)?
+        |Our(?:Bits|TV)
+        |PiGo(?:NF|HB|WEB)?
+        |FROG(?:E|Web)?
+        |UB(?:its|WEB|TV)
+        |L(?:eague(?:CD|HD|MTV|TV|NF|WEB)|HD)
+        |VCB-?Studio
+        |(?:Lilith|NC)-?Raws
+        |Nekomoe[\s-]?kissaten
+        |KTXP|ANi|JPTV|LOLi|SweetSub
+        |QME|CMCT(?:V)?|FHDMv|FFans(?:BD|TV|WEB|DIY)?
+        |BeyondHD|BTN|CMRG|NTb|NTG|ARiN|ExREN
+        |TrollHD|Taengoo|TEPES|D-Z0N3
+        |Shark(?:WEB|DIY|TV|MV)?
+        |FLTth|EPSiLON|FLUX|NOSiViD|PlayWEB
+        |HONE(?:yG)?
+        """,
+        compact,
+    ):
+        return True
     if "-" in raw:
         return True
     if len(compact) <= 16 and bool(re.fullmatch(r"[A-Za-z0-9]+", compact)):
@@ -1486,6 +1602,10 @@ _FOLDER_BGMID_RE = re.compile(r"(?i)bgm(?:id)?[-=:_](\d{1,8})")
 _FOLDER_DB_TAG_CLEAN_RE = re.compile(
     r"(?i)[\[\(\{]?\s*(?:tmdb|tmdbid|bgm|bgmid)[-=:_]\d{1,8}\s*[\]\)\}]?"
 )
+# Filename-embedded ID patterns: {tmdbid-123456}, [tmdb=123456], {tmdb-123456}
+_FILENAME_TMDBID_RE = re.compile(r"(?i)[\[{]\s*tmdb(?:id)?[-=](\d{1,8})\s*[\]}]")
+_FILENAME_BGMID_RE = re.compile(r"(?i)[\[{]\s*bgm(?:id)?[-=](\d{1,8})\s*[\]}]")
+_FILENAME_DOUBANID_RE = re.compile(r"(?i)[\[{]\s*douban(?:id)?[-=](\d{1,8})\s*[\]}]")
 
 
 def _latin_title_tokens(text):
@@ -1561,14 +1681,17 @@ def _folder_title_conflicts_with_hints(folder_title, title_hints):
 
 
 def extract_db_id_from_path(path, mode, title_hints=None):
-    """从路径的目录部分提取 tmdbid 或 bgmid。
+    """Extract tmdbid or bgmid from directory components and filename."""
+    path_str = str(path or "")
+    # Check the filename itself first for embedded IDs
+    filename = os.path.basename(path_str)
+    fn_pat = _FILENAME_TMDBID_RE if mode == "siliconflow_tmdb" else _FILENAME_BGMID_RE
+    fn_match = fn_pat.search(filename)
+    if fn_match:
+        return fn_match.group(1)
 
-    支持格式：(tmdbid-259537) [tmdbid=259537] {tmdbid-259537} tmdb-259537 等。
-    仅检测文件夹名，不检测文件名本身。
-    mode: 'siliconflow_tmdb' 或 'siliconflow_bgm'
-    返回: id 字符串 或 None
-    """
-    dir_part = os.path.dirname(str(path or ""))
+    # Fallback: check directory components (existing behavior)
+    dir_part = os.path.dirname(path_str)
     pat = _FOLDER_TMDBID_RE if mode == "siliconflow_tmdb" else _FOLDER_BGMID_RE
     parts = [part for part in re.split(r"[\\/]+", dir_part) if part]
     for part in reversed(parts):

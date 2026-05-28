@@ -972,7 +972,7 @@ def process_task(gui, i, advance_progress=True):
             _mark_skipped_recap(gui, item, t, "decimal_recap")
             return
 
-        media_type = gui._resolve_media_type(g)
+        media_type = gui._resolve_media_type(g, pure_name=pure, extracted_ep=extracted_ep)
         is_tv = media_type == "episode"
         path_key = item.path
 
