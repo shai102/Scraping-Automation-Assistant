@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import sys
@@ -87,6 +88,27 @@ def clear_logs(kind: str = Query("scrape", description="scrape / app")):
     if not os.path.isfile(log_path):
         return {"ok": True, "message": "日志文件不存在，无需清除"}
     try:
+        # Reset all FileHandler streams pointing to this log file so their
+        # write offset doesn't cause NUL-byte padding after truncation.
+        norm = os.path.normcase(os.path.normpath(log_path))
+        for logger_name in list(logging.Logger.manager.loggerDict) + [None]:
+            log_obj = logging.getLogger(logger_name)
+            for handler in list(getattr(log_obj, "handlers", [])):
+                if isinstance(handler, logging.FileHandler):
+                    try:
+                        handler_path = os.path.normcase(
+                            os.path.normpath(handler.baseFilename)
+                        )
+                    except Exception:
+                        continue
+                    if handler_path == norm:
+                        handler.close()
+                        handler.stream = open(
+                            handler.baseFilename,
+                            handler.mode,
+                            encoding=handler.encoding,
+                        )
+        # Now truncate the file
         with open(log_path, "w", encoding="utf-8") as fh:
             fh.truncate(0)
         return {"ok": True, "message": "日志已清除"}
