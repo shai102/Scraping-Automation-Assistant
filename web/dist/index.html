@@ -938,9 +938,47 @@
           <button class="btn btn-primary" @click="saveSettings">保存</button>
         </div>
       </div>
-    </section>
 
-    <!-- 网络代理 -->
+      <!-- 元数据自动补齐 -->
+      <div class="card" style="margin-top:16px">
+        <div class="form-group">
+          <label style="font-weight:600;font-size:15px">元数据自动补齐</label>
+          <small style="color:#1976d2;display:block;margin-top:6px">新番/新剧首次刮削时 TMDB 数据可能不完整（缺集名、简介、截图、演员等），开启后系统会定期巡检并自动从 TMDB/BGM 拉取最新数据补齐 NFO 和图片。</small>
+        </div>
+        <div class="form-group" style="margin-top:8px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" v-model="cfg.metadata_refresh_enabled">
+            <span>启用定时巡检</span>
+          </label>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>巡检间隔（小时）</label>
+            <select v-model.number="cfg.metadata_refresh_interval_hours" style="max-width:200px">
+              <option :value="6">6 小时</option>
+              <option :value="12">12 小时（默认）</option>
+              <option :value="24">24 小时</option>
+              <option :value="48">48 小时</option>
+              <option :value="168">7 天</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>回看天数</label>
+            <select v-model.number="cfg.metadata_refresh_lookback_days" style="max-width:200px">
+              <option :value="7">最近 7 天</option>
+              <option :value="14">最近 14 天（默认）</option>
+              <option :value="30">最近 30 天</option>
+              <option :value="90">最近 90 天</option>
+              <option :value="0">不限制</option>
+            </select>
+            <small style="color:#888;display:block;margin-top:6px">只检查此范围内的已成功记录，超过该天数的记录不再自动巡检。</small>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" @click="saveSettings">保存</button>
+        </div>
+      </div>
+    </section>
     <section v-if="page==='proxy'">
       <div class="page-header"><h1>网络代理</h1></div>
       <div class="card proxy-card">
