@@ -711,6 +711,26 @@ const app = Vue.createApp({
     async retryRecord(id) {
       try { await this.api('POST', '/api/records/' + id + '/retry'); this.loadRecords(); } catch (e) { this.notify(e.message, 'error'); }
     },
+    async refreshMetadata(id) {
+      try {
+        var res = await this.api('POST', '/api/records/' + id + '/refresh-metadata');
+        if (res.updated) {
+          this.notify('元数据已刷新', 'success');
+        } else {
+          this.notify(res.message || '元数据已是最新', 'info');
+        }
+        this.loadRecords();
+      } catch (e) { this.notify(e.message, 'error'); }
+    },
+    async batchRefreshMetadata() {
+      if (!this.selectedIds.length) return;
+      try {
+        var res = await this.api('POST', '/api/records/batch-refresh-metadata', { ids: this.selectedIds });
+        this.notify(res.message || ('已刷新 ' + (res.updated || 0) + ' 条记录'), 'success');
+        if (this.groupedView) this.loadGroupedRecords();
+        else this.loadRecords();
+      } catch (e) { this.notify(e.message, 'error'); }
+    },
     // --- Batch Operations ---
     toggleSelectAll(e) {
       if (e.target.checked) {
@@ -828,6 +848,17 @@ const app = Vue.createApp({
     },
     refreshLogs() {
       this.loadLogs();
+    },
+    async clearLogs() {
+      var ok = await this.confirm({ title: '清除日志', message: '确定要清除所有刮削日志吗？此操作不可恢复。', danger: true, confirmText: '清除', cancelText: '取消' });
+      if (!ok) return;
+      try {
+        var data = await this.api('DELETE', '/api/logs?kind=scrape');
+        this.notify(data.message || '日志已清除', data.ok ? 'success' : 'error');
+        if (data.ok) this.loadLogs();
+      } catch (e) {
+        this.notify(e.message, 'error');
+      }
     },
     startLogAutoRefresh() {
       this.stopLogAutoRefresh();

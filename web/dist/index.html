@@ -16,7 +16,7 @@
         <div class="app-brand-mark">🎬</div>
         <div>
           <h2>刮削助手</h2>
-          <span>v4.2</span>
+          <span>v4.3</span>
         </div>
       </div>
     </div>
@@ -236,6 +236,7 @@
           <button class="btn-grad btn-grad-orange btn-sm" @click="exportErrors">导出识别错误</button>
           <button class="btn-grad btn-grad-red btn-sm" @click="batchDeleteSelected" :disabled="!selectedIds.length">删除所选记录</button>
           <button class="btn-grad btn-grad-yellow btn-sm" @click="batchRetrySelected" :disabled="!selectedIds.length">重新整理所有</button>
+          <button class="btn-grad btn-grad-blue btn-sm" @click="batchRefreshMetadata" :disabled="!selectedIds.length">🔄 刷新元数据</button>
           <span class="toolbar-hint">已选择 {{selectedIds.length}} 条记录</span>
         </div>
         <div class="toolbar-right">
@@ -310,6 +311,7 @@
             <td style="white-space:nowrap;font-size:12px;color:#999">{{formatTime(r.updated_at || r.created_at)}}</td>
             <td class="actions">
               <button v-if="r.status!=='processing'" class="btn btn-sm btn-primary" @click="openManualMatch(r)">手动识别</button>
+              <button v-if="r.status==='success'" class="btn btn-sm" @click="refreshMetadata(r.id)" title="重新拉取TMDB/BGM元数据补齐NFO">🔄 刷新</button>
               <button v-if="r.status==='failed'||r.status==='pending_manual'" class="btn btn-sm" @click="retryRecord(r.id)">重试</button>
               <button class="btn btn-sm btn-danger" @click="deleteRecord(r.id)">删除</button>
             </td>
@@ -540,6 +542,7 @@
         </div>
         <div class="toolbar-right">
           <button class="btn-grad btn-grad-blue btn-sm" @click="refreshLogs" :disabled="logLoading">{{logLoading?'加载中...':'刷新'}}</button>
+          <button class="btn-grad btn-grad-red btn-sm" @click="clearLogs">一键清除</button>
         </div>
       </div>
       <div class="filter-row">

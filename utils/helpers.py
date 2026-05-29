@@ -1595,6 +1595,81 @@ def _nfo_has_empty_plot(path):
         return False
 
 
+# ---------------------------------------------------------------------------
+# Metadata completeness check — used by the periodic refresh patrol
+# ---------------------------------------------------------------------------
+
+_GENERIC_EP_TITLE_RE = re.compile(r"^第\s*\d+\s*集$")
+
+
+def metadata_is_incomplete(metadata_json_str: str) -> bool:
+    """Check if stored metadata has key fields missing that may be filled later.
+
+    Returns True when any critical field is absent/empty, indicating that a
+    refresh from TMDB/BGM might yield more complete data.
+    """
+    if not metadata_json_str:
+        return False
+    try:
+        m = json.loads(metadata_json_str)
+    except Exception:
+        return False
+
+    # Skip records without a valid matched ID — nothing to refresh
+    mid = str(m.get("id") or "None")
+    if mid == "None" or not mid:
+        return False
+
+    media_type = str(m.get("type") or "episode").strip().lower()
+    is_tv = media_type == "episode"
+
+    if is_tv:
+        # Episode title missing or generic "第 X 集"
+        ep_title = str(m.get("ep_title") or "").strip()
+        if not ep_title or _GENERIC_EP_TITLE_RE.match(ep_title):
+            return True
+        # Episode plot missing
+        if not str(m.get("ep_plot") or "").strip():
+            return True
+        # Episode still image missing
+        if not str(m.get("still") or "").strip():
+            return True
+        # Series overview missing
+        if not str(m.get("overview") or "").strip():
+            return True
+        # No actors
+        if not m.get("actors"):
+            return True
+        # No genres
+        if not m.get("genres"):
+            return True
+        # No rating
+        try:
+            if float(m.get("rating") or 0) == 0:
+                return True
+        except (TypeError, ValueError):
+            return True
+    else:
+        # Movie
+        if not str(m.get("overview") or "").strip():
+            return True
+        if not m.get("actors"):
+            return True
+        if not m.get("genres"):
+            return True
+        if not str(m.get("poster") or "").strip():
+            return True
+        if not str(m.get("fanart") or "").strip():
+            return True
+        try:
+            if float(m.get("rating") or 0) == 0:
+                return True
+        except (TypeError, ValueError):
+            return True
+
+    return False
+
+
 atexit.register(lambda: flush_api_cache(force=True))
 
 _FOLDER_TMDBID_RE = re.compile(r"(?i)tmdb(?:id)?[-=:_](\d{1,8})")

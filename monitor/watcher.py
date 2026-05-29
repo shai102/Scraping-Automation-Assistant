@@ -23,7 +23,7 @@ from core.services.worker_context import WorkerContext
 from core.workers.task_runner import process_task as _process_task
 from db.database import SessionLocal
 from db.scrape_models import MonitorFolder, ScrapeRecord, SymlinkRecord
-from utils.helpers import normalize_parse_source
+from utils.helpers import normalize_parse_source, metadata_is_incomplete, invalidate_cache_prefix
 from utils.telegram_notify import NotificationBatcher
 from utils.emby_notify import EmbyNotifier
 
@@ -34,6 +34,10 @@ _DEBOUNCE_SECONDS = 5.0
 
 # Polling: scan folders every N seconds to catch network-written files
 _POLL_INTERVAL_SECONDS = 30.0
+
+# Metadata refresh: default interval (12 hours) and lookback (14 days)
+_METADATA_REFRESH_DEFAULT_INTERVAL_HOURS = 12
+_METADATA_REFRESH_DEFAULT_LOOKBACK_DAYS = 14
 
 
 def _has_nfo(filepath: str) -> bool:
@@ -340,6 +344,7 @@ class FolderWatcher:
         self._worker_ctx: Optional[WorkerContext] = None
         self._debounce_thread: Optional[threading.Thread] = None
         self._poll_thread: Optional[threading.Thread] = None
+        self._metadata_refresh_thread: Optional[threading.Thread] = None
         self._symlink_export_paths: Set[str] = set()
         self._tg_batcher = NotificationBatcher(
             cfg_getter=lambda: self._worker_ctx._cfg if self._worker_ctx else {}
@@ -365,6 +370,10 @@ class FolderWatcher:
         self._debounce_thread.start()
         self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
         self._poll_thread.start()
+        self._metadata_refresh_thread = threading.Thread(
+            target=self._metadata_refresh_loop, daemon=True
+        )
+        self._metadata_refresh_thread.start()
         self._sync_watches()
         logger.info("FolderWatcher started")
 
@@ -829,6 +838,100 @@ class FolderWatcher:
                         logger.debug(f"Poll found new file: {full}")
         finally:
             db.close()
+
+    # ------------------------------------------------------------------
+    # Metadata refresh patrol
+    # ------------------------------------------------------------------
+
+    def _metadata_refresh_loop(self):
+        """Periodically scan recent successful records and refresh incomplete metadata."""
+        # Wait a bit before the first run to let the server fully start
+        time.sleep(60)
+        while self._running:
+            cfg = self._worker_ctx._cfg if self._worker_ctx else {}
+            enabled = cfg.get("metadata_refresh_enabled", True)
+            interval_hours = cfg.get(
+                "metadata_refresh_interval_hours",
+                _METADATA_REFRESH_DEFAULT_INTERVAL_HOURS,
+            )
+            interval_seconds = max(1800, interval_hours * 3600)  # min 30 min
+
+            if enabled:
+                try:
+                    self._refresh_incomplete_records()
+                except Exception as e:
+                    logger.error(f"Metadata refresh error: {e}")
+
+            # Sleep in small increments so we can exit quickly on stop
+            slept = 0.0
+            while slept < interval_seconds and self._running:
+                time.sleep(min(30.0, interval_seconds - slept))
+                slept += 30.0
+
+    def _refresh_incomplete_records(self):
+        """Single pass: find recent incomplete records and refresh their metadata."""
+        if not self._worker_ctx:
+            return
+
+        cfg = self._worker_ctx._cfg if self._worker_ctx else {}
+        lookback_days = cfg.get(
+            "metadata_refresh_lookback_days",
+            _METADATA_REFRESH_DEFAULT_LOOKBACK_DAYS,
+        )
+
+        import datetime
+        cutoff = datetime.datetime.now() - datetime.timedelta(days=lookback_days)
+
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(ScrapeRecord)
+                .filter(
+                    ScrapeRecord.status == "success",
+                    ScrapeRecord.updated_at >= cutoff,
+                    ScrapeRecord.metadata_json.isnot(None),
+                    ScrapeRecord.matched_id.isnot(None),
+                )
+                .order_by(ScrapeRecord.id.desc())
+                .all()
+            )
+            # Filter to those that are actually incomplete
+            incomplete = [r for r in rows if metadata_is_incomplete(r.metadata_json or "")]
+            if not incomplete:
+                return
+
+            logger.info(
+                f"元数据巡检: 发现 {len(incomplete)} 条不完整记录，开始刷新"
+            )
+
+            refreshed = 0
+            for record in incomplete:
+                if not self._running:
+                    break
+                try:
+                    updated = self._refresh_single_record(record, db)
+                    if updated:
+                        refreshed += 1
+                        self._broadcast({
+                            "type": "record_update",
+                            "data": _record_to_dict(record),
+                        })
+                except Exception as e:
+                    logger.warning(
+                        f"元数据刷新失败 (record_id={record.id}): {e}"
+                    )
+                # Rate-limit friendly: small pause between records
+                time.sleep(2.0)
+
+            if refreshed:
+                logger.info(f"元数据巡检完成: 刷新了 {refreshed}/{len(incomplete)} 条记录")
+
+        finally:
+            db.close()
+
+    def _refresh_single_record(self, record, db) -> bool:
+        """Refresh metadata for a single ScrapeRecord. Returns True if updated."""
+        return refresh_record_metadata(record, db, self._worker_ctx, self._broadcast)
 
     # ------------------------------------------------------------------
     # Full scan
@@ -1328,6 +1431,175 @@ def _delete_per_file_sidecars(file_path: str):
                 logger.debug(f"删除伴随文件: {sidecar}")
             except Exception as e:
                 logger.warning(f"删除伴随文件失败 {sidecar}: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Metadata refresh — re-fetch from TMDB/BGM and update NFO/images
+# ---------------------------------------------------------------------------
+
+def refresh_record_metadata(record, db, worker_ctx, broadcast_fn=None) -> bool:
+    """Re-fetch metadata for a single ScrapeRecord and update NFO + images.
+
+    Does NOT re-run the recognition pipeline — only refreshes metadata for an
+    already-matched record. Returns True if the record was updated.
+
+    Parameters
+    ----------
+    record : ScrapeRecord
+        Must have status='success', matched_id set, and metadata_json populated.
+    db : SQLAlchemy Session
+        Active database session (caller commits or rolls back).
+    worker_ctx : WorkerContext
+        Runtime context with API keys and sidecar-writing methods.
+    broadcast_fn : callable, optional
+        WebSocket broadcast function.
+    """
+    from db.tmdb_api import (
+        fetch_tmdb_by_id,
+        fetch_tmdb_credits,
+        fetch_tmdb_episode_meta,
+        fetch_tmdb_season_poster,
+        fetch_hybrid_episode_meta,
+        fetch_bgm_by_id,
+    )
+
+    if not record.metadata_json or not record.matched_id:
+        return False
+
+    try:
+        old_meta = json.loads(record.metadata_json)
+    except Exception:
+        return False
+
+    mid = str(record.matched_id or "None")
+    if mid == "None":
+        return False
+
+    provider = str(record.matched_provider or old_meta.get("provider") or "tmdb").strip().lower()
+    is_tmdb = provider == "tmdb"
+    media_type = str(old_meta.get("type") or "episode").strip().lower()
+    is_tv = media_type == "episode"
+
+    api_tmdb = worker_ctx.tmdb_api_key.get().strip() if worker_ctx else ""
+    api_bgm = worker_ctx.bgm_api_key.get().strip() if worker_ctx else ""
+
+    # Clear API cache for this ID so we get fresh data from TMDB
+    if is_tmdb:
+        invalidate_cache_prefix(f"tmdb_detail:{mid}_")
+        invalidate_cache_prefix(f"tmdb_credits:{mid}_")
+        if is_tv:
+            s_num = old_meta.get("s", 1)
+            e_num = old_meta.get("e", 1)
+            invalidate_cache_prefix(f"tmdb_ep_v3:{mid}_")
+            invalidate_cache_prefix(f"tmdb_season_poster:{mid}_")
+    else:
+        invalidate_cache_prefix(f"bgm_detail:{mid}_")
+
+    # Fetch fresh detail metadata
+    if is_tmdb:
+        _t, _tid, _msg, detail_meta = fetch_tmdb_by_id(mid, is_tv, api_tmdb)
+    else:
+        _t, _tid, _msg, detail_meta = fetch_bgm_by_id(mid, api_bgm)
+
+    if not detail_meta or _tid == "None":
+        return False  # API returned nothing useful
+
+    # Merge: only fill in fields that were empty before
+    new_meta = dict(old_meta)
+    for key in ("overview", "poster", "fanart", "release", "original_title", "status"):
+        old_val = str(new_meta.get(key) or "").strip()
+        new_val = str(detail_meta.get(key) or "").strip()
+        if not old_val and new_val:
+            new_meta[key] = new_val
+
+    for key in ("genres", "studios"):
+        if not new_meta.get(key) and detail_meta.get(key):
+            new_meta[key] = detail_meta[key]
+
+    for key in ("rating", "votes", "runtime"):
+        try:
+            old_v = float(new_meta.get(key) or 0)
+        except (TypeError, ValueError):
+            old_v = 0
+        try:
+            new_v = float(detail_meta.get(key) or 0)
+        except (TypeError, ValueError):
+            new_v = 0
+        if old_v == 0 and new_v > 0:
+            new_meta[key] = detail_meta[key]
+
+    # Fetch credits if missing
+    if is_tmdb and not new_meta.get("actors"):
+        actors, directors = fetch_tmdb_credits(mid, is_tv=is_tv, api_key=api_tmdb)
+        if actors:
+            new_meta["actors"] = actors
+        if directors and not new_meta.get("directors"):
+            new_meta["directors"] = directors
+
+    # Fetch episode-level data for TV
+    if is_tv:
+        s_num = new_meta.get("s", 1)
+        e_num = new_meta.get("e", 1)
+
+        ep_n, ep_p, ep_s = "", "", ""
+        s_p = ""
+
+        if is_tmdb:
+            title_for_ep = new_meta.get("title") or record.matched_title or ""
+            ep_n, ep_p, ep_s = fetch_tmdb_episode_meta(
+                mid, s_num, e_num, api_tmdb, title_for_ep, api_bgm
+            )
+            s_p = fetch_tmdb_season_poster(mid, s_num, api_tmdb)
+        else:
+            title_for_ep = new_meta.get("title") or record.matched_title or ""
+            year_for_ep = new_meta.get("year")
+            ep_n, ep_p, ep_s, s_p = fetch_hybrid_episode_meta(
+                title_for_ep, mid, s_num, e_num, api_bgm, api_tmdb, year_for_ep
+            )
+
+        # Fill missing episode fields
+        import re as _re
+        _GENERIC_EP_RE = _re.compile(r"^第\s*\d+\s*集$")
+        old_ep_title = str(new_meta.get("ep_title") or "").strip()
+        if ep_n and (not old_ep_title or _GENERIC_EP_RE.match(old_ep_title)):
+            new_meta["ep_title"] = ep_n
+
+        if ep_p and not str(new_meta.get("ep_plot") or "").strip():
+            new_meta["ep_plot"] = ep_p
+
+        if ep_s and not str(new_meta.get("still") or "").strip():
+            new_meta["still"] = ep_s
+
+        if s_p and not str(new_meta.get("s_poster") or "").strip():
+            new_meta["s_poster"] = s_p
+
+    # Check if anything actually changed
+    if json.dumps(new_meta, sort_keys=True) == json.dumps(old_meta, sort_keys=True):
+        return False
+
+    # Determine target path for sidecar refresh
+    target_path = str(record.target_path or "").strip()
+    if not target_path or not os.path.exists(target_path):
+        # Even if the target file is gone, still update the DB record
+        record.metadata_json = json.dumps(new_meta, ensure_ascii=False)
+        db.commit()
+        return True
+
+    # Refresh NFO files and images
+    ctx = WorkerContext(config=dict(worker_ctx._cfg))
+    updated = ctx._refresh_sidecar_files(target_path, old_meta, new_meta)
+
+    # Update DB record
+    record.metadata_json = json.dumps(new_meta, ensure_ascii=False)
+    db.commit()
+
+    if updated:
+        logger.info(
+            f"元数据刷新: record_id={record.id} title={new_meta.get('title')} "
+            f"id={mid} provider={provider}"
+        )
+
+    return True
 
 
 # Windows / macOS auto-generated metadata files that should be ignored when

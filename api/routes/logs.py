@@ -79,3 +79,16 @@ def read_logs(
         "exists": os.path.isfile(log_path),
         "items": items,
     }
+
+
+@router.delete("")
+def clear_logs(kind: str = Query("scrape", description="scrape / app")):
+    log_path = _resolve_log_path(kind)
+    if not os.path.isfile(log_path):
+        return {"ok": True, "message": "日志文件不存在，无需清除"}
+    try:
+        with open(log_path, "w", encoding="utf-8") as fh:
+            fh.truncate(0)
+        return {"ok": True, "message": "日志已清除"}
+    except Exception as err:
+        return {"ok": False, "message": f"清除失败: {err}"}

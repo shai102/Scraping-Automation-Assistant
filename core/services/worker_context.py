@@ -866,8 +866,138 @@ class WorkerContext:
         for img_path, img_url in image_tasks:
             save_image(img_path, img_url)
 
-    # ------------------------------------------------------------------
-    # process_task / process_one_file delegates  (called by task_runner)
+    def _refresh_sidecar_files(self, target_path, old_metadata, new_metadata):
+        """Re-write NFO files and download missing images after a metadata refresh.
+
+        Unlike _write_sidecar_files which skips existing files, this method
+        **overwrites** NFOs when the new metadata has substantive improvements
+        and downloads images that are still missing on disk.
+        """
+        target_dir = os.path.dirname(target_path)
+        m = new_metadata or {}
+        media_type = m.get("type", "episode")
+        is_tv = media_type == "episode"
+
+        old = old_metadata or {}
+        image_tasks = []
+
+        def _field_improved(key):
+            """Return True if the new value for *key* is meaningfully better."""
+            new_val = str(m.get(key) or "").strip()
+            old_val = str(old.get(key) or "").strip()
+            return bool(new_val) and not bool(old_val)
+
+        def _list_improved(key):
+            return bool(m.get(key)) and not bool(old.get(key))
+
+        def _rating_improved():
+            try:
+                new_r = float(m.get("rating") or 0)
+                old_r = float(old.get("rating") or 0)
+                return new_r > 0 and old_r == 0
+            except (TypeError, ValueError):
+                return False
+
+        has_improvements = (
+            _field_improved("overview")
+            or _field_improved("ep_plot")
+            or _field_improved("ep_title")
+            or _field_improved("still")
+            or _field_improved("poster")
+            or _field_improved("fanart")
+            or _field_improved("s_poster")
+            or _list_improved("actors")
+            or _list_improved("genres")
+            or _list_improved("directors")
+            or _list_improved("studios")
+            or _rating_improved()
+        )
+
+        if not has_improvements:
+            return False  # nothing to update
+
+        # Detect: still image went from empty → populated, meaning the old
+        # thumb was a poster fallback and should be replaced with the real still.
+        still_upgraded = (
+            bool(str(m.get("still") or "").strip())
+            and not bool(str(old.get("still") or "").strip())
+        )
+
+        with self.file_write_lock:
+            if is_tv:
+                # Episode NFO — overwrite
+                ep_nfo = os.path.splitext(target_path)[0] + ".nfo"
+                write_nfo(ep_nfo, m, "episodedetails")
+
+                # Episode thumbnail — force replace when still image is newly available
+                thumb_source = m.get("still") or m.get("s_poster") or m.get("poster")
+                if thumb_source:
+                    thumb_path = os.path.splitext(target_path)[0] + "-thumb.jpg"
+                    if still_upgraded and os.path.exists(thumb_path):
+                        # Old thumb was a poster fallback; delete so we can download the real still
+                        try:
+                            os.remove(thumb_path)
+                        except Exception:
+                            pass
+                    if not os.path.exists(thumb_path):
+                        image_tasks.append((thumb_path, thumb_source))
+
+                cur_dir = target_dir
+                dir_name = os.path.basename(cur_dir)
+                is_season_folder = bool(re.match(r"^(Season\s*\d+|S\d+)$", dir_name, re.I))
+                root_d = os.path.dirname(cur_dir) if (is_season_folder and os.path.dirname(cur_dir)) else cur_dir
+
+                s_num = m.get("s", 1)
+                try:
+                    s_fmt = f"{int(s_num):02d}"
+                except Exception:
+                    s_fmt = str(s_num)
+
+                # Season NFO — overwrite
+                s_nfo_root = os.path.join(root_d, f"season{s_fmt}.nfo")
+                write_nfo(s_nfo_root, m, "season")
+
+                # Season poster
+                if m.get("s_poster"):
+                    s_poster_root = os.path.join(root_d, f"season{s_fmt}-poster.jpg")
+                    if not os.path.exists(s_poster_root):
+                        image_tasks.append((s_poster_root, m["s_poster"]))
+
+                if is_season_folder:
+                    season_nfo_local = os.path.join(cur_dir, "season.nfo")
+                    write_nfo(season_nfo_local, m, "season")
+                    if m.get("s_poster"):
+                        folder_jpg_local = os.path.join(cur_dir, "folder.jpg")
+                        if not os.path.exists(folder_jpg_local):
+                            image_tasks.append((folder_jpg_local, m["s_poster"]))
+
+                # tvshow.nfo — overwrite
+                tvshow_nfo = os.path.join(root_d, "tvshow.nfo")
+                write_nfo(tvshow_nfo, m, "tvshow")
+
+                # Series poster
+                if m.get("poster"):
+                    poster_path = os.path.join(root_d, "poster.jpg")
+                    if not os.path.exists(poster_path):
+                        image_tasks.append((poster_path, m["poster"]))
+            else:
+                # Movie NFO — overwrite
+                movie_nfo = os.path.splitext(target_path)[0] + ".nfo"
+                write_nfo(movie_nfo, m, "movie")
+
+                if m.get("poster"):
+                    poster_path = os.path.join(target_dir, "poster.jpg")
+                    if not os.path.exists(poster_path):
+                        image_tasks.append((poster_path, m["poster"]))
+                if m.get("fanart"):
+                    fanart_path = os.path.join(target_dir, "fanart.jpg")
+                    if not os.path.exists(fanart_path):
+                        image_tasks.append((fanart_path, m["fanart"]))
+
+        for img_path, img_url in image_tasks:
+            save_image(img_path, img_url)
+
+        return True  # changes were applied
     # ------------------------------------------------------------------
 
     def process_task(self, i, advance_progress=True):

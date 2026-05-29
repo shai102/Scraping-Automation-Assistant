@@ -66,6 +66,9 @@ class SettingsModel(BaseModel):
     proxy_enabled: Optional[bool] = None
     proxy_url: Optional[str] = None
     proxy_no_proxy: Optional[str] = None
+    metadata_refresh_enabled: Optional[bool] = None
+    metadata_refresh_interval_hours: Optional[int] = None
+    metadata_refresh_lookback_days: Optional[int] = None
 
 
 class FilenamePreviewModel(BaseModel):
@@ -232,6 +235,9 @@ def get_settings_raw():
     cfg.setdefault("proxy_url", "")
     cfg.setdefault("proxy_no_proxy", DEFAULT_NO_PROXY)
     cfg.setdefault("preserve_media_suffix", False)
+    cfg.setdefault("metadata_refresh_enabled", True)
+    cfg.setdefault("metadata_refresh_interval_hours", 12)
+    cfg.setdefault("metadata_refresh_lookback_days", 14)
     return cfg
 
 

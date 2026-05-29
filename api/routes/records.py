@@ -1058,3 +1058,79 @@ def retry_record(record_id: int, db: Session = Depends(get_db)):
 
     threading.Thread(target=_run, daemon=True).start()
     return {"ok": True, "message": "重试已启动"}
+
+
+# ------------------------------------------------------------------
+# Metadata refresh — re-fetch from TMDB/BGM without full re-recognition
+# ------------------------------------------------------------------
+
+@router.post("/{record_id}/refresh-metadata")
+def refresh_metadata(record_id: int, db: Session = Depends(get_db)):
+    """Re-fetch metadata for a successful record and update NFO + images."""
+    row = db.query(ScrapeRecord).get(record_id)
+    if not row:
+        raise HTTPException(404)
+    if row.status != "success":
+        raise HTTPException(400, detail="只能刷新已成功的记录")
+    if not row.matched_id or not row.metadata_json:
+        raise HTTPException(400, detail="记录缺少匹配信息")
+
+    from server import get_watcher
+    from monitor.watcher import refresh_record_metadata, _record_to_dict
+
+    w = get_watcher()
+    worker_ctx = w._worker_ctx if w else WorkerContext()
+    broadcast_fn = w._broadcast if w else (lambda d: None)
+
+    try:
+        updated = refresh_record_metadata(row, db, worker_ctx, broadcast_fn)
+        if updated:
+            broadcast_fn({"type": "record_update", "data": _record_to_dict(row)})
+            return {"ok": True, "message": "元数据已刷新", "updated": True}
+        return {"ok": True, "message": "元数据已是最新，无需刷新", "updated": False}
+    except Exception as e:
+        logger.error(f"Metadata refresh failed for record {record_id}: {e}")
+        raise HTTPException(500, detail=f"刷新失败: {str(e)[:200]}")
+
+
+class BatchRefreshBody(BaseModel):
+    ids: list[int]
+
+
+@router.post("/batch-refresh-metadata")
+def batch_refresh_metadata(body: BatchRefreshBody, db: Session = Depends(get_db)):
+    """Re-fetch metadata for multiple successful records."""
+    rows = db.query(ScrapeRecord).filter(
+        ScrapeRecord.id.in_(body.ids),
+        ScrapeRecord.status == "success",
+        ScrapeRecord.matched_id.isnot(None),
+        ScrapeRecord.metadata_json.isnot(None),
+    ).all()
+
+    if not rows:
+        return {"ok": True, "total": 0, "updated": 0, "message": "没有符合条件的记录"}
+
+    from server import get_watcher
+    from monitor.watcher import refresh_record_metadata, _record_to_dict
+
+    w = get_watcher()
+    worker_ctx = w._worker_ctx if w else WorkerContext()
+    broadcast_fn = w._broadcast if w else (lambda d: None)
+
+    updated_count = 0
+    for row in rows:
+        try:
+            if refresh_record_metadata(row, db, worker_ctx, broadcast_fn):
+                updated_count += 1
+                broadcast_fn({"type": "record_update", "data": _record_to_dict(row)})
+        except Exception as e:
+            logger.warning(f"Batch metadata refresh failed for record {row.id}: {e}")
+        import time
+        time.sleep(1.0)  # Rate-limit friendly
+
+    return {
+        "ok": True,
+        "total": len(rows),
+        "updated": updated_count,
+        "message": f"已刷新 {updated_count}/{len(rows)} 条记录",
+    }
