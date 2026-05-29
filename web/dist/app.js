@@ -850,7 +850,7 @@ const app = Vue.createApp({
       this.loadLogs();
     },
     async clearLogs() {
-      var ok = await this.confirm({ title: '清除日志', message: '确定要清除所有刮削日志吗？此操作不可恢复。', danger: true, confirmText: '清除', cancelText: '取消' });
+      var ok = await this.confirmAction({ title: '清除日志', message: '确定要清除所有刮削日志吗？此操作不可恢复。', danger: true, confirmText: '清除', cancelText: '取消' });
       if (!ok) return;
       try {
         var data = await this.api('DELETE', '/api/logs?kind=scrape');
