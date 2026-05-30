@@ -1333,7 +1333,18 @@ class FolderWatcher:
                         and os.path.normcase(getattr(record, "_previous_target", ""))
                         == os.path.normcase(target)
                     )
-                    if target_lexists and is_repair_target and target_exists:
+                    # Check if source and target are actually the same file on disk
+                    # (e.g. already organized, just needs scraping)
+                    is_same_file = False
+                    if target_exists and os.path.isfile(item.path):
+                        try:
+                            is_same_file = os.path.samefile(item.path, target)
+                        except (OSError, ValueError):
+                            pass
+                    if is_same_file:
+                        # File is already in the right place — skip move, just update path
+                        item.path = target
+                    elif target_lexists and is_repair_target and target_exists:
                         item.path = target
                     elif target_lexists and is_repair_target and not target_exists:
                         try:

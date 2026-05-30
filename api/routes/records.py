@@ -854,10 +854,21 @@ def _archive_file(item, row, folder, ctx, tid, provider, db):
         os.makedirs(target_dir, exist_ok=True)
 
     if os.path.normcase(item.path) != os.path.normcase(target):
-        if os.path.exists(target):
-            # 目标已存在且不是当前文件本身 —— 若源文件也已消失，说明上次整理已完成，
-            # 直接更新 sidecar 和数据库状态，不视为失败。
+        # Check if source and target are actually the same file on disk
+        _same_file = False
+        if os.path.exists(target) and os.path.isfile(item.path):
+            try:
+                _same_file = os.path.samefile(item.path, target)
+            except (OSError, ValueError):
+                pass
+
+        if _same_file:
+            # File is already in the right place — skip move, just scrape
+            item.path = target
+        elif os.path.exists(target):
             if not os.path.isfile(item.path):
+                # 目标已存在且源文件已消失，说明上次整理已完成，
+                # 直接更新 sidecar 和数据库状态，不视为失败。
                 ctx._write_sidecar_files(item, target)
                 row.status = "success"
                 row.matched_title = (item.metadata or {}).get("title")
@@ -873,26 +884,27 @@ def _archive_file(item, row, folder, ctx, tid, provider, db):
             row.error_msg = f"目标文件已存在: {target}"
             db.commit()
             raise HTTPException(400, detail=f"目标文件已存在: {target}")
-        src_dir = os.path.dirname(item.path)
-
-        if organize_mode == 'copy':
-            shutil.copy2(item.path, target)
-        elif organize_mode == 'symlink':
-            os.symlink(os.path.abspath(item.path), target)
-        elif organize_mode == 'hardlink':
-            os.link(item.path, target)
         else:
-            # move / rename — both use shutil.move
-            shutil.move(item.path, target)
+            src_dir = os.path.dirname(item.path)
 
-        # For modes that keep the source file, don't clean up source dirs
-        if organize_mode not in ('copy', 'symlink', 'hardlink'):
-            item.path = target
-            watch_root = os.path.normpath(folder.path) if folder else None
-            from monitor.watcher import _remove_empty_dirs
-            _remove_empty_dirs(src_dir, stop_at=watch_root)
-        else:
-            item.path = target
+            if organize_mode == 'copy':
+                shutil.copy2(item.path, target)
+            elif organize_mode == 'symlink':
+                os.symlink(os.path.abspath(item.path), target)
+            elif organize_mode == 'hardlink':
+                os.link(item.path, target)
+            else:
+                # move / rename — both use shutil.move
+                shutil.move(item.path, target)
+
+            # For modes that keep the source file, don't clean up source dirs
+            if organize_mode not in ('copy', 'symlink', 'hardlink'):
+                item.path = target
+                watch_root = os.path.normpath(folder.path) if folder else None
+                from monitor.watcher import _remove_empty_dirs
+                _remove_empty_dirs(src_dir, stop_at=watch_root)
+            else:
+                item.path = target
 
     ctx._write_sidecar_files(item, target)
 
