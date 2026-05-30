@@ -18,7 +18,7 @@ def _resolve_log_path(kind: str = "app") -> str:
     if getattr(sys, "frozen", False):
         base_dir = os.path.dirname(sys.executable)
     else:
-        base_dir = os.path.dirname(
+        base_dir = os.environ.get('DATA_DIR') or os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         )
     filename = "scrape_process.log" if str(kind or "").strip().lower() == "scrape" else "media_renamer.log"

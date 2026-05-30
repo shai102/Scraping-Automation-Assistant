@@ -100,6 +100,8 @@ class ScrapeLogFilter(logging.Filter):
         "跳过已有元数据",
         "恢复:",
         "Restored:",
+        "元数据巡检:",
+        "元数据刷新:",
     )
 
     def filter(self, record):
