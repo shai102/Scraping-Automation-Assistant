@@ -457,6 +457,11 @@ def safe_filename(text):
     return text
 
 
+LIBRARY_SEASON_DIR_RE = re.compile(
+    r"(?i)^(?:Season\s*0*(\d{1,2})|第\s*0*(\d{1,2})\s*季)$"
+)
+
+
 def normalize_compare_text(text):
     if not text:
         return ""
@@ -1777,3 +1782,57 @@ def extract_db_id_from_path(path, mode, title_hints=None):
             continue
         return m.group(1)
     return None
+
+
+def build_existing_library_target(file_path, new_name, metadata):
+    """Reuse the current library folder when the file is already organized."""
+    path_str = str(file_path or "").strip()
+    target_name = str(new_name or "").strip()
+    meta = metadata or {}
+    media_id = str(meta.get("id") or "").strip()
+    provider = str(meta.get("provider") or "").strip().lower()
+    media_type = str(meta.get("type") or "").strip().lower()
+
+    if not path_str or not target_name or not media_id or media_id == "None":
+        return ""
+    if provider not in {"tmdb", "bgm"}:
+        return ""
+
+    mode = "siliconflow_tmdb" if provider == "tmdb" else "siliconflow_bgm"
+    title_hints = [meta.get("title"), meta.get("original_title")]
+    current_dir = os.path.dirname(os.path.normpath(path_str))
+    if not current_dir:
+        return ""
+
+    if media_type == "episode":
+        season_match = LIBRARY_SEASON_DIR_RE.match(os.path.basename(current_dir))
+        if not season_match:
+            return ""
+        try:
+            current_season = int(season_match.group(1) or season_match.group(2))
+        except (TypeError, ValueError):
+            return ""
+
+        expected_season = safe_int(meta.get("s"), current_season)
+        if current_season != expected_season:
+            return ""
+
+        series_root = os.path.dirname(current_dir)
+        if not series_root:
+            return ""
+        existing_id = extract_db_id_from_path(
+            os.path.join(series_root, os.path.basename(path_str)),
+            mode,
+            title_hints=title_hints,
+        )
+        if str(existing_id or "") != media_id:
+            return ""
+        return os.path.join(current_dir, target_name)
+
+    if media_type == "movie":
+        existing_id = extract_db_id_from_path(path_str, mode, title_hints=title_hints)
+        if str(existing_id or "") != media_id:
+            return ""
+        return os.path.join(current_dir, target_name)
+
+    return ""

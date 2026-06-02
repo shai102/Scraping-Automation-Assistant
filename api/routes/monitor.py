@@ -21,6 +21,7 @@ class FolderCreate(BaseModel):
     organize_mode: str = "move"
     symlink_source: str = ""
     skip_if_scraped: bool = False
+    preserve_existing_folder: bool = False
     enabled: bool = True
 
 
@@ -32,6 +33,7 @@ class FolderUpdate(BaseModel):
     organize_mode: Optional[str] = None
     symlink_source: Optional[str] = None
     skip_if_scraped: Optional[bool] = None
+    preserve_existing_folder: Optional[bool] = None
     enabled: Optional[bool] = None
 
 
@@ -44,6 +46,7 @@ class FolderOut(BaseModel):
     organize_mode: str = "move"
     symlink_source: str = ""
     skip_if_scraped: bool = False
+    preserve_existing_folder: bool = False
     enabled: bool
     created_at: Optional[str] = None
 
@@ -62,6 +65,7 @@ def list_folders(db: Session = Depends(get_db)):
             organize_mode=getattr(r, 'organize_mode', 'move') or 'move',
             symlink_source=getattr(r, 'symlink_source', '') or '',
             skip_if_scraped=getattr(r, 'skip_if_scraped', False),
+            preserve_existing_folder=getattr(r, 'preserve_existing_folder', False),
             enabled=r.enabled,
             created_at=r.created_at.isoformat() if r.created_at else None,
         ))
@@ -83,6 +87,7 @@ def create_folder(body: FolderCreate, db: Session = Depends(get_db)):
         organize_mode=body.organize_mode,
         symlink_source=body.symlink_source,
         skip_if_scraped=body.skip_if_scraped,
+        preserve_existing_folder=body.preserve_existing_folder,
         enabled=body.enabled,
     )
     db.add(row)
@@ -101,6 +106,7 @@ def create_folder(body: FolderCreate, db: Session = Depends(get_db)):
         organize_mode=getattr(row, 'organize_mode', 'move') or 'move',
         symlink_source=getattr(row, 'symlink_source', '') or '',
         skip_if_scraped=getattr(row, 'skip_if_scraped', False),
+        preserve_existing_folder=getattr(row, 'preserve_existing_folder', False),
         enabled=row.enabled,
         created_at=row.created_at.isoformat() if row.created_at else None,
     )
@@ -127,6 +133,8 @@ def update_folder(folder_id: int, body: FolderUpdate, db: Session = Depends(get_
         row.symlink_source = body.symlink_source
     if body.skip_if_scraped is not None:
         row.skip_if_scraped = body.skip_if_scraped
+    if body.preserve_existing_folder is not None:
+        row.preserve_existing_folder = body.preserve_existing_folder
     if body.enabled is not None:
         row.enabled = body.enabled
     db.commit()
@@ -143,6 +151,7 @@ def update_folder(folder_id: int, body: FolderUpdate, db: Session = Depends(get_
         organize_mode=getattr(row, 'organize_mode', 'move') or 'move',
         symlink_source=getattr(row, 'symlink_source', '') or '',
         skip_if_scraped=getattr(row, 'skip_if_scraped', False),
+        preserve_existing_folder=getattr(row, 'preserve_existing_folder', False),
         enabled=row.enabled,
         created_at=row.created_at.isoformat() if row.created_at else None,
     )

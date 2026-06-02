@@ -23,7 +23,12 @@ from core.services.worker_context import WorkerContext
 from core.workers.task_runner import process_task as _process_task
 from db.database import SessionLocal
 from db.scrape_models import MonitorFolder, ScrapeRecord, SymlinkRecord
-from utils.helpers import normalize_parse_source, metadata_is_incomplete, invalidate_cache_prefix
+from utils.helpers import (
+    build_existing_library_target,
+    invalidate_cache_prefix,
+    metadata_is_incomplete,
+    normalize_parse_source,
+)
 from utils.telegram_notify import NotificationBatcher
 from utils.emby_notify import EmbyNotifier
 
@@ -285,9 +290,21 @@ def _try_nfo_fast_path(item, ctx) -> bool:
 
     root_d = ctx.target_root.get().strip() if hasattr(ctx, 'target_root') else ""
     if root_d:
-        id_tag = f"tmdbid={tid}" if use_tmdb else f"bgmid={tid}"
-        folder_name = safe_filename(f"{safe_t} [{id_tag}]")
-        item.full_target = os.path.join(root_d, folder_name, f"Season {s}", new_fn)
+        preserved_target = ""
+        preserve_var = getattr(ctx, "preserve_existing_folder", None)
+        if preserve_var is not None:
+            getter = getattr(preserve_var, "get", None)
+            preserve_enabled = bool(getter()) if callable(getter) else bool(preserve_var)
+            if preserve_enabled:
+                preserved_target = build_existing_library_target(
+                    item.path, new_fn, item.metadata
+                )
+        if preserved_target:
+            item.full_target = preserved_target
+        else:
+            id_tag = f"tmdbid={tid}" if use_tmdb else f"bgmid={tid}"
+            folder_name = safe_filename(f"{safe_t} [{id_tag}]")
+            item.full_target = os.path.join(root_d, folder_name, f"Season {s}", new_fn)
     else:
         item.full_target = ""
 
@@ -1255,6 +1272,9 @@ class FolderWatcher:
                 # 否则 _process_task 内 root_d 为空，full_target 不会生成正确的层级结构
                 if getattr(folder, 'organize_mode', 'move') == 'rename':
                     ctx.target_root.set(folder.path)
+                ctx.preserve_existing_folder.set(
+                    getattr(folder, 'preserve_existing_folder', False)
+                )
                 if folder.data_source:
                     ctx.source_var.set(folder.data_source)
                 if folder.media_type == "movie":

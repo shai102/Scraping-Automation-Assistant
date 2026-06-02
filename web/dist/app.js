@@ -11,9 +11,9 @@ const app = Vue.createApp({
       // Folders
       folders: [],
       showAddFolder: false,
-      newFolder: { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '', skip_if_scraped: false },
+      newFolder: { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '', skip_if_scraped: false, preserve_existing_folder: false },
       editFolderVisible: false,
-      editFolderData: { id: null, path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '', skip_if_scraped: false },
+      editFolderData: { id: null, path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '', skip_if_scraped: false, preserve_existing_folder: false },
       // Symlink export
       showAddSymlink: false,
       newSymlinkFolder: { path: '', target_root: '' },
@@ -366,7 +366,7 @@ const app = Vue.createApp({
       try {
         await this.api('POST', '/api/monitor/folders', this.newFolder);
         this.showAddFolder = false;
-        this.newFolder = { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '', skip_if_scraped: false };
+        this.newFolder = { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '', skip_if_scraped: false, preserve_existing_folder: false };
         this.loadFolders();
       } catch (e) { this.notify(e.message, 'error'); }
     },
@@ -395,6 +395,7 @@ const app = Vue.createApp({
         organize_mode: f.organize_mode || 'move',
         symlink_source: f.symlink_source || '',
         skip_if_scraped: f.skip_if_scraped || false,
+        preserve_existing_folder: f.preserve_existing_folder || false,
       };
       this.editFolderVisible = true;
     },
@@ -408,6 +409,7 @@ const app = Vue.createApp({
           organize_mode: this.editFolderData.organize_mode,
           symlink_source: this.editFolderData.symlink_source,
           skip_if_scraped: this.editFolderData.skip_if_scraped,
+          preserve_existing_folder: this.editFolderData.preserve_existing_folder,
         });
         this.editFolderVisible = false;
         this.loadFolders();

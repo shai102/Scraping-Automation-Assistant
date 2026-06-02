@@ -26,6 +26,7 @@ from core.workers.execution_runner import (
 from core.services.naming_service import extract_season_from_dir
 from utils.helpers import (
     ERROR_CODE_UNKNOWN,
+    build_existing_library_target,
     derive_title_from_filename,
     extract_db_id_from_path,
     extract_episode_number,
@@ -66,6 +67,17 @@ DECIMAL_EPISODE_RE = re.compile(
     )"""
 )
 AI_RATE_LIMIT_COOLDOWN_SECONDS = 60.0
+
+
+def _prefer_existing_library_target(gui, item, new_name, metadata):
+    preserve_var = getattr(gui, "preserve_existing_folder", None)
+    if preserve_var is None:
+        return ""
+    getter = getattr(preserve_var, "get", None)
+    preserve_enabled = bool(getter()) if callable(getter) else bool(preserve_var)
+    if not preserve_enabled:
+        return ""
+    return build_existing_library_target(item.path, new_name, metadata)
 
 
 def _render_media_filename(gui, template, **kwargs):
@@ -656,22 +668,28 @@ def bg_update_single_ui(gui, idx, title, t_id, msg, meta):
 
         root_d = gui.target_root.get().strip()
         if root_d:
-            id_tag = f"tmdbid={t_id}" if _eff_tmdb else f"bgmid={t_id}"
-            folder_name = safe_filename(f"{safe_title} [{id_tag}]")
-            season_folder = f"Season {s}"
-            if is_tv:
-                item.full_target = os.path.join(
-                    root_d, folder_name, season_folder, new_fn
-                )
+            preserved_target = _prefer_existing_library_target(
+                gui, item, new_fn, item.metadata
+            )
+            if preserved_target:
+                item.full_target = preserved_target
             else:
-                year_text = safe_str(y)
-                if year_text:
-                    folder_name = safe_filename(
-                        f"{safe_title} ({year_text}) [{id_tag}]"
+                id_tag = f"tmdbid={t_id}" if _eff_tmdb else f"bgmid={t_id}"
+                folder_name = safe_filename(f"{safe_title} [{id_tag}]")
+                season_folder = f"Season {s}"
+                if is_tv:
+                    item.full_target = os.path.join(
+                        root_d, folder_name, season_folder, new_fn
                     )
                 else:
-                    folder_name = safe_filename(f"{safe_title} [{id_tag}]")
-                item.full_target = os.path.join(root_d, folder_name, new_fn)
+                    year_text = safe_str(y)
+                    if year_text:
+                        folder_name = safe_filename(
+                            f"{safe_title} ({year_text}) [{id_tag}]"
+                        )
+                    else:
+                        folder_name = safe_filename(f"{safe_title} [{id_tag}]")
+                    item.full_target = os.path.join(root_d, folder_name, new_fn)
         else:
             item.full_target = ""
 
@@ -1270,23 +1288,29 @@ def process_task(gui, i, advance_progress=True):
 
         root_d = gui.target_root.get().strip()
         if root_d:
-            id_tag = f"tmdbid={tid}" if _eff_tmdb else f"bgmid={tid}"
-            folder_name = safe_filename(f"{safe_std_t} [{id_tag}]")
-            season_folder = f"Season {s}"
-
-            if is_tv:
-                item.full_target = os.path.join(
-                    root_d, folder_name, season_folder, new_fn
-                )
+            preserved_target = _prefer_existing_library_target(
+                gui, item, new_fn, item.metadata
+            )
+            if preserved_target:
+                item.full_target = preserved_target
             else:
-                year_text = safe_str(y)
-                if year_text:
-                    folder_name = safe_filename(
-                        f"{safe_std_t} ({year_text}) [{id_tag}]"
+                id_tag = f"tmdbid={tid}" if _eff_tmdb else f"bgmid={tid}"
+                folder_name = safe_filename(f"{safe_std_t} [{id_tag}]")
+                season_folder = f"Season {s}"
+
+                if is_tv:
+                    item.full_target = os.path.join(
+                        root_d, folder_name, season_folder, new_fn
                     )
                 else:
-                    folder_name = safe_filename(f"{safe_std_t} [{id_tag}]")
-                item.full_target = os.path.join(root_d, folder_name, new_fn)
+                    year_text = safe_str(y)
+                    if year_text:
+                        folder_name = safe_filename(
+                            f"{safe_std_t} ({year_text}) [{id_tag}]"
+                        )
+                    else:
+                        folder_name = safe_filename(f"{safe_std_t} [{id_tag}]")
+                    item.full_target = os.path.join(root_d, folder_name, new_fn)
         else:
             item.full_target = ""
 

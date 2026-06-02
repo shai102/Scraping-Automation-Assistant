@@ -16,7 +16,7 @@
         <div class="app-brand-mark">🎬</div>
         <div>
           <h2>刮削助手</h2>
-          <span>v4.4</span>
+          <span>v4.5</span>
         </div>
       </div>
     </div>
@@ -157,6 +157,13 @@
             </label>
             <small style="color:#888;display:block;margin-top:4px">文件旁边已存在同名 .nfo 时自动跳过，不再重新刮削</small>
           </div>
+          <div class="form-group" style="margin-top:4px" v-if="newFolder.organize_mode==='rename'">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" v-model="newFolder.preserve_existing_folder">
+              <span>已是媒体库结构时保留现有作品目录</span>
+            </label>
+            <small style="color:#888;display:block;margin-top:4px">检测到当前目录已带 TMDB/BGM 标记且季目录匹配时，只重命名文件并补写元数据，不再新建 tmdbid= 作品目录</small>
+          </div>
           <div class="form-actions">
             <button class="btn" @click="showAddFolder=false">取消</button>
             <button class="btn btn-primary" @click="addFolder">确认添加</button>
@@ -217,6 +224,13 @@
               <span>跳过已刮削文件</span>
             </label>
             <small style="color:#888;display:block;margin-top:4px">文件旁边已存在同名 .nfo 时自动跳过，不再重新刮削</small>
+          </div>
+          <div class="form-group" style="margin-top:4px" v-if="editFolderData.organize_mode==='rename'">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" v-model="editFolderData.preserve_existing_folder">
+              <span>已是媒体库结构时保留现有作品目录</span>
+            </label>
+            <small style="color:#888;display:block;margin-top:4px">启用后，带旧式 tmdb- / 新式 tmdbid= 标记的已整理目录会直接在当前 Season 目录内重命名和补刮削</small>
           </div>
           <div class="form-actions">
             <button class="btn btn-primary" @click="saveEditFolder">保存</button>

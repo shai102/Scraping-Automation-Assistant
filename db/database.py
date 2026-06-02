@@ -69,3 +69,10 @@ def init_db():
             conn.commit()
         except Exception:
             conn.rollback()
+        try:
+            conn.execute(sqlalchemy.text(
+                "ALTER TABLE monitor_folders ADD COLUMN preserve_existing_folder BOOLEAN NOT NULL DEFAULT 0"
+            ))
+            conn.commit()
+        except Exception:
+            conn.rollback()

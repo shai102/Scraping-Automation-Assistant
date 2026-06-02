@@ -159,6 +159,7 @@ class WorkerContext:
         self.media_type_override = _SimpleVar(config.get("media_type_override", "自动判断"))
         self.target_root = _SimpleVar(config.get("target_root", ""))
         self.source_var = _SimpleVar(config.get("data_source", "siliconflow_tmdb"))
+        self.preserve_existing_folder = _SimpleVar(config.get("preserve_existing_folder", False))
         self.strip_keywords = config.get("strip_keywords", [])
 
         # Sync runtime cache expiry from config

@@ -962,6 +962,9 @@ def _process_single_manual(row, body, folder, db):
         # rename 模式：以监控目录本身为 target_root，process_task 才能生成正确的 full_target
         # （含 [tmdbid=xxx] 的父文件夹名），不能等到 _archive_file 里才设置
         ctx.target_root.set(folder.path)
+        ctx.preserve_existing_folder.set(
+            getattr(folder, 'preserve_existing_folder', False)
+        )
     elif folder and folder.target_root:
         ctx.target_root.set(folder.target_root)
     if folder and folder.data_source:
