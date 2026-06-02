@@ -16,7 +16,7 @@
         <div class="app-brand-mark">🎬</div>
         <div>
           <h2>刮削助手</h2>
-          <span>v4.5</span>
+          <span>v4.6</span>
         </div>
       </div>
     </div>
@@ -59,6 +59,9 @@
       </li>
       <li :class="{active: page==='embynotify'}" @click="page='embynotify'">
         <span class="icon">📡</span> Emby 通知
+      </li>
+      <li :class="{active: page==='app_logs'}" @click="page='app_logs'">
+        <span class="icon">📄</span> 普通日志
       </li>
     </ul>
   </nav>
@@ -546,9 +549,9 @@
       </div>
     </div>
 
-    <!-- 刮削日志 -->
-    <section v-if="page==='logs'">
-      <div class="page-header"><h1>刮削日志</h1></div>
+    <!-- 日志 -->
+    <section v-if="page==='logs' || page==='app_logs'">
+      <div class="page-header"><h1>{{currentLogTitle()}}</h1></div>
       <div class="toolbar">
         <div class="toolbar-left">
           <span class="toolbar-hint" v-if="logPath">日志文件：{{logPath}}</span>
@@ -571,7 +574,14 @@
           <option :value="200">最近 200 条</option>
           <option :value="500">最近 500 条</option>
         </select>
+        <select v-model="logDate" class="filter-select" @change="onLogDateChange">
+          <option v-for="d in logDates" :key="d" :value="d">{{d}}</option>
+        </select>
         <input v-model="logKeyword" placeholder="按关键字搜索日志内容" class="filter-input">
+        <label style="display:flex;align-items:center;gap:6px;padding:0 4px;white-space:nowrap;color:#666">
+          <input type="checkbox" v-model="logShowAnnotations">
+          中文注释
+        </label>
         <button class="btn btn-primary btn-sm" @click="loadLogs">筛选</button>
         <button class="btn btn-sm" @click="resetLogFilter">重置</button>
       </div>
@@ -587,7 +597,19 @@
           <tr v-for="(log, idx) in logEntries" :key="idx">
             <td><span :class="['badge', logLevelClass(log.level)]">{{log.level || 'INFO'}}</span></td>
             <td style="white-space:nowrap;font-size:12px;color:#999">{{log.timestamp || '-'}}</td>
-            <td style="font-family:Consolas,'Courier New',monospace;font-size:12px;line-height:1.5;word-break:break-all">{{log.message}}</td>
+            <td style="font-family:Consolas,'Courier New',monospace;font-size:12px;line-height:1.5;word-break:break-all">
+              <div>{{log.message}}</div>
+              <div v-if="logShowAnnotations && log.annotation" style="margin-top:10px;padding:12px 14px;border-radius:10px;background:#fafbff;border:1px solid #e8ecff;font-family:system-ui,-apple-system,sans-serif;color:#333">
+                <div style="font-weight:700;margin-bottom:6px">{{log.annotation.title}}</div>
+                <div v-if="log.annotation.summary" style="font-size:12px;color:#666;margin-bottom:8px">{{log.annotation.summary}}</div>
+                <ul v-if="log.annotation.items && log.annotation.items.length" style="margin:0;padding-left:18px">
+                  <li v-for="(item, itemIdx) in log.annotation.items" :key="itemIdx" style="margin:0 0 8px 0">
+                    <div style="font-family:Consolas,'Courier New',monospace;font-size:12px;font-weight:600">{{item.label}}{{item.value!=='' ? '=' + item.value : ''}}</div>
+                    <div style="font-size:12px;color:#666;margin-top:2px">中文：{{item.note}}</div>
+                  </li>
+                </ul>
+              </div>
+            </td>
           </tr>
         </tbody>
       </table>

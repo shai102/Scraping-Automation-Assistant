@@ -217,7 +217,8 @@ docker compose down
 - `media_renamer.db`
 - `renamer_config.json`
 - `api_cache.json`
-- `media_renamer.log`
+- `logs/app/YYYY-MM-DD.log`
+- `logs/scrape/YYYY-MM-DD.log`
 
 `docker-compose.yml` 默认已挂载：
 
@@ -374,4 +375,14 @@ http://127.0.0.1:8090
 
 ## 日志
 
-运行日志保存在程序目录下的 `media_renamer.log`。
+日志按天分文件保存在程序数据目录下：
+
+- 普通日志：`logs/app/YYYY-MM-DD.log`
+- 刮削流程日志：`logs/scrape/YYYY-MM-DD.log`
+
+Web 界面里也提供了：
+
+- `刮削日志`
+- `普通日志`
+
+两者都支持按日期查看、关键字筛选和中文注释说明。

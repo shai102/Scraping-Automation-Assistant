@@ -47,6 +47,9 @@ const app = Vue.createApp({
       logKeyword: '',
       logLimit: 200,
       logPath: '',
+      logDate: '',
+      logDates: [],
+      logShowAnnotations: true,
       logAutoRefreshEnabled: true,
       // Grouped view
       groupedView: false,
@@ -141,7 +144,7 @@ const app = Vue.createApp({
       else this.loadSymlinkRecords();
       this.loadSymlinkStats();
     }
-    if (this.page === 'logs') { this.loadLogs(); this.startLogAutoRefresh(); }
+    if (this.isLogPage(this.page)) { this.loadLogs(); this.startLogAutoRefresh(); }
     if (this.page === 'symlink_folders') { this.loadFolders(); }
     // Keep hash in sync when page changes, so F5 restores correctly
     this.$watch('page', function(val) {
@@ -155,7 +158,7 @@ const app = Vue.createApp({
         else this.loadSymlinkRecords();
         this.loadSymlinkStats();
       }
-      if (val === 'logs') {
+      if (this.isLogPage(val)) {
         this.loadLogs();
         this.startLogAutoRefresh();
       } else {
@@ -182,6 +185,18 @@ const app = Vue.createApp({
     },
   },
   methods: {
+    isLogPage(page) {
+      return page === 'logs' || page === 'app_logs';
+    },
+    currentLogKind() {
+      return this.page === 'app_logs' ? 'app' : 'scrape';
+    },
+    currentLogTitle() {
+      return this.page === 'app_logs' ? '普通日志' : '刮削日志';
+    },
+    currentLogClearLabel() {
+      return this.page === 'app_logs' ? '普通日志' : '刮削日志';
+    },
     notify(message, type, duration) {
       var text = String(message || '').trim();
       if (!text) return;
@@ -837,12 +852,15 @@ const app = Vue.createApp({
     async loadLogs() {
       this.logLoading = true;
       try {
-        var params = new URLSearchParams({ limit: this.logLimit, kind: 'scrape' });
+        var params = new URLSearchParams({ limit: this.logLimit, kind: this.currentLogKind() });
         if (this.logLevel) params.set('level', this.logLevel);
         if (this.logKeyword) params.set('keyword', this.logKeyword);
+        if (this.logDate) params.set('date', this.logDate);
         var data = await this.api('GET', '/api/logs?' + params.toString());
         this.logEntries = data.items || [];
         this.logPath = data.path || '';
+        this.logDates = data.available_dates || [];
+        this.logDate = data.selected_date || this.logDate || '';
       } catch (e) {
         this.notify(e.message, 'error');
       }
@@ -852,10 +870,19 @@ const app = Vue.createApp({
       this.loadLogs();
     },
     async clearLogs() {
-      var ok = await this.confirmAction({ title: '清除日志', message: '确定要清除所有刮削日志吗？此操作不可恢复。', danger: true, confirmText: '清除', cancelText: '取消' });
+      var title = this.currentLogClearLabel();
+      var ok = await this.confirmAction({
+        title: '清除日志',
+        message: '确定要清除所选日期的' + title + '吗？此操作不可恢复。',
+        danger: true,
+        confirmText: '清除',
+        cancelText: '取消'
+      });
       if (!ok) return;
       try {
-        var data = await this.api('DELETE', '/api/logs?kind=scrape');
+        var path = '/api/logs?kind=' + encodeURIComponent(this.currentLogKind());
+        if (this.logDate) path += '&date=' + encodeURIComponent(this.logDate);
+        var data = await this.api('DELETE', path);
         this.notify(data.message || '日志已清除', data.ok ? 'success' : 'error');
         if (data.ok) this.loadLogs();
       } catch (e) {
@@ -867,7 +894,7 @@ const app = Vue.createApp({
       if (!this.logAutoRefreshEnabled) return;
       var self = this;
       this._logRefreshTimer = setInterval(function() {
-        if (self.page === 'logs' && !self.logLoading) self.loadLogs();
+        if (self.isLogPage(self.page) && !self.logLoading) self.loadLogs();
       }, 3000);
     },
     stopLogAutoRefresh() {
@@ -880,6 +907,9 @@ const app = Vue.createApp({
       this.logLevel = '';
       this.logKeyword = '';
       this.logLimit = 200;
+      this.loadLogs();
+    },
+    onLogDateChange() {
       this.loadLogs();
     },
     logLevelClass(level) {
