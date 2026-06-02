@@ -338,6 +338,7 @@ class FolderWatcher:
         self._pending_lock = threading.Lock()
         self._processed: Set[str] = set()
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="scrape")
+        self._symlink_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="symlink-export")
         self._dir_gate = threading.Condition()
         self._active_dirs: Set[str] = set()
         self._running = False
@@ -386,6 +387,7 @@ class FolderWatcher:
             pass
         self._watches.clear()
         self._pool.shutdown(wait=False)
+        self._symlink_pool.shutdown(wait=False)
         logger.info("FolderWatcher stopped")
 
     def _desired_pool_workers(self) -> int:
@@ -393,17 +395,31 @@ class FolderWatcher:
             return self._worker_ctx._get_preview_workers()
         return 1
 
+    def _desired_symlink_pool_workers(self) -> int:
+        if self._worker_ctx:
+            return self._worker_ctx._get_symlink_export_workers()
+        return 3
+
     def _refresh_pool_workers(self):
         desired = self._desired_pool_workers()
         current = getattr(self._pool, "_max_workers", None)
-        if current == desired:
-            return
-        old_pool = self._pool
-        self._pool = ThreadPoolExecutor(max_workers=desired, thread_name_prefix="scrape")
-        try:
-            old_pool.shutdown(wait=False)
-        except Exception:
-            pass
+        if current != desired:
+            old_pool = self._pool
+            self._pool = ThreadPoolExecutor(max_workers=desired, thread_name_prefix="scrape")
+            try:
+                old_pool.shutdown(wait=False)
+            except Exception:
+                pass
+
+        desired_symlink = self._desired_symlink_pool_workers()
+        current_symlink = getattr(self._symlink_pool, "_max_workers", None)
+        if current_symlink != desired_symlink:
+            old_symlink_pool = self._symlink_pool
+            self._symlink_pool = ThreadPoolExecutor(max_workers=desired_symlink, thread_name_prefix="symlink-export")
+            try:
+                old_symlink_pool.shutdown(wait=False)
+            except Exception:
+                pass
 
     def reload_runtime_config(self):
         if self._worker_ctx:
@@ -725,16 +741,20 @@ class FolderWatcher:
     # Enqueue / debounce
     # ------------------------------------------------------------------
 
+    def _is_symlink_export_path(self, path: str) -> bool:
+        norm = os.path.normpath(path)
+        return any(
+            norm.startswith(p + os.sep) or norm == p
+            for p in self._symlink_export_paths
+        )
+
     def enqueue(self, path: str):
         """Called by the watchdog handler for each new file event."""
         if not self._worker_ctx:
             return
         # Bypass extension filter for symlink_export folders (all files)
         norm = os.path.normpath(path)
-        is_symlink_export = any(
-            norm.startswith(p + os.sep) or norm == p
-            for p in self._symlink_export_paths
-        )
+        is_symlink_export = self._is_symlink_export_path(path)
         if not is_symlink_export:
             exts = self._worker_ctx.get_media_exts()
             if not path.lower().endswith(exts):
@@ -759,8 +779,9 @@ class FolderWatcher:
                     if p in self._processed:
                         continue
                     self._processed.add(p)
-                self._pool.submit(self._process_file, p)
-                time.sleep(0.1)  # 避免批量提交瞬间占满线程池队列，降低 CPU 峰值
+                target_pool = self._symlink_pool if self._is_symlink_export_path(p) else self._pool
+                target_pool.submit(self._process_file, p)
+                time.sleep(0.03 if target_pool is self._symlink_pool else 0.1)  # ????????????AI ???????????
 
     def _poll_loop(self):
         """Periodically scan all enabled folders for new files not yet recorded.

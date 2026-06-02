@@ -153,6 +153,7 @@ class WorkerContext:
         self.use_embedding_rank = _SimpleVar(config.get("use_embedding_rank", True))
         self.ai_mode = _SimpleVar(config.get("ai_mode", "assist"))  # disabled / assist / force
         self.preview_workers = _SimpleVar(str(self._clamp_workers(config.get("preview_workers"), 1)))
+        self.symlink_export_workers = _SimpleVar(str(self._clamp_workers(config.get("symlink_export_workers"), 3)))
         self.sync_workers = _SimpleVar(str(self._clamp_workers(config.get("sync_workers"), 5)))
         self.execution_workers = _SimpleVar(str(self._clamp_workers(config.get("execution_workers"), 5)))
         self.media_type_override = _SimpleVar(config.get("media_type_override", "自动判断"))
@@ -203,6 +204,7 @@ class WorkerContext:
         self.prefer_ollama.set(cfg.get("prefer_ollama", False))
         self.use_embedding_rank.set(cfg.get("use_embedding_rank", True))
         self.ai_mode.set(cfg.get("ai_mode", "assist"))
+        self.symlink_export_workers.set(str(self._clamp_workers(cfg.get("symlink_export_workers"), 3)))
         self.target_root.set(cfg.get("target_root", self.target_root.get()))
         self.source_var.set(cfg.get("data_source", self.source_var.get()))
         self.strip_keywords = cfg.get("strip_keywords", [])
@@ -236,6 +238,9 @@ class WorkerContext:
 
     def _get_preview_workers(self):
         return self._clamp_workers(self.preview_workers.get(), 1)
+
+    def _get_symlink_export_workers(self):
+        return self._clamp_workers(self.symlink_export_workers.get(), 3)
 
     def _get_sync_workers(self):
         return self._clamp_workers(self.sync_workers.get(), 5)

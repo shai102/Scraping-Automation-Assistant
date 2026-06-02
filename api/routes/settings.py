@@ -50,6 +50,7 @@ class SettingsModel(BaseModel):
     use_embedding_rank: Optional[bool] = None
     ai_mode: Optional[str] = None  # disabled / assist / force
     preview_workers: Optional[int] = None
+    symlink_export_workers: Optional[int] = None
     sync_workers: Optional[int] = None
     execution_workers: Optional[int] = None
     media_type_override: Optional[str] = None
@@ -235,6 +236,7 @@ def get_settings_raw():
     cfg.setdefault("proxy_url", "")
     cfg.setdefault("proxy_no_proxy", DEFAULT_NO_PROXY)
     cfg.setdefault("preserve_media_suffix", False)
+    cfg.setdefault("symlink_export_workers", 3)
     cfg.setdefault("metadata_refresh_enabled", True)
     cfg.setdefault("metadata_refresh_interval_hours", 12)
     cfg.setdefault("metadata_refresh_lookback_days", 14)

@@ -16,7 +16,7 @@
         <div class="app-brand-mark">🎬</div>
         <div>
           <h2>刮削助手</h2>
-          <span>v4.3</span>
+          <span>v4.4</span>
         </div>
       </div>
     </div>
@@ -1091,6 +1091,10 @@
           <div class="form-group">
             <label>预览线程数</label>
             <input v-model.number="cfg.preview_workers" type="number" min="1" max="10">
+          </div>
+          <div class="form-group">
+            <label>软链接导出线程数</label>
+            <input v-model.number="cfg.symlink_export_workers" type="number" min="1" max="10">
           </div>
           <div class="form-group">
             <label>同步线程数</label>
