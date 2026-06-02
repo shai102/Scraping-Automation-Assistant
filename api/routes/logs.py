@@ -116,6 +116,17 @@ def _tail_lines(path: str, max_lines: int) -> list[str]:
         return list(deque(fh, maxlen=max_lines))
 
 
+def _is_metadata_message(message: str) -> bool:
+    text = str(message or "")
+    return (
+        text.startswith("元数据巡检:")
+        or text.startswith("元数据巡检项:")
+        or text.startswith("元数据巡检完成:")
+        or text.startswith("元数据刷新:")
+        or text.startswith("元数据刷新失败:")
+    )
+
+
 def _parse_pipe_kv(text: str) -> dict:
     parsed = {}
     for segment in str(text or "").split(" | "):
@@ -978,6 +989,9 @@ def read_logs(
                 "message": line,
                 "raw": line,
             }
+
+        if log_kind == "scrape" and _is_metadata_message(entry["message"]):
+            continue
 
         if want_level and entry["level"] != want_level:
             continue
