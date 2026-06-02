@@ -6,11 +6,17 @@ from datetime import datetime
 
 LOG_KIND_APP = "app"
 LOG_KIND_SCRAPE = "scrape"
+LOG_KIND_METADATA = "metadata"
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def normalize_log_kind(kind: str) -> str:
-    return LOG_KIND_APP if str(kind or "").strip().lower() == LOG_KIND_APP else LOG_KIND_SCRAPE
+    raw = str(kind or "").strip().lower()
+    if raw == LOG_KIND_APP:
+        return LOG_KIND_APP
+    if raw == LOG_KIND_METADATA:
+        return LOG_KIND_METADATA
+    return LOG_KIND_SCRAPE
 
 
 def resolve_log_dir(data_dir: str, kind: str) -> str:
@@ -90,8 +96,6 @@ class ScrapeLogFilter(logging.Filter):
         "跳过已有元数据",
         "恢复:",
         "Restored:",
-        "元数据巡检:",
-        "元数据刷新:",
     )
 
     def filter(self, record):
@@ -109,6 +113,7 @@ class GeneralLogFilter(logging.Filter):
     def __init__(self):
         super().__init__()
         self._scrape_filter = ScrapeLogFilter()
+        self._metadata_filter = MetadataLogFilter()
 
     def filter(self, record):
         if record.levelno < logging.INFO:
@@ -117,7 +122,31 @@ class GeneralLogFilter(logging.Filter):
             return False
         if record.name == "uvicorn.access":
             return False
-        return not self._scrape_filter.filter(record)
+        return not self._scrape_filter.filter(record) and not self._metadata_filter.filter(record)
+
+
+class MetadataLogFilter(logging.Filter):
+    _PREFIXES = (
+        "monitor.watcher",
+        "core.services.worker_context",
+    )
+    _MESSAGE_MARKERS = (
+        "元数据巡检:",
+        "元数据巡检项:",
+        "元数据巡检完成:",
+        "元数据刷新:",
+        "元数据刷新失败",
+    )
+
+    def filter(self, record):
+        if record.levelno < logging.INFO:
+            return False
+        if _is_ignorable_connection_reset(record):
+            return False
+        if not any(str(record.name or "").startswith(prefix) for prefix in self._PREFIXES):
+            return False
+        message = str(record.getMessage() or "")
+        return any(marker in message for marker in self._MESSAGE_MARKERS)
 
 
 class DatePartitionedFileHandler(logging.Handler):
@@ -211,6 +240,12 @@ def setup_logging(data_dir: str, console_stream=None) -> None:
     scrape_handler.addFilter(ScrapeLogFilter())
     scrape_handler.setFormatter(fmt)
     root_logger.addHandler(scrape_handler)
+
+    metadata_handler = DatePartitionedFileHandler(data_dir, LOG_KIND_METADATA)
+    metadata_handler.setLevel(logging.INFO)
+    metadata_handler.addFilter(MetadataLogFilter())
+    metadata_handler.setFormatter(fmt)
+    root_logger.addHandler(metadata_handler)
 
     if console_stream is not None:
         console_handler = logging.StreamHandler(console_stream)

@@ -186,16 +186,22 @@ const app = Vue.createApp({
   },
   methods: {
     isLogPage(page) {
-      return page === 'logs' || page === 'app_logs';
+      return page === 'logs' || page === 'app_logs' || page === 'metadata_logs';
     },
     currentLogKind() {
-      return this.page === 'app_logs' ? 'app' : 'scrape';
+      if (this.page === 'app_logs') return 'app';
+      if (this.page === 'metadata_logs') return 'metadata';
+      return 'scrape';
     },
     currentLogTitle() {
-      return this.page === 'app_logs' ? '普通日志' : '刮削日志';
+      if (this.page === 'app_logs') return '普通日志';
+      if (this.page === 'metadata_logs') return '元数据巡检日志';
+      return '刮削日志';
     },
     currentLogClearLabel() {
-      return this.page === 'app_logs' ? '普通日志' : '刮削日志';
+      if (this.page === 'app_logs') return '普通日志';
+      if (this.page === 'metadata_logs') return '元数据巡检日志';
+      return '刮削日志';
     },
     notify(message, type, duration) {
       var text = String(message || '').trim();

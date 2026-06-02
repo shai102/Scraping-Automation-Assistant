@@ -27,6 +27,7 @@ from utils.helpers import (
     build_existing_library_target,
     invalidate_cache_prefix,
     metadata_is_incomplete,
+    metadata_missing_fields,
     normalize_parse_source,
 )
 from utils.telegram_notify import NotificationBatcher
@@ -946,6 +947,15 @@ class FolderWatcher:
             for record in incomplete:
                 if not self._running:
                     break
+                title = str(record.matched_title or record.path or "").strip()
+                target_path = str(record.target_path or "").strip()
+                missing_fields = metadata_missing_fields(record.metadata_json or "")
+                logger.info(
+                    "元数据巡检项: "
+                    f"record_id={record.id} | title={title or '-'} | "
+                    f"target_path={target_path or '-'} | "
+                    f"missing_fields={','.join(missing_fields) or '-'}"
+                )
                 try:
                     updated = self._refresh_single_record(record, db)
                     if updated:
@@ -956,13 +966,16 @@ class FolderWatcher:
                         })
                 except Exception as e:
                     logger.warning(
-                        f"元数据刷新失败 (record_id={record.id}): {e}"
+                        "元数据刷新失败: "
+                        f"record_id={record.id} | title={title or '-'} | "
+                        f"target_path={target_path or '-'} | reason={e}"
                     )
                 # Rate-limit friendly: small pause between records
                 time.sleep(2.0)
 
-            if refreshed:
-                logger.info(f"元数据巡检完成: 刷新了 {refreshed}/{len(incomplete)} 条记录")
+            logger.info(
+                f"元数据巡检完成: 刷新了 {refreshed}/{len(incomplete)} 条记录"
+            )
 
         finally:
             db.close()
@@ -1625,8 +1638,13 @@ def refresh_record_metadata(record, db, worker_ctx, broadcast_fn=None) -> bool:
         if s_p and not str(new_meta.get("s_poster") or "").strip():
             new_meta["s_poster"] = s_p
 
+    updated_fields = sorted(
+        key for key in set(old_meta.keys()) | set(new_meta.keys())
+        if old_meta.get(key) != new_meta.get(key)
+    )
+
     # Check if anything actually changed
-    if json.dumps(new_meta, sort_keys=True) == json.dumps(old_meta, sort_keys=True):
+    if not updated_fields:
         return False
 
     # Determine target path for sidecar refresh
@@ -1635,6 +1653,13 @@ def refresh_record_metadata(record, db, worker_ctx, broadcast_fn=None) -> bool:
         # Even if the target file is gone, still update the DB record
         record.metadata_json = json.dumps(new_meta, ensure_ascii=False)
         db.commit()
+        logger.info(
+            "元数据刷新: "
+            f"record_id={record.id} | title={new_meta.get('title') or '-'} | "
+            f"id={mid} | provider={provider} | "
+            f"target_path={target_path or '-'} | "
+            f"updated_fields={','.join(updated_fields) or '-'}"
+        )
         return True
 
     # Refresh NFO files and images
@@ -1647,8 +1672,11 @@ def refresh_record_metadata(record, db, worker_ctx, broadcast_fn=None) -> bool:
 
     if updated:
         logger.info(
-            f"元数据刷新: record_id={record.id} title={new_meta.get('title')} "
-            f"id={mid} provider={provider}"
+            "元数据刷新: "
+            f"record_id={record.id} | title={new_meta.get('title') or '-'} | "
+            f"id={mid} | provider={provider} | "
+            f"target_path={target_path or '-'} | "
+            f"updated_fields={','.join(updated_fields) or '-'}"
         )
 
     return True

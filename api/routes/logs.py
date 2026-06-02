@@ -53,6 +53,21 @@ _STARTED_SERVER_PROC_RE = re.compile(r"^Started server process \[(?P<pid>\d+)\]$
 _FINISHED_SERVER_PROC_RE = re.compile(r"^Finished server process \[(?P<pid>\d+)\]$")
 _UVICORN_RUNNING_RE = re.compile(r"^Uvicorn running on\s+(?P<addr>.+?)\s+\(Press CTRL\+C to quit\)$")
 _WS_ACCEPT_RE = re.compile(r'^(?P<client>.+?) - "WebSocket (?P<path>.+)" \[accepted\]$')
+_METADATA_SCAN_START_RE = re.compile(r"^元数据巡检:\s*发现 (?P<count>\d+) 条不完整记录，开始刷新$")
+_METADATA_SCAN_ITEM_RE = re.compile(
+    r"^元数据巡检项:\s*record_id=(?P<record_id>\d+)\s+\|\s+title=(?P<title>.*?)\s+\|\s+"
+    r"target_path=(?P<target_path>.*?)\s+\|\s+missing_fields=(?P<missing_fields>.+)$"
+)
+_METADATA_REFRESH_RE = re.compile(
+    r"^元数据刷新:\s*record_id=(?P<record_id>\d+)\s+\|\s+title=(?P<title>.*?)\s+\|\s+"
+    r"id=(?P<id>.*?)\s+\|\s+provider=(?P<provider>.*?)\s+\|\s+"
+    r"target_path=(?P<target_path>.*?)\s+\|\s+updated_fields=(?P<updated_fields>.+)$"
+)
+_METADATA_REFRESH_FAIL_RE = re.compile(
+    r"^元数据刷新失败:\s*record_id=(?P<record_id>\d+)\s+\|\s+title=(?P<title>.*?)\s+\|\s+"
+    r"target_path=(?P<target_path>.*?)\s+\|\s+reason=(?P<reason>.+)$"
+)
+_METADATA_SCAN_DONE_RE = re.compile(r"^元数据巡检完成:\s*刷新了 (?P<refreshed>\d+)/(?P<total>\d+) 条记录$")
 
 _FIELD_LABELS = {
     "title": "title",
@@ -64,6 +79,7 @@ _FIELD_LABELS = {
     "episode": "episode",
     "provider": "provider",
     "id": "id",
+    "record_id": "record_id",
     "matched_title": "matched_title",
     "matched_id": "matched_id",
     "parsed_title": "parsed_title",
@@ -75,6 +91,13 @@ _FIELD_LABELS = {
     "video_codec": "video_codec",
     "audio_codec": "audio_codec",
     "release_group": "release_group",
+    "target_path": "target_path",
+    "missing_fields": "missing_fields",
+    "updated_fields": "updated_fields",
+    "count": "count",
+    "refreshed": "refreshed",
+    "total": "total",
+    "reason": "reason",
 }
 
 
@@ -132,6 +155,8 @@ def _field_note(field: str, value: str) -> str:
         return f"资料库来源 = {text or '未知'}。"
     if field == "id":
         return f"资料库作品 ID = {text or '未知'}。"
+    if field == "record_id":
+        return f"数据库记录 ID = {text or '未知'}。"
     if field == "matched_title":
         return f"最终匹配标题 = {text or '空'}。"
     if field == "matched_id":
@@ -154,6 +179,20 @@ def _field_note(field: str, value: str) -> str:
         return f"音频编码 = {text or '空'}。"
     if field == "release_group":
         return f"压制组/发布组 = {text or '空'}。"
+    if field == "target_path":
+        return "目标文件路径 = 这条记录当前关联的媒体文件实际位置。"
+    if field == "missing_fields":
+        return f"缺失字段 = {text or '无'}。"
+    if field == "updated_fields":
+        return f"已补全字段 = {text or '无'}。"
+    if field == "count":
+        return f"本轮巡检发现的不完整记录数 = {text or '0'}。"
+    if field == "refreshed":
+        return f"本轮实际成功刷新的记录数 = {text or '0'}。"
+    if field == "total":
+        return f"本轮尝试处理的记录总数 = {text or '0'}。"
+    if field == "reason":
+        return f"原因说明 = {text or '空'}。"
     return text or "暂无补充说明。"
 
 
@@ -577,7 +616,151 @@ def _annotate_simple(title: str, summary: str, kind: str) -> dict:
     }
 
 
+def _split_csv_values(text: str) -> list[str]:
+    return [part.strip() for part in str(text or "").split(",") if part.strip() and part.strip() != "-"]
+
+
+def _annotate_metadata_scan_start(message: str) -> dict | None:
+    match = _METADATA_SCAN_START_RE.match(message)
+    if not match:
+        return None
+    count = match.group("count").strip()
+    return {
+        "kind": "metadata_scan_start",
+        "parsed": {"count": count},
+        "annotation": {
+            "title": "元数据巡检开始",
+            "summary": f"后台巡检发现 {count} 条元数据不完整记录，准备逐条刷新。",
+            "items": [
+                {"field": "count", "label": "count", "value": count, "note": _field_note("count", count)},
+            ],
+        },
+    }
+
+
+def _annotate_metadata_scan_item(message: str) -> dict | None:
+    match = _METADATA_SCAN_ITEM_RE.match(message)
+    if not match:
+        return None
+    parsed = {
+        "record_id": match.group("record_id").strip(),
+        "title": match.group("title").strip(),
+        "target_path": match.group("target_path").strip(),
+        "missing_fields": match.group("missing_fields").strip(),
+    }
+    return {
+        "kind": "metadata_scan_item",
+        "parsed": parsed,
+        "annotation": {
+            "title": "元数据不完整记录",
+            "summary": "这条记录会进入本轮元数据补全刷新。",
+            "items": [
+                {"field": "record_id", "label": "record_id", "value": parsed["record_id"], "note": _field_note("record_id", parsed["record_id"])},
+                {"field": "title", "label": "title", "value": parsed["title"], "note": _field_note("title", parsed["title"])},
+                {"field": "target_path", "label": "target_path", "value": parsed["target_path"], "note": _field_note("target_path", parsed["target_path"])},
+                {"field": "missing_fields", "label": "missing_fields", "value": parsed["missing_fields"], "note": f"缺失字段 = {'、'.join(_split_csv_values(parsed['missing_fields'])) or '无'}。"},
+            ],
+        },
+    }
+
+
+def _annotate_metadata_refresh(message: str) -> dict | None:
+    match = _METADATA_REFRESH_RE.match(message)
+    if not match:
+        return None
+    parsed = {
+        "record_id": match.group("record_id").strip(),
+        "title": match.group("title").strip(),
+        "id": match.group("id").strip(),
+        "provider": match.group("provider").strip(),
+        "target_path": match.group("target_path").strip(),
+        "updated_fields": match.group("updated_fields").strip(),
+    }
+    return {
+        "kind": "metadata_refresh",
+        "parsed": parsed,
+        "annotation": {
+            "title": "元数据刷新成功",
+            "summary": "这条记录已经从资料库重新拉取并补全了部分元数据。",
+            "items": [
+                {"field": "record_id", "label": "record_id", "value": parsed["record_id"], "note": _field_note("record_id", parsed["record_id"])},
+                {"field": "title", "label": "title", "value": parsed["title"], "note": _field_note("title", parsed["title"])},
+                {"field": "id", "label": "id", "value": parsed["id"], "note": _field_note("id", parsed["id"])},
+                {"field": "provider", "label": "provider", "value": parsed["provider"], "note": _field_note("provider", parsed["provider"])},
+                {"field": "target_path", "label": "target_path", "value": parsed["target_path"], "note": _field_note("target_path", parsed["target_path"])},
+                {"field": "updated_fields", "label": "updated_fields", "value": parsed["updated_fields"], "note": f"已补全字段 = {'、'.join(_split_csv_values(parsed['updated_fields'])) or '无'}。"},
+            ],
+        },
+    }
+
+
+def _annotate_metadata_refresh_fail(message: str) -> dict | None:
+    match = _METADATA_REFRESH_FAIL_RE.match(message)
+    if not match:
+        return None
+    parsed = {
+        "record_id": match.group("record_id").strip(),
+        "title": match.group("title").strip(),
+        "target_path": match.group("target_path").strip(),
+        "reason": match.group("reason").strip(),
+    }
+    return {
+        "kind": "metadata_refresh_failed",
+        "parsed": parsed,
+        "annotation": {
+            "title": "元数据刷新失败",
+            "summary": "这条记录进入了元数据刷新，但本次没有成功补全。",
+            "items": [
+                {"field": "record_id", "label": "record_id", "value": parsed["record_id"], "note": _field_note("record_id", parsed["record_id"])},
+                {"field": "title", "label": "title", "value": parsed["title"], "note": _field_note("title", parsed["title"])},
+                {"field": "target_path", "label": "target_path", "value": parsed["target_path"], "note": _field_note("target_path", parsed["target_path"])},
+                {"field": "reason", "label": "reason", "value": parsed["reason"], "note": _field_note("reason", parsed["reason"])},
+            ],
+        },
+    }
+
+
+def _annotate_metadata_scan_done(message: str) -> dict | None:
+    match = _METADATA_SCAN_DONE_RE.match(message)
+    if not match:
+        return None
+    refreshed = match.group("refreshed").strip()
+    total = match.group("total").strip()
+    return {
+        "kind": "metadata_scan_done",
+        "parsed": {"refreshed": refreshed, "total": total},
+        "annotation": {
+            "title": "元数据巡检完成",
+            "summary": f"本轮巡检共处理 {total} 条记录，成功刷新 {refreshed} 条。",
+            "items": [
+                {"field": "refreshed", "label": "refreshed", "value": refreshed, "note": _field_note("refreshed", refreshed)},
+                {"field": "total", "label": "total", "value": total, "note": _field_note("total", total)},
+            ],
+        },
+    }
+
+
 def _analyze_log_message(message: str) -> dict:
+    if message.startswith("元数据巡检:"):
+        annotated = _annotate_metadata_scan_start(message)
+        if annotated:
+            return annotated
+    if message.startswith("元数据巡检项:"):
+        annotated = _annotate_metadata_scan_item(message)
+        if annotated:
+            return annotated
+    if message.startswith("元数据刷新:"):
+        annotated = _annotate_metadata_refresh(message)
+        if annotated:
+            return annotated
+    if message.startswith("元数据刷新失败:"):
+        annotated = _annotate_metadata_refresh_fail(message)
+        if annotated:
+            return annotated
+    if message.startswith("元数据巡检完成:"):
+        annotated = _annotate_metadata_scan_done(message)
+        if annotated:
+            return annotated
     if message.startswith("识别完成:"):
         return _annotate_recognition_complete(message)
     if message.startswith("资料库匹配:"):
@@ -762,7 +945,7 @@ def read_logs(
     limit: int = Query(200, ge=20, le=1000),
     level: str = Query("", description="INFO / WARNING / ERROR"),
     keyword: Optional[str] = Query(None),
-    kind: str = Query("scrape", description="scrape / app"),
+    kind: str = Query("scrape", description="scrape / app / metadata"),
     date: Optional[str] = Query(None, description="YYYY-MM-DD"),
 ):
     data_dir = _base_data_dir()
@@ -821,7 +1004,7 @@ def read_logs(
 
 @router.delete("")
 def clear_logs(
-    kind: str = Query("scrape", description="scrape / app"),
+    kind: str = Query("scrape", description="scrape / app / metadata"),
     date: Optional[str] = Query(None, description="YYYY-MM-DD"),
 ):
     data_dir = _base_data_dir()
