@@ -13,9 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Optional, Set
 
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
 
-from core.services.worker_context import WorkerContext
 from db.database import SessionLocal
 from db.scrape_models import MonitorFolder, ScrapeRecord, SymlinkRecord
 from monitor.delete_sync import DeleteSyncService
@@ -33,6 +31,18 @@ from monitor.scan_service import (
     run_debounce_loop,
     scan_folder as run_scan_folder,
 )
+from monitor.watcher_lifecycle import (
+    MediaHandler,
+    refresh_pool_workers as refresh_pool_workers_impl,
+    start_watcher,
+    stop_watcher,
+    sync_watches as sync_watches_impl,
+)
+from monitor.watcher_metadata import (
+    metadata_refresh_loop,
+    refresh_incomplete_records,
+    refresh_single_record,
+)
 from utils.telegram_notify import NotificationBatcher
 from utils.emby_notify import EmbyNotifier
 
@@ -47,28 +57,6 @@ _POLL_INTERVAL_SECONDS = 30.0
 # Metadata refresh: default interval (12 hours) and lookback (14 days)
 _METADATA_REFRESH_DEFAULT_INTERVAL_HOURS = 12
 _METADATA_REFRESH_DEFAULT_LOOKBACK_DAYS = 14
-
-
-class _MediaHandler(FileSystemEventHandler):
-    """watchdog handler that queues newly created / moved-in media files."""
-
-    def __init__(self, watcher: "FolderWatcher"):
-        super().__init__()
-        self.watcher = watcher
-
-    def on_created(self, event):
-        if not event.is_directory:
-            self.watcher.enqueue(event.src_path)
-
-    def on_moved(self, event):
-        if not event.is_directory:
-            self.watcher.enqueue(event.dest_path)
-
-    def on_deleted(self, event):
-        if event.is_directory:
-            self.watcher.on_dir_deleted(event.src_path)
-        else:
-            self.watcher.on_file_deleted(event.src_path)
 
 
 class FolderWatcher:
@@ -107,6 +95,8 @@ class FolderWatcher:
         self._emby_notifier = EmbyNotifier(
             cfg_getter=lambda: self._worker_ctx._cfg if self._worker_ctx else {}
         )
+        self._session_factory = SessionLocal
+        self._folder_model = MonitorFolder
         self._delete_sync = DeleteSyncService(
             self,
             record_to_dict=_record_to_dict,
@@ -118,67 +108,19 @@ class FolderWatcher:
     # ------------------------------------------------------------------
 
     def start(self):
-        if self._running:
-            return
-        self._running = True
-        self._worker_ctx = WorkerContext()
-        self._refresh_pool_workers()
-        self._observer = Observer()
-        self._observer.daemon = True
-        self._observer.start()
-        self._debounce_thread = threading.Thread(target=self._debounce_loop, daemon=True)
-        self._debounce_thread.start()
-        self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
-        self._poll_thread.start()
-        self._metadata_refresh_thread = threading.Thread(
-            target=self._metadata_refresh_loop, daemon=True
-        )
-        self._metadata_refresh_thread.start()
-        self._sync_watches()
-        logger.info("FolderWatcher started")
+        start_watcher(self)
 
     def stop(self):
-        self._running = False
-        try:
-            self._observer.stop()
-            self._observer.join(timeout=3)
-        except Exception:
-            pass
-        self._watches.clear()
-        self._pool.shutdown(wait=False)
-        self._symlink_pool.shutdown(wait=False)
-        logger.info("FolderWatcher stopped")
+        stop_watcher(self)
 
     def _desired_pool_workers(self) -> int:
-        if self._worker_ctx:
-            return self._worker_ctx._get_preview_workers()
-        return 1
+        return getattr(self._pool, "_max_workers", 1)
 
     def _desired_symlink_pool_workers(self) -> int:
-        if self._worker_ctx:
-            return self._worker_ctx._get_symlink_export_workers()
-        return 3
+        return getattr(self._symlink_pool, "_max_workers", 1)
 
     def _refresh_pool_workers(self):
-        desired = self._desired_pool_workers()
-        current = getattr(self._pool, "_max_workers", None)
-        if current != desired:
-            old_pool = self._pool
-            self._pool = ThreadPoolExecutor(max_workers=desired, thread_name_prefix="scrape")
-            try:
-                old_pool.shutdown(wait=False)
-            except Exception:
-                pass
-
-        desired_symlink = self._desired_symlink_pool_workers()
-        current_symlink = getattr(self._symlink_pool, "_max_workers", None)
-        if current_symlink != desired_symlink:
-            old_symlink_pool = self._symlink_pool
-            self._symlink_pool = ThreadPoolExecutor(max_workers=desired_symlink, thread_name_prefix="symlink-export")
-            try:
-                old_symlink_pool.shutdown(wait=False)
-            except Exception:
-                pass
+        refresh_pool_workers_impl(self)
 
     def reload_runtime_config(self):
         if self._worker_ctx:
@@ -199,38 +141,7 @@ class FolderWatcher:
             self._dir_gate.notify_all()
 
     def _sync_watches(self):
-        """Synchronize watchdog watches with the database."""
-        db = SessionLocal()
-        try:
-            folders = db.query(MonitorFolder).filter(MonitorFolder.enabled == True).all()
-            # Cache symlink_export folder paths for enqueue bypass
-            self._symlink_export_paths = {
-                os.path.normpath(f.path) for f in folders
-                if getattr(f, 'organize_mode', 'move') == 'symlink_export'
-            }
-            active_ids = set()
-            for f in folders:
-                active_ids.add(f.id)
-                if f.id not in self._watches and os.path.isdir(f.path):
-                    try:
-                        w = self._observer.schedule(
-                            _MediaHandler(self), f.path, recursive=True
-                        )
-                        self._watches[f.id] = w
-                        logger.info(f"Watching: {f.path}")
-                    except Exception as e:
-                        logger.error(f"Failed to watch {f.path}: {e}")
-
-            # Remove watches for disabled / deleted folders
-            for fid in list(self._watches):
-                if fid not in active_ids:
-                    try:
-                        self._observer.unschedule(self._watches[fid])
-                    except Exception:
-                        pass
-                    del self._watches[fid]
-        finally:
-            db.close()
+        sync_watches_impl(self)
 
     def refresh(self):
         """Called after monitor folder CRUD to resync watches."""
@@ -286,50 +197,17 @@ class FolderWatcher:
     # ------------------------------------------------------------------
 
     def _metadata_refresh_loop(self):
-        """Periodically scan recent successful records and refresh incomplete metadata."""
-        # Wait a bit before the first run to let the server fully start
-        time.sleep(60)
-        while self._running:
-            cfg = self._worker_ctx._cfg if self._worker_ctx else {}
-            enabled = cfg.get("metadata_refresh_enabled", True)
-            interval_hours = cfg.get(
-                "metadata_refresh_interval_hours",
-                _METADATA_REFRESH_DEFAULT_INTERVAL_HOURS,
-            )
-            interval_seconds = max(1800, interval_hours * 3600)  # min 30 min
-
-            if enabled:
-                try:
-                    self._refresh_incomplete_records()
-                except Exception as e:
-                    logger.error(f"Metadata refresh error: {e}")
-
-            # Sleep in small increments so we can exit quickly on stop
-            slept = 0.0
-            while slept < interval_seconds and self._running:
-                time.sleep(min(30.0, interval_seconds - slept))
-                slept += 30.0
+        metadata_refresh_loop(
+            self,
+            default_interval_hours=_METADATA_REFRESH_DEFAULT_INTERVAL_HOURS,
+            default_lookback_days=_METADATA_REFRESH_DEFAULT_LOOKBACK_DAYS,
+        )
 
     def _refresh_incomplete_records(self):
-        """Single pass: find recent incomplete records and refresh their metadata."""
-        if not self._worker_ctx:
-            return
-
-        cfg = self._worker_ctx._cfg if self._worker_ctx else {}
-        lookback_days = cfg.get(
-            "metadata_refresh_lookback_days",
-            _METADATA_REFRESH_DEFAULT_LOOKBACK_DAYS,
-        )
-        run_metadata_refresh_pass(
-            self._worker_ctx,
-            lookback_days=lookback_days,
-            running_check=lambda: self._running,
-            broadcast_fn=self._broadcast,
-        )
+        refresh_incomplete_records(self, default_lookback_days=_METADATA_REFRESH_DEFAULT_LOOKBACK_DAYS)
 
     def _refresh_single_record(self, record, db) -> bool:
-        """Refresh metadata for a single ScrapeRecord. Returns True if updated."""
-        return refresh_record_metadata(record, db, self._worker_ctx, self._broadcast)
+        return refresh_single_record(self, record, db)
 
     # ------------------------------------------------------------------
     # Full scan
