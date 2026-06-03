@@ -22,7 +22,7 @@ services:
 
     volumes:
       # ── 持久化数据（必须挂载，否则重启后数据丢失）──
-      - scraper_data:/data
+      - ./data:/data
 
       # ── 媒体文件目录（按需挂载）──────────────────
       # 格式: <宿主机路径>:<容器内路径>
@@ -57,7 +57,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
-
-volumes:
-  scraper_data:
-    driver: local
