@@ -118,46 +118,109 @@ TG 问题反馈群：<https://t.me/+Wx34NdYY_x1iNjg1>
 ## 项目结构
 
 ```text
-main.py                         # 入口：启动 uvicorn + 托盘图标
+main.py                         # 桌面壳入口：启动 uvicorn + 托盘图标
+docker_main.py                  # Docker 入口：数据目录、日志初始化、服务启动
 server.py                       # FastAPI 应用、lifespan、静态文件挂载
+
 api/
-  routes/
-    monitor.py                  # 监控文件夹 CRUD + 目录浏览 API
-    records.py                  # 归档记录查询/分组/手动识别/批量操作
-    settings.py                 # 配置读写、TMDB/AI/Emby 连接测试、剔除关键词、缓存过期
-    symlinks.py                 # 软链接记录查询/统计/删除/清空
-    ws.py                       # WebSocket 实时推送
-monitor/
-  watcher.py                    # watchdog 文件监控 + 导出软链接模式 + 自动处理流程
+  routes/                       # 只保留 HTTP / WebSocket 接口层
+    logs.py
+    monitor.py
+    recognition_test.py
+    records.py
+    settings.py
+    symlinks.py
+    ws.py
+
+ai/                             # AI 接口兼容层
+  ollama_ai.py                  # 门面：兼容旧调用入口
+  openai_compat.py              # OpenAI 兼容请求与连通性测试
+  siliconflow_service.py        # 在线模型调用实现
+
 core/
-  services/
-    worker_context.py           # 无 GUI 版配置上下文（供 API 调用）
-    matcher_service.py          # Ollama 解析、embedding 重排、候选判定
-    naming_service.py           # 季集提取（含目录名季号识别）、标题复用、命名辅助
-  workers/
-    task_runner.py              # 识别调度（支持剔除关键词预处理）
-    execution_runner.py         # 执行重命名/归档/刮削逻辑
+  logging/                      # 日志读取、解析、中文注释
+    reader.py
+    annotation.py
+    annotation_*.py
+  metadata/                     # 元数据完整性、NFO/图片 sidecar 更新
+    completeness.py
+    sidecar_service.py
+    sidecar_update_service.py
   models/
-    media_item.py               # MediaItem 数据模型（dataclass）
-ai/
-  ollama_ai.py                  # OpenAI 兼容 API 解析与连通性测试
-db/
-  tmdb_api.py                   # TMDb/BGM 查询与元数据抓取
-  database.py                   # SQLAlchemy 初始化、自动迁移
-  scrape_models.py              # ORM 模型（MonitorFolder / ScrapeRecord / SymlinkRecord）
-utils/
-  helpers.py                    # 通用工具（缓存、NFO/图片写入等）
-  telegram_notify.py            # Telegram 批量通知
-  emby_notify.py                # Emby / Jellyfin 入库通知
+    media_item.py
+  recognition/                  # 识别预览、识别实验、候选测试链路
+    preview_*.py
+    test_service.py
+  records/                      # 刮削记录查询 / 删除 / 手动处理
+    query_service.py
+    manual_service.py
+    delete_service.py
+  services/                     # 匹配、命名、WorkerContext 及运行时 mixin
+    db_match_service.py
+    matcher_service.py
+    naming_service.py
+    naming_templates.py
+    season_rules.py
+    worker_context.py
+    worker_context_*.py
+  settings/                     # 配置保存、预览、连通性测试
+    config_service.py
+    connection_service.py
+    preview_service.py
+  symlinks/                     # 软链接记录查询与动作
+    query_service.py
+    action_service.py
+  workers/                      # 识别执行与归档入口
+    execution_runner.py
+    task_runner.py
+
+db/                             # 数据库、TMDB / BGM / hybrid 查询
+  database.py
+  scrape_models.py
+  tmdb_api.py                   # 门面：聚合 tmdb_*.py / bgm_api.py
+  tmdb_*.py
+  bgm_api.py
+
+monitor/                        # 监控、轮询扫描、删除同步、元数据巡检
+  watcher.py                    # 门面：FolderWatcher 总协调
+  watcher_lifecycle.py
+  watcher_metadata.py
+  scan_service.py
+  file_processor*.py
+  delete_sync*.py
+  metadata_refresh*.py
+  record_state.py
+
+utils/                          # 真正通用的工具和兼容门面
+  app_runtime.py
+  cache.py                      # 门面：兼容旧缓存调用入口
+  cache_*.py
+  logging_setup.py              # 门面：兼容旧日志初始化入口
+  logging_*.py
+  proxy.py
+  library_paths.py
+  title_parsing.py              # 门面：兼容旧标题解析入口
+  title_*.py
+  query_planning.py
+  episode_parsing.py
+  telegram_notify.py            # 门面：兼容旧 TG 通知入口
+  telegram_notify_*.py
+  emby_notify.py
+  helpers.py                    # 兼容导出层，避免旧调用断裂
+
 web/
-  dist/
-    index.html                  # Vue.js SPA 主页面
-    app.js                      # Vue 应用逻辑
-    style.css                   # 样式
-    vue.global.prod.js          # Vue 3 本地构建（离线可用）
+  dist/                         # 纯静态前端资源
+    index.html                  # SPA 页面骨架
+    app.js                      # Vue 启动壳
+    app-data.js
+    app-computed.js
+    app-methods-*.js
+    app-components-*.js
+    style.css
+    vue.global.prod.js
 ```
 
-> 当前仓库已完全移除旧 Tk 桌面界面代码，运行入口为 Web 服务 + 系统托盘壳；核心识别/归档逻辑已完成无 GUI 化，不再依赖旧桌面窗口。
+> 当前仓库已完成主要模块拆分：`api/routes` 保留接口层，业务逻辑下沉到 `core/*`、`monitor/*`、`db/*`、`utils/*`，前端也已从单文件拆成 `data / methods / components` 多脚本结构。
 
 如需继续做模块拆分和维护规划，可参考：
 
@@ -262,8 +325,8 @@ volumes:
 如果你是在 Windows 上使用 Docker Desktop：
 
 - Windows 宿主机写入文件时，容器内不一定能即时收到 watchdog 事件
-- 程序不会漏文件，因为内置了 120 秒轮询兜底
-- 但实时刮削可能有最多约 2 分钟延迟
+- 程序不会漏文件，因为内置了 30 秒轮询兜底
+- 但实时刮削仍可能有几十秒延迟
 
 如果你追求真正实时，建议：
 

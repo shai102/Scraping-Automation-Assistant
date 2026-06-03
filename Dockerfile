@@ -32,7 +32,9 @@ COPY . .
 #   media_renamer.db   — SQLite database
 #   renamer_config.json — user configuration
 #   api_cache.json      — TMDB/BGM API cache
-#   media_renamer.log   — error log
+#   logs/app/*.log      — ordinary runtime logs
+#   logs/scrape/*.log   — scrape pipeline logs
+#   logs/metadata/*.log — metadata patrol logs
 ENV DATA_DIR=/data
 VOLUME ["/data"]
 

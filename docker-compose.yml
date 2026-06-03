@@ -46,7 +46,7 @@ services:
       # ⚠️  Docker Desktop for Windows 实时监控注意：
       #     Docker Desktop 使用虚拟机，Windows 宿主机的文件写入事件
       #     无法触发容器内 inotify，watchdog 实时事件可能收不到。
-      #     不会丢文件——程序内置 120 秒轮询兜底，但实时性最多延迟 2 分钟。
+      #     不会丢文件——程序内置 30 秒轮询兜底，但实时性仍可能有几十秒延迟。
       #     标准 Linux 宿主机上直接运行 Docker 不存在此问题。
 
     # 健康检查：确认 Web 服务可用

@@ -2,6 +2,22 @@
 
 这份文档的目标不是“为了目录好看而重构”，而是为了让后续继续加功能时，代码边界更稳定、回归风险更低、定位问题更快。
 
+## 当前状态
+
+截至 `v4.7`：
+
+- 第一阶段和大部分第二阶段拆分已经完成
+- `watcher / delete_sync / metadata_refresh / logs / records / settings / symlinks / tmdb search / tg notify / cache / title parsing / frontend settings pages` 都已经拆成门面 + 子模块
+- 当前文档以下内容仍保留其价值：
+  - 解释为什么当时要拆
+  - 记录拆分边界设计思路
+  - 作为后续继续细化模块时的参考
+
+现在这份文档更适合当作：
+
+- `已完成重构的设计记录`
+- `剩余可继续细拆模块的参考图`
+
 当前结论：
 
 - 现有项目已经有基本分层，不需要推倒重来
@@ -378,4 +394,3 @@ web/dist/
 如果没有特别偏好，默认建议先走：
 
 `helpers.py` -> `日志模块` -> `watcher.py`
-
