@@ -3,7 +3,7 @@ import os
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from utils.helpers import ERROR_CODE_UNKNOWN, format_error_message
+from utils.error_utils import ERROR_CODE_UNKNOWN, format_error_message
 
 
 def _notify_error(gui, title, message):

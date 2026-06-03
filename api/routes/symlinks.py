@@ -1,15 +1,25 @@
 """Symlink record API — query / delete symlink_export records."""
 
-import os
-import threading
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
 from typing import Optional, List
 
-from db.database import get_db, vacuum_db
-from db.scrape_models import SymlinkRecord, MonitorFolder
+from db.database import get_db
+from core.symlinks.action_service import (
+    batch_delete_symlink_records,
+    clear_all_symlinks,
+    clear_failed_symlinks,
+    delete_symlink_group,
+    delete_symlink_record,
+    retry_all_failed_symlinks,
+    retry_symlink_record,
+)
+from core.symlinks.query_service import (
+    get_symlink_stats,
+    list_symlink_groups,
+    list_symlink_records,
+)
 
 router = APIRouter(prefix="/api/symlinks", tags=["symlinks"])
 
@@ -17,39 +27,6 @@ router = APIRouter(prefix="/api/symlinks", tags=["symlinks"])
 class GroupDeleteBody(BaseModel):
     ids: List[int]
     group_dir: str
-
-
-def _normcase_path(path: str) -> str:
-    return os.path.normcase(os.path.normpath(str(path or "")))
-
-
-def _symlink_group_dir(row: SymlinkRecord) -> str:
-    link_path = str(row.link_path or "").strip()
-    if link_path:
-        return os.path.normpath(os.path.dirname(link_path))
-    return os.path.normpath(os.path.dirname(row.original_path))
-
-
-def _safe_remove_path(path: str) -> bool:
-    try:
-        if os.path.isfile(path) or os.path.islink(path):
-            os.remove(path)
-            return True
-    except Exception:
-        return False
-    return False
-
-
-def _cleanup_empty_group_dir(group_dir: str) -> bool:
-    try:
-        if not os.path.isdir(group_dir):
-            return False
-        if os.listdir(group_dir):
-            return False
-        os.rmdir(group_dir)
-        return True
-    except Exception:
-        return False
 
 
 class SymlinkOut(BaseModel):
@@ -75,46 +52,16 @@ def list_symlinks(
     page_size: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
-    q = db.query(SymlinkRecord)
-    if folder_id:
-        q = q.filter(SymlinkRecord.folder_id == folder_id)
-    if status:
-        q = q.filter(SymlinkRecord.status == status)
-    if keyword:
-        q = q.filter(SymlinkRecord.original_path.contains(keyword))
-    if dir:
-        norm_dir = os.path.normpath(dir)
-        q = q.filter(
-            or_(
-                SymlinkRecord.link_path.like(norm_dir.replace('\\', '/') + '/%'),
-                SymlinkRecord.link_path.like(norm_dir + os.sep + '%'),
-                SymlinkRecord.original_path.like(norm_dir.replace('\\', '/') + '/%'),
-                SymlinkRecord.original_path.like(norm_dir + os.sep + '%'),
-            )
-        )
-    total = q.count()
-    rows = q.order_by(SymlinkRecord.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    items = []
-    for r in rows:
-        items.append(SymlinkOut(
-            id=r.id,
-            folder_id=r.folder_id,
-            original_path=r.original_path,
-            link_path=r.link_path or "",
-            status=r.status,
-            error_msg=r.error_msg,
-            created_at=r.created_at.isoformat() if r.created_at else None,
-        ))
-    return {"total": total, "items": items}
+    result = list_symlink_records(db, folder_id, status, keyword, dir, page, page_size)
+    return {
+        "total": result["total"],
+        "items": [SymlinkOut(**item) for item in result["items"]],
+    }
 
 
 @router.get("/stats")
 def symlink_stats(db: Session = Depends(get_db)):
-    """Return count of success / failed symlink records."""
-    total = db.query(func.count(SymlinkRecord.id)).scalar() or 0
-    success = db.query(func.count(SymlinkRecord.id)).filter(SymlinkRecord.status == "success").scalar() or 0
-    failed = db.query(func.count(SymlinkRecord.id)).filter(SymlinkRecord.status == "failed").scalar() or 0
-    return {"total": total, "success": success, "failed": failed}
+    return get_symlink_stats(db)
 
 
 @router.get("/grouped")
@@ -124,48 +71,12 @@ def list_symlinks_grouped(
     keyword: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    """Return symlink records grouped by output directory when available."""
-    q = db.query(SymlinkRecord)
-    if folder_id:
-        q = q.filter(SymlinkRecord.folder_id == folder_id)
-    if status:
-        q = q.filter(SymlinkRecord.status == status)
-    if keyword:
-        q = q.filter(SymlinkRecord.original_path.contains(keyword))
-    rows = q.order_by(SymlinkRecord.id.desc()).all()
-
-    groups: dict = {}
-    for r in rows:
-        dir_path = _symlink_group_dir(r)
-        if dir_path not in groups:
-            groups[dir_path] = {
-                "dir_path": dir_path,
-                "dir_name": os.path.basename(dir_path),
-                "folder_id": r.folder_id,
-                "total": 0,
-                "success": 0,
-                "failed": 0,
-                "ids": [],
-            }
-        g = groups[dir_path]
-        g["total"] += 1
-        g["ids"].append(r.id)
-        if r.status == "success":
-            g["success"] += 1
-        elif r.status == "failed":
-            g["failed"] += 1
-
-    return {"groups": list(groups.values())}
+    return list_symlink_groups(db, folder_id, status, keyword)
 
 
 @router.delete("/all")
 def clear_all(db: Session = Depends(get_db)):
-    """Delete all symlink records."""
-    deleted = db.query(SymlinkRecord).delete(synchronize_session=False)
-    db.commit()
-    db.close()
-    vacuum_db()
-    return {"ok": True, "deleted": deleted}
+    return clear_all_symlinks(db)
 
 
 @router.delete("/{record_id}")
@@ -174,22 +85,7 @@ def delete_symlink(
     delete_files: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
-    row = db.query(SymlinkRecord).get(record_id)
-    if not row:
-        raise HTTPException(404, detail="记录不存在")
-    files_deleted = 0
-    if delete_files:
-        link = str(row.link_path or "").strip()
-        if link and _safe_remove_path(link):
-            files_deleted += 1
-            try:
-                from monitor.watcher import _remove_empty_dirs
-                _remove_empty_dirs(os.path.dirname(link), stop_at=None)
-            except Exception:
-                pass
-    db.delete(row)
-    db.commit()
-    return {"ok": True, "files_deleted": files_deleted}
+    return delete_symlink_record(db, record_id, delete_files)
 
 
 class BatchDeleteBody(BaseModel):
@@ -199,149 +95,24 @@ class BatchDeleteBody(BaseModel):
 
 @router.post("/batch-delete")
 def batch_delete(body: BatchDeleteBody, db: Session = Depends(get_db)):
-    if not body.ids:
-        return {"ok": True, "deleted": 0, "files_deleted": 0}
-    files_deleted = 0
-    affected_dirs: list[str] = []
-    if body.delete_files:
-        rows = db.query(SymlinkRecord).filter(SymlinkRecord.id.in_(body.ids)).all()
-        for row in rows:
-            link = str(row.link_path or "").strip()
-            if not link:
-                continue
-            dir_path = os.path.dirname(link)
-            if _safe_remove_path(link):
-                files_deleted += 1
-            affected_dirs.append(dir_path)
-        # Clean up empty directories once, after all symlinks are removed
-        try:
-            from monitor.watcher import _remove_empty_dirs
-            seen_dirs: set[str] = set()
-            for dir_path in affected_dirs:
-                norm = os.path.normcase(dir_path)
-                if norm in seen_dirs:
-                    continue
-                seen_dirs.add(norm)
-                _remove_empty_dirs(dir_path, stop_at=None)
-        except Exception:
-            pass
-    deleted = db.query(SymlinkRecord).filter(SymlinkRecord.id.in_(body.ids)).delete(synchronize_session=False)
-    db.commit()
-    return {"ok": True, "deleted": deleted, "files_deleted": files_deleted}
+    return batch_delete_symlink_records(db, body.ids, body.delete_files)
 
 
 @router.post("/delete-group")
 def delete_group(body: GroupDeleteBody, db: Session = Depends(get_db)):
-    group_dir = os.path.normpath(str(body.group_dir or "").strip())
-    if not group_dir:
-        raise HTTPException(400, detail="分组目录不能为空")
-    if not body.ids:
-        return {
-            "ok": True,
-            "deleted": 0,
-            "files_deleted": 0,
-            "dir_deleted": False,
-            "group_dir": group_dir,
-        }
-
-    rows = db.query(SymlinkRecord).filter(SymlinkRecord.id.in_(body.ids)).all()
-    if not rows:
-        return {
-            "ok": True,
-            "deleted": 0,
-            "files_deleted": 0,
-            "dir_deleted": False,
-            "group_dir": group_dir,
-        }
-
-    expected_group = _normcase_path(group_dir)
-    files_to_delete = []
-    for row in rows:
-        row_group = _normcase_path(_symlink_group_dir(row))
-        if row_group != expected_group:
-            raise HTTPException(400, detail="分组记录与目标目录不匹配，已取消删除")
-        link_path = str(row.link_path or "").strip()
-        if link_path:
-            files_to_delete.append(link_path)
-
-    other_rows = db.query(SymlinkRecord).filter(~SymlinkRecord.id.in_(body.ids)).all()
-    blocked_files = set()
-    for row in other_rows:
-        row_group = _normcase_path(_symlink_group_dir(row))
-        if row_group != expected_group:
-            continue
-        link_path = str(row.link_path or "").strip()
-        if link_path:
-            blocked_files.add(_normcase_path(link_path))
-
-    can_touch_group_dir = bool(files_to_delete)
-    files_deleted = 0
-    visited = set()
-    for path in files_to_delete:
-        norm_path = _normcase_path(path)
-        if not norm_path or norm_path in visited or norm_path in blocked_files:
-            continue
-        visited.add(norm_path)
-        if _safe_remove_path(path):
-            files_deleted += 1
-
-    deleted = (
-        db.query(SymlinkRecord)
-        .filter(SymlinkRecord.id.in_(body.ids))
-        .delete(synchronize_session=False)
-    )
-    db.commit()
-    dir_deleted = _cleanup_empty_group_dir(group_dir) if can_touch_group_dir else False
-    return {
-        "ok": True,
-        "deleted": deleted,
-        "files_deleted": files_deleted,
-        "dir_deleted": dir_deleted,
-        "group_dir": group_dir,
-    }
+    return delete_symlink_group(db, body.ids, body.group_dir)
 
 
 @router.post("/clear-failed")
 def clear_failed(db: Session = Depends(get_db)):
-    """Delete all failed symlink records."""
-    deleted = db.query(SymlinkRecord).filter(SymlinkRecord.status == "failed").delete(synchronize_session=False)
-    db.commit()
-    return {"ok": True, "deleted": deleted}
+    return clear_failed_symlinks(db)
 
 
 @router.post("/{record_id}/retry")
 def retry_symlink(record_id: int, db: Session = Depends(get_db)):
-    """Retry a single failed symlink record."""
-    row = db.query(SymlinkRecord).get(record_id)
-    if not row:
-        raise HTTPException(404, detail="记录不存在")
-    if not os.path.isfile(row.original_path):
-        raise HTTPException(400, detail="源文件不存在")
-    path = row.original_path
-    db.delete(row)
-    db.commit()
-    from server import get_watcher
-    w = get_watcher()
-    def _run():
-        if w:
-            w._process_file(path)
-    threading.Thread(target=_run, daemon=True).start()
-    return {"ok": True}
+    return retry_symlink_record(db, record_id)
 
 
 @router.post("/retry-failed")
 def retry_all_failed(db: Session = Depends(get_db)):
-    """Retry all failed symlink records."""
-    rows = db.query(SymlinkRecord).filter(SymlinkRecord.status == "failed").all()
-    paths = [r.original_path for r in rows if os.path.isfile(r.original_path)]
-    for r in rows:
-        db.delete(r)
-    db.commit()
-    from server import get_watcher
-    w = get_watcher()
-    def _run():
-        if w:
-            for p in paths:
-                w._process_file(p)
-    threading.Thread(target=_run, daemon=True).start()
-    return {"ok": True, "queued": len(paths)}
+    return retry_all_failed_symlinks(db)

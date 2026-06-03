@@ -7,17 +7,16 @@ from collections import deque
 
 import requests
 
-from utils.helpers import (
+from utils.app_runtime import TIMEOUT_AI_CHAT, TIMEOUT_AI_TEST
+from utils.error_utils import (
     ERROR_CODE_CONFIG,
     ERROR_CODE_HTTP,
     ERROR_CODE_PARSE,
     ERROR_CODE_TIMEOUT,
     ERROR_CODE_UNKNOWN,
-    TIMEOUT_AI_CHAT,
-    TIMEOUT_AI_TEST,
     format_error_message,
-    session,
 )
+from utils.proxy import session
 
 
 AI_RATE_LIMIT_MAX_REQUESTS = 20

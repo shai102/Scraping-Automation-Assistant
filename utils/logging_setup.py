@@ -128,6 +128,7 @@ class GeneralLogFilter(logging.Filter):
 class MetadataLogFilter(logging.Filter):
     _PREFIXES = (
         "monitor.watcher",
+        "monitor.metadata_refresh",
         "core.services.worker_context",
     )
     _MESSAGE_MARKERS = (

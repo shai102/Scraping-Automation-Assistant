@@ -12,7 +12,7 @@ import logging
 import threading
 from typing import Callable
 
-from utils.helpers import request_get, request_post
+from utils.proxy import request_get, request_post
 
 logger = logging.getLogger(__name__)
 

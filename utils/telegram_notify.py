@@ -8,7 +8,8 @@ import os
 import threading
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from utils.helpers import TIMEOUT_IMAGE_DOWNLOAD, request_post
+from utils.app_runtime import TIMEOUT_IMAGE_DOWNLOAD
+from utils.proxy import request_post
 
 logger = logging.getLogger(__name__)
 
