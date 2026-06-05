@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-截至 `v4.7`：
+截至 `v4.8`：
 
 - 第一阶段和大部分第二阶段拆分已经完成
 - `watcher / delete_sync / metadata_refresh / logs / records / settings / symlinks / tmdb search / tg notify / cache / title parsing / frontend settings pages` 都已经拆成门面 + 子模块

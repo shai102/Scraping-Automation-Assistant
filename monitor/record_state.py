@@ -72,6 +72,38 @@ def symlink_record_consumed_downstream(row, db, ctx) -> bool:
     return not scrape_record_needs_repair(downstream, ctx)
 
 
+def symlink_source_consumed_downstream(folder, source_path: str, db, ctx) -> bool:
+    if db is None or folder is None:
+        return False
+
+    source_root = str(getattr(folder, "path", "") or "").strip()
+    target_root = str(getattr(folder, "target_root", "") or "").strip()
+    if not source_root or not target_root:
+        return False
+
+    try:
+        rel_path = os.path.relpath(os.path.normpath(source_path), os.path.normpath(source_root))
+    except ValueError:
+        return False
+
+    if rel_path.startswith(".."):
+        return False
+
+    expected_link_path = os.path.normpath(os.path.join(target_root, rel_path))
+    downstream = (
+        db.query(ScrapeRecord)
+        .filter(
+            ScrapeRecord.original_path == expected_link_path,
+            ScrapeRecord.status == "success",
+        )
+        .order_by(ScrapeRecord.id.desc())
+        .first()
+    )
+    if not downstream:
+        return False
+    return not scrape_record_needs_repair(downstream, ctx)
+
+
 def reset_scrape_record_for_rebuild(record):
     record._repairing = True
     record._previous_target = str(getattr(record, "target_path", "") or "")

@@ -32,10 +32,14 @@ class ErrorLogFilter(logging.Filter):
 class ScrapeLogFilter(logging.Filter):
     _PREFIXES = (
         "monitor.watcher",
+        "monitor.file_processor",
+        "monitor.file_processor_archive",
+        "monitor.file_processor_fastpath",
         "api.routes.records",
         "core.workers.task_runner",
         "core.workers.execution_runner",
         "core.services.worker_context",
+        "core.recognition.preview_matching",
     )
     _MESSAGE_MARKERS = (
         "开始识别:",

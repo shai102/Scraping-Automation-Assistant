@@ -1,3 +1,5 @@
+name: media-scraper
+
 services:
   scraper:
     build:

@@ -11,6 +11,7 @@ from monitor.record_state import (
     scrape_record_needs_repair,
     symlink_record_consumed_downstream,
     symlink_record_needs_repair,
+    symlink_source_consumed_downstream,
 )
 
 logger = logging.getLogger(__name__)
@@ -123,6 +124,11 @@ def _iter_folder_candidates(watcher, folder, *, exts, recorded: set[str], mark_s
                     watcher._processed.add(full)
                 continue
 
+            if is_symlink_export and symlink_source_consumed_downstream(folder, full, db, watcher._worker_ctx):
+                with watcher._pending_lock:
+                    watcher._processed.add(full)
+                continue
+
             yield full
 
 
@@ -175,7 +181,8 @@ def scan_folder(watcher, folder_id: int):
             with watcher._pending_lock:
                 if full not in watcher._processed:
                     watcher._processed.add(full)
-            watcher._pool.submit(watcher._process_file, full)
-            time.sleep(0.1)
+            target_pool = watcher._symlink_pool if getattr(folder, "organize_mode", "move") == "symlink_export" else watcher._pool
+            target_pool.submit(watcher._process_file, full)
+            time.sleep(0.03 if target_pool is watcher._symlink_pool else 0.1)
     finally:
         db.close()

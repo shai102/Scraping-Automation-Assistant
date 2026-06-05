@@ -19,6 +19,7 @@ from monitor.record_state import (
     scrape_record_needs_repair,
     symlink_record_consumed_downstream,
     symlink_record_needs_repair,
+    symlink_source_consumed_downstream,
 )
 from monitor.record_payloads import scrape_record_to_dict, symlink_record_to_dict
 from monitor.scan_service import find_folder_for_path
@@ -117,6 +118,11 @@ def process_file(watcher, path: str):
             db.refresh(record)
             watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
             return
+
+        if organize_mode_early == "symlink_export" and folder:
+            if symlink_source_consumed_downstream(folder, path, db, watcher._worker_ctx):
+                logger.info(f"跳过已被下游刮削消费的导出源文件: {path}")
+                return
 
         if organize_mode_early == "symlink_export" and folder:
             handle_symlink_export(watcher, folder, path, db)
