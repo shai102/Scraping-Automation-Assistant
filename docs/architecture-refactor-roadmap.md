@@ -7,15 +7,42 @@
 截至 `v4.8`：
 
 - 第一阶段和大部分第二阶段拆分已经完成
+- 项目已经从“单体脚本堆功能”演进成了“接口层 + 业务层 + 监控层 + 数据层 + 静态前端”的基本分层
 - `watcher / delete_sync / metadata_refresh / logs / records / settings / symlinks / tmdb search / tg notify / cache / title parsing / frontend settings pages` 都已经拆成门面 + 子模块
-- 当前文档以下内容仍保留其价值：
-  - 解释为什么当时要拆
-  - 记录拆分边界设计思路
-  - 作为后续继续细化模块时的参考
+- Docker 运行形态已经稳定，`docker-compose.yml` / `docker-compose.override.yml` 已改为**本地部署文件**，不再作为仓库受管配置
+
+当前仓库可以理解成下面这几个主层：
+
+- `api/routes/`
+  - FastAPI 路由层
+  - 负责参数接收、返回 JSON、连接 WebSocket 广播
+- `core/`
+  - 识别、记录、设置、日志、软链接等主要业务能力
+- `monitor/`
+  - 文件监控、去抖、轮询扫描、删除同步、元数据巡检
+- `db/`
+  - SQLite、TMDB / BGM 查询与候选逻辑
+- `utils/`
+  - 兼容门面和真正通用的工具函数
+- `web/dist/`
+  - 已构建的静态前端资源
+
+当前源码的一个重要背景是：
+
+- 这是一个从桌面 GUI 版本演进而来的项目
+- Web / Docker 版本通过 `WorkerContext` 复用旧识别逻辑
+- 因此源码里仍能看到“旧入口保留 + 新模块下沉”的过渡结构
+
+当前文档以下内容仍保留其价值：
+
+- 解释为什么当时要拆
+- 记录拆分边界设计思路
+- 作为后续继续细化模块时的参考
 
 现在这份文档更适合当作：
 
 - `已完成重构的设计记录`
+- `当前仓库快照`
 - `剩余可继续细拆模块的参考图`
 
 当前结论：
@@ -23,6 +50,56 @@
 - 现有项目已经有基本分层，不需要推倒重来
 - 需要做的是按职责增量拆分
 - 优先拆“大文件多职责”，而不是一次性全仓库重排
+
+### 当前仓库快照
+
+当前仓库顶层关键文件 / 目录大致如下：
+
+```text
+Dockerfile
+README.md
+项目速览.md
+docker_main.py
+main.py
+server.py
+
+api/
+core/
+db/
+monitor/
+utils/
+web/dist/
+docs/
+data/                  # 本地运行数据，已忽略，不提交 Git
+```
+
+当前结构相对 `v4.8` 的更精确描述：
+
+- `server.py` 已经只负责 FastAPI 应用装配、生命周期和静态资源挂载
+- `api/routes/*.py` 大多已经收敛为接口层，核心逻辑下沉到 `core/*`
+- `core/records/`、`core/settings/`、`core/symlinks/` 已经形成明确业务边界
+- `core/logging/` 已经承接日志读取与注释逻辑
+- `monitor/` 已经拆分出：
+  - `scan_service.py`
+  - `watcher_lifecycle.py`
+  - `watcher_metadata.py`
+  - `file_processor*.py`
+  - `delete_sync*.py`
+  - `metadata_refresh*.py`
+- `utils/` 已经从历史上的大而全工具箱里拆出：
+  - `proxy.py`
+  - `cache*.py`
+  - `title_*.py`
+  - `telegram_notify*.py`
+  - `logging_*.py`
+
+但仍然存在几个“虽然比以前好很多，但继续拆会更舒服”的区域：
+
+- `core/workers/task_runner.py`
+- `core/services/worker_context.py`
+- `monitor/watcher.py`
+- `utils/helpers.py`
+- `web/dist/app.js` 及部分前端聚合脚本
 
 ## 当前主要痛点
 
