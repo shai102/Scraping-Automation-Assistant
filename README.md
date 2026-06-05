@@ -260,37 +260,61 @@ pip install -r requirements.txt
 - `docker_main.py`
 - `requirements-docker.txt`
 
-`docker-compose.yml` 建议作为本机部署配置保存，不提交到 Git。先在项目根目录创建：
+从当前版本开始，`docker-compose.yml` 和 `docker-compose.override.yml` 都按**本地部署文件**处理，不再提交到 Git。
+
+也就是说：
+
+- 仓库里保留镜像构建所需源码
+- 你在自己机器上创建 `docker-compose.yml`
+- 不同机器按各自目录、代理、端口自行调整
+
+建议在项目根目录本地创建：
 
 ```yaml
 name: media-scraper
 
 services:
   scraper:
+    # 使用当前仓库里的 Dockerfile 构建镜像
     build:
       context: .
       dockerfile: Dockerfile
+
+    # 构建完成后的本地镜像名
     image: media-scraper:latest
+
+    # 固定容器名，方便 docker logs / docker exec
     container_name: media-scraper
     restart: unless-stopped
 
     ports:
+      # 宿主机端口:容器端口
       - "8090:8090"
 
+    # 让容器内可以通过 host.docker.internal 访问宿主机
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
     environment:
+      # 程序运行数据目录（数据库、配置、日志、缓存）
       - DATA_DIR=/data
+
+      # 时区
       - TZ=Asia/Shanghai
+
+      # 代理配置：访问 TMDB / AI API 时可用
       - HTTP_PROXY=http://host.docker.internal:7890
       - HTTPS_PROXY=http://host.docker.internal:7890
       - NO_PROXY=localhost,127.0.0.1,::1,192.168.100.195,host.docker.internal
 
     volumes:
+      # 持久化程序数据到宿主机 ./data
       - ./data:/data
+
+      # 把宿主机媒体目录挂到容器内 /media
       - /home/shai102/huahuo:/media:rw
 
+    # 健康检查：确认 Web API 已可访问
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/api/settings')"]
       interval: 30s
@@ -304,6 +328,17 @@ services:
 - `/home/shai102/huahuo:/media:rw`：宿主机媒体目录挂到容器内 `/media`
 - `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`：按实际代理地址修改；不需要代理时可以删除这几行和 `extra_hosts`
 - `"8090:8090"`：左侧是宿主机访问端口，右侧是容器内服务端口
+- `DATA_DIR=/data` + `./data:/data`：建议保留这组配置，用来持久化数据库、设置和日志
+
+如果你不想把本地部署文件命名为默认名，也可以自己保存成例如：
+
+- `docker-compose.local.yml`
+
+启动时显式指定：
+
+```bash
+docker compose -f docker-compose.local.yml up -d --build
+```
 
 启动：
 
