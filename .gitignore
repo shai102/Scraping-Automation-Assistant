@@ -8,6 +8,15 @@ __pycache__/
 .vscode/
 .venv/
 venv/
+# Runtime data, secrets, and local state
+data/
+.env
+.env.*
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+*.db-journal
 renamer_config.json
 api_cache.json
 media_renamer.log
