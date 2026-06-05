@@ -252,14 +252,58 @@ pip install -r requirements.txt
 - 规划好宿主机上的媒体目录
 - 确认 TMDB / BGM / AI 所需网络访问正常
 
-### 2. 直接使用 compose
+### 2. 创建本地 compose
 
-仓库已提供：
+仓库提供 Docker 镜像构建所需文件：
 
 - `Dockerfile`
-- `docker-compose.yml`
 - `docker_main.py`
 - `requirements-docker.txt`
+
+`docker-compose.yml` 建议作为本机部署配置保存，不提交到 Git。先在项目根目录创建：
+
+```yaml
+name: media-scraper
+
+services:
+  scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: media-scraper:latest
+    container_name: media-scraper
+    restart: unless-stopped
+
+    ports:
+      - "8090:8090"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    environment:
+      - DATA_DIR=/data
+      - TZ=Asia/Shanghai
+      - HTTP_PROXY=http://host.docker.internal:7890
+      - HTTPS_PROXY=http://host.docker.internal:7890
+      - NO_PROXY=localhost,127.0.0.1,::1,192.168.100.195,host.docker.internal
+
+    volumes:
+      - ./data:/data
+      - /home/shai102/huahuo:/media:rw
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/api/settings')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+```
+
+按自己的机器调整：
+
+- `/home/shai102/huahuo:/media:rw`：宿主机媒体目录挂到容器内 `/media`
+- `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`：按实际代理地址修改；不需要代理时可以删除这几行和 `extra_hosts`
+- `"8090:8090"`：左侧是宿主机访问端口，右侧是容器内服务端口
 
 启动：
 
@@ -288,17 +332,17 @@ docker compose down
 - `logs/metadata/YYYY-MM-DD.log`
 - `logs/scrape/YYYY-MM-DD.log`
 
-`docker-compose.yml` 默认已挂载：
+上面的 compose 默认已挂载：
 
 ```yaml
 volumes:
-  - scraper_data:/data
+  - ./data:/data
 ```
 
 这意味着：
 
 - 重启容器后配置、数据库、缓存不会丢
-- 不建议删除这个 volume，除非你就是要清空程序数据
+- 不建议删除项目下的 `data/` 目录，除非你就是要清空程序数据
 
 ### 4. 媒体目录挂载
 
@@ -308,7 +352,7 @@ volumes:
 
 ```yaml
 volumes:
-  - scraper_data:/data
+  - ./data:/data
   - /your/downloads:/downloads:rw
   - /your/media:/media:rw
 ```
