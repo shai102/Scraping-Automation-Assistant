@@ -13,7 +13,12 @@ from typing import Optional
 from fastapi import HTTPException
 
 from core.models.media_item import MediaItem
+from core.metadata.local_hub_service import (
+    MetadataHubError,
+    update_record_from_metadata_hub,
+)
 from core.services.worker_context import WorkerContext
+from core.settings.config_service import get_metadata_hub_root
 from core.workers.task_runner import process_task as process_task_impl
 from db.scrape_models import MonitorFolder, ScrapeRecord
 from db.tmdb_api import fetch_bgm_by_id, fetch_tmdb_by_id
@@ -434,4 +439,78 @@ def batch_refresh_metadata_records(ids: list[int], db) -> dict:
         "total": len(rows),
         "updated": updated_count,
         "message": f"已刷新 {updated_count}/{len(rows)} 条记录",
+    }
+
+
+def update_metadata_from_hub_for_record(record_id: int, db) -> dict:
+    row = db.query(ScrapeRecord).get(record_id)
+    if not row:
+        raise HTTPException(404)
+
+    root_path = get_metadata_hub_root()
+    try:
+        result = update_record_from_metadata_hub(row, root_path)
+    except MetadataHubError as err:
+        raise HTTPException(400, detail=str(err)) from err
+    except Exception as err:
+        logger.exception("Metadata Hub update failed for record %s", record_id)
+        raise HTTPException(500, detail=f"从 Metadata Hub 更新失败: {str(err)[:200]}") from err
+
+    db.commit()
+    _broadcast_record_update(row)
+    logger.info(
+        "Metadata Hub 更新: record_id=%s | tmdb_id=%s | target_path=%s | copied=%s",
+        row.id,
+        result["tmdb_id"],
+        result["target_path"],
+        len(result["copied"]),
+    )
+    return {
+        "ok": True,
+        "updated": True,
+        "message": f"已从 Metadata Hub 更新 {len(result['copied'])} 个元数据文件",
+        "result": result,
+    }
+
+
+def batch_update_metadata_from_hub_records(ids: list[int], db) -> dict:
+    rows = (
+        db.query(ScrapeRecord)
+        .filter(
+            ScrapeRecord.id.in_(ids),
+            ScrapeRecord.status == "success",
+            ScrapeRecord.matched_provider == "tmdb",
+        )
+        .all()
+    )
+    if not rows:
+        return {"ok": True, "total": 0, "updated": 0, "failed": 0, "message": "没有符合条件的 TMDB 记录"}
+
+    root_path = get_metadata_hub_root()
+    updated = 0
+    errors = []
+    for row in rows:
+        try:
+            result = update_record_from_metadata_hub(row, root_path)
+            updated += 1
+            logger.info(
+                "Metadata Hub 更新: record_id=%s | tmdb_id=%s | target_path=%s | copied=%s",
+                row.id,
+                result["tmdb_id"],
+                result["target_path"],
+                len(result["copied"]),
+            )
+            _broadcast_record_update(row)
+        except Exception as err:
+            errors.append({"id": row.id, "message": str(err)})
+            logger.warning("Metadata Hub batch update failed for record %s: %s", row.id, err)
+
+    db.commit()
+    return {
+        "ok": True,
+        "total": len(rows),
+        "updated": updated,
+        "failed": len(errors),
+        "errors": errors[:20],
+        "message": f"已从 Metadata Hub 更新 {updated}/{len(rows)} 条记录",
     }

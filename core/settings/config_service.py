@@ -16,6 +16,15 @@ def load_settings() -> dict:
     return {}
 
 
+def get_metadata_hub_root(cfg: dict | None = None) -> str:
+    settings = cfg if cfg is not None else load_settings()
+    return str(
+        settings.get("metadata_hub_root")
+        or os.environ.get("METADATA_HUB_ROOT")
+        or "/media/metadata hub"
+    ).strip()
+
+
 def save_settings(data: dict):
     with open(CONFIG_FILE, "w", encoding="utf-8") as handle:
         json.dump(data, handle, indent=4, ensure_ascii=False)
@@ -43,6 +52,7 @@ def get_settings_raw_defaults() -> dict:
     cfg.setdefault("metadata_refresh_enabled", True)
     cfg.setdefault("metadata_refresh_interval_hours", 12)
     cfg.setdefault("metadata_refresh_lookback_days", 14)
+    cfg.setdefault("metadata_hub_root", get_metadata_hub_root(cfg))
     return cfg
 
 

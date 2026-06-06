@@ -8,6 +8,7 @@ from typing import List, Optional
 
 from core.settings.config_service import (
     get_settings_for_display,
+    get_metadata_hub_root,
     get_settings_raw_defaults,
     load_settings,
     merge_settings_update,
@@ -22,6 +23,7 @@ from core.settings.connection_service import (
     test_telegram_connection,
     test_tmdb_connection,
 )
+from core.metadata.local_hub_service import MetadataHubError, inspect_metadata_hub
 from core.settings.preview_service import build_filename_preview_payload
 from utils.cache import clear_api_cache_file
 
@@ -72,6 +74,7 @@ class SettingsModel(BaseModel):
     metadata_refresh_enabled: Optional[bool] = None
     metadata_refresh_interval_hours: Optional[int] = None
     metadata_refresh_lookback_days: Optional[int] = None
+    metadata_hub_root: Optional[str] = None
 
 
 class FilenamePreviewModel(BaseModel):
@@ -107,6 +110,22 @@ def test_tmdb():
         raise HTTPException(400, detail="TMDB API Key 未配置")
     ok, message = test_tmdb_connection(api_key)
     return {"ok": ok, "message": message}
+
+
+@router.post("/test-metadata-hub")
+def test_metadata_hub():
+    try:
+        result = inspect_metadata_hub(get_metadata_hub_root())
+    except MetadataHubError as err:
+        raise HTTPException(400, detail=str(err)) from err
+    return {
+        "ok": True,
+        "message": (
+            f"Metadata Hub 目录可用，识别到 "
+            f"{result['indexed_titles']}/{result['title_dirs']} 个带 TMDB ID 的作品"
+        ),
+        **result,
+    }
 
 
 @router.post("/test-ai")

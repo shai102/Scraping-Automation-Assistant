@@ -109,6 +109,7 @@ TG 问题反馈群：<https://t.me/+Wx34NdYY_x1iNjg1>
 - **分组视图**：刮削记录支持按源目录分组显示，组内懒加载 + 分页，千集长番也不卡顿；可一键删除整组记录。
 - **缓存管理**：API 查询缓存支持自定义过期天数（1 ~ 365 天或永不过期）。
 - **Web 管理界面**：侧边栏导航覆盖刮削目录、刮削记录、导出软链接、软链接记录、TMDB、AI、分类、TG 通知等页面，配合 WebSocket 实时推送，无需手动刷新。
+- **Metadata Hub 手动修正**：日常仍从 TMDB 刷新；需要修正时，可在刮削记录中手动点击“从 Metadata Hub 更新”，按 TMDB ID、季号和集号读取本地 NFO 与图片。不会自动查询 Hub、定期同步或自动覆盖。
 - **Telegram 通知**：归档完成后自动批量发送 TG 通知；按（监控目录 + TMDB ID + 季号）聚合，安静期（可配置，默认 5 分钟）内无新文件即触发发送，同一季多集批量入库只发一条通知；通知显示本次入库集数、本季 Season 目录已有集数及与 TMDB 总集数的缺集对比，方便直接判断是否有遗漏。
 - **Emby / Jellyfin 入库通知**：新增独立设置页，可在刮削完成后按安静期合并触发一次媒体库扫描；支持测试连接、延迟配置与 API Key 鉴权，适合自动归档后立即让媒体服务器入库。
 - **系统托盘**：后台运行，托盘图标右键可打开界面或退出。
@@ -307,12 +308,18 @@ services:
       - HTTPS_PROXY=http://host.docker.internal:7890
       - NO_PROXY=localhost,127.0.0.1,::1,192.168.100.195,host.docker.internal
 
+      # Metadata Hub 在容器内的只读路径
+      - METADATA_HUB_ROOT=/media/metadata hub
+
     volumes:
       # 持久化程序数据到宿主机 ./data
       - ./data:/data
 
       # 把宿主机媒体目录挂到容器内 /media
       - /home/shai102/huahuo:/media:rw
+
+      # Metadata Hub 单独以只读方式挂载
+      - "/home/shai102/huahuo/metadata hub:/media/metadata hub:ro"
 
     # 健康检查：确认 Web API 已可访问
     healthcheck:
@@ -326,6 +333,7 @@ services:
 按自己的机器调整：
 
 - `/home/shai102/huahuo:/media:rw`：宿主机媒体目录挂到容器内 `/media`
+- `METADATA_HUB_ROOT` 与只读挂载：用于记录页手动执行“从 Metadata Hub 更新”，不会自动同步
 - `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`：按实际代理地址修改；不需要代理时可以删除这几行和 `extra_hosts`
 - `"8090:8090"`：左侧是宿主机访问端口，右侧是容器内服务端口
 - `DATA_DIR=/data` + `./data:/data`：建议保留这组配置，用来持久化数据库、设置和日志

@@ -24,6 +24,17 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
           </div>
           <div v-if="$root.testResult" :class="['msg', $root.testResult.ok?'msg-ok':'msg-err']">{{$root.testResult.message}}</div>
         </div>
+        <div class="card">
+          <div class="form-group">
+            <label>Metadata Hub 本地目录</label>
+            <input v-model="$root.cfg.metadata_hub_root" placeholder="/media/metadata hub">
+            <small style="color:#888;display:block;margin-top:6px">只读、手动调用。仅在记录页点击“从 Metadata Hub 更新”时读取，不会自动查询、覆盖或定期同步。</small>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" @click="$root.saveSettings">保存</button>
+            <button class="btn" @click="$root.testMetadataHub">测试 Metadata Hub 目录</button>
+          </div>
+        </div>
       </section>
     `,
   },

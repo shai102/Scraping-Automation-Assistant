@@ -48,6 +48,15 @@ window.scraperAppMethodsSettings = {
     this.testResult = null;
     try { this.testResult = await this.api('POST', '/api/settings/test-tmdb'); } catch (e) { this.testResult = { ok: false, message: e.message }; }
   },
+  async testMetadataHub() {
+    this.testResult = null;
+    try {
+      await this.api('PUT', '/api/settings', this.cfg);
+      this.testResult = await this.api('POST', '/api/settings/test-metadata-hub');
+    } catch (e) {
+      this.testResult = { ok: false, message: e.message };
+    }
+  },
   async testAi() {
     this.testResult = null;
     try {

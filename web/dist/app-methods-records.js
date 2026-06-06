@@ -66,18 +66,46 @@ window.scraperAppMethodsRecords = {
     try {
       var res = await this.api('POST', '/api/records/' + id + '/refresh-metadata');
       if (res.updated) {
-        this.notify('元数据已刷新', 'success');
+        this.notify('已从 TMDB 刷新元数据', 'success');
       } else {
-        this.notify(res.message || '元数据已是最新', 'info');
+        this.notify(res.message || 'TMDB 元数据已是最新', 'info');
       }
       this.loadRecords();
+    } catch (e) { this.notify(e.message, 'error'); }
+  },
+  async updateFromMetadataHub(id) {
+    var confirmed = await this.confirmAction({
+      title: '从 Metadata Hub 更新',
+      message: '将按 TMDB ID、季号和集号，用本地 Hub 中的 NFO 与图片覆盖当前作品对应文件。此操作不会查询 TMDB。',
+      confirmText: '开始更新',
+    });
+    if (!confirmed) return;
+    try {
+      var res = await this.api('POST', '/api/records/' + id + '/update-from-metadata-hub');
+      this.notify(res.message || '已从 Metadata Hub 更新', 'success');
+      this.refreshRecords();
     } catch (e) { this.notify(e.message, 'error'); }
   },
   async batchRefreshMetadata() {
     if (!this.selectedIds.length) return;
     try {
       var res = await this.api('POST', '/api/records/batch-refresh-metadata', { ids: this.selectedIds });
-      this.notify(res.message || ('已刷新 ' + (res.updated || 0) + ' 条记录'), 'success');
+      this.notify(res.message || ('已从 TMDB 刷新 ' + (res.updated || 0) + ' 条记录'), 'success');
+      if (this.groupedView) this.loadGroupedRecords();
+      else this.loadRecords();
+    } catch (e) { this.notify(e.message, 'error'); }
+  },
+  async batchUpdateFromMetadataHub() {
+    if (!this.selectedIds.length) return;
+    var confirmed = await this.confirmAction({
+      title: '批量从 Metadata Hub 更新',
+      message: '将只处理所选记录中已成功且来源为 TMDB 的项目，并用 Hub 本地文件覆盖对应 NFO 与图片。',
+      confirmText: '开始更新',
+    });
+    if (!confirmed) return;
+    try {
+      var res = await this.api('POST', '/api/records/batch-update-from-metadata-hub', { ids: this.selectedIds });
+      this.notify(res.message || ('已从 Metadata Hub 更新 ' + (res.updated || 0) + ' 条记录'), res.failed ? 'warning' : 'success');
       if (this.groupedView) this.loadGroupedRecords();
       else this.loadRecords();
     } catch (e) { this.notify(e.message, 'error'); }

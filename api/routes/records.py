@@ -16,11 +16,13 @@ from core.records.delete_service import (
     record_output_group_dir as _record_output_group_dir,
 )
 from core.records.manual_service import (
+    batch_update_metadata_from_hub_records,
     batch_refresh_metadata_records,
     batch_retry_records,
     manual_match_record,
     refresh_metadata_for_record,
     retry_record_async,
+    update_metadata_from_hub_for_record,
 )
 from core.records.query_service import (
     list_records_grouped_payload,
@@ -175,3 +177,15 @@ class BatchRefreshBody(BaseModel):
 def batch_refresh_metadata(body: BatchRefreshBody, db: Session = Depends(get_db)):
     """Re-fetch metadata for multiple successful records."""
     return batch_refresh_metadata_records(body.ids, db)
+
+
+@router.post("/{record_id}/update-from-metadata-hub")
+def update_from_metadata_hub(record_id: int, db: Session = Depends(get_db)):
+    """Manually replace NFO and images from the read-only local Metadata Hub."""
+    return update_metadata_from_hub_for_record(record_id, db)
+
+
+@router.post("/batch-update-from-metadata-hub")
+def batch_update_from_metadata_hub(body: BatchRefreshBody, db: Session = Depends(get_db)):
+    """Apply local Metadata Hub sidecars to selected successful TMDB records."""
+    return batch_update_metadata_from_hub_records(body.ids, db)

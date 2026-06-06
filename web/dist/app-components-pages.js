@@ -8,7 +8,8 @@ window.scraperAppPageComponents = {
             <button class="btn-grad btn-grad-orange btn-sm" @click="$root.exportErrors">导出识别错误</button>
             <button class="btn-grad btn-grad-red btn-sm" @click="$root.batchDeleteSelected" :disabled="!$root.selectedIds.length">删除所选记录</button>
             <button class="btn-grad btn-grad-yellow btn-sm" @click="$root.batchRetrySelected" :disabled="!$root.selectedIds.length">重新整理所有</button>
-            <button class="btn-grad btn-grad-blue btn-sm" @click="$root.batchRefreshMetadata" :disabled="!$root.selectedIds.length">🔄 刷新元数据</button>
+            <button class="btn-grad btn-grad-blue btn-sm" @click="$root.batchRefreshMetadata" :disabled="!$root.selectedIds.length">从 TMDB 刷新</button>
+            <button class="btn-grad btn-grad-green btn-sm" @click="$root.batchUpdateFromMetadataHub" :disabled="!$root.selectedIds.length">从 Metadata Hub 更新</button>
             <span class="toolbar-hint">已选择 {{$root.selectedIds.length}} 条记录</span>
           </div>
           <div class="toolbar-right">
@@ -54,7 +55,7 @@ window.scraperAppPageComponents = {
                 <th style="width:180px">识别信息</th>
                 <th>文件路径 / 归档路径</th>
                 <th style="width:148px">时间</th>
-                <th style="width:120px">操作</th>
+                <th style="width:260px">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -79,7 +80,8 @@ window.scraperAppPageComponents = {
                 <td style="white-space:nowrap;font-size:12px;color:#999">{{$root.formatTime(r.updated_at || r.created_at)}}</td>
                 <td class="actions">
                   <button v-if="r.status!=='processing'" class="btn btn-sm btn-primary" @click="$root.openManualMatch(r)">手动识别</button>
-                  <button v-if="r.status==='success'" class="btn btn-sm" @click="$root.refreshMetadata(r.id)" title="重新拉取TMDB/BGM元数据补齐NFO">🔄 刷新</button>
+                  <button v-if="r.status==='success'" class="btn btn-sm" @click="$root.refreshMetadata(r.id)" title="重新从 TMDB 拉取元数据">从 TMDB 刷新</button>
+                  <button v-if="r.status==='success'&&r.matched_provider==='tmdb'" class="btn btn-sm btn-success" @click="$root.updateFromMetadataHub(r.id)" title="按 TMDB ID、季号、集号读取本地修正数据">从 Hub 更新</button>
                   <button v-if="r.status==='failed'||r.status==='pending_manual'" class="btn btn-sm" @click="$root.retryRecord(r.id)">重试</button>
                   <button class="btn btn-sm btn-danger" @click="$root.deleteRecord(r.id)">删除</button>
                 </td>
@@ -162,6 +164,8 @@ window.scraperAppPageComponents = {
                     <td style="white-space:nowrap;font-size:12px;color:#999">{{$root.formatTime(r.updated_at || r.created_at)}}</td>
                     <td class="actions">
                       <button v-if="r.status!=='processing'" class="btn btn-sm btn-primary" @click="$root.openManualMatch(r)">手动识别</button>
+                      <button v-if="r.status==='success'" class="btn btn-sm" @click="$root.refreshMetadata(r.id)">从 TMDB 刷新</button>
+                      <button v-if="r.status==='success'&&r.matched_provider==='tmdb'" class="btn btn-sm btn-success" @click="$root.updateFromMetadataHub(r.id)">从 Hub 更新</button>
                       <button class="btn btn-sm btn-danger" @click="$root.deleteGroupRecord(g, r.id)">删除</button>
                     </td>
                   </tr>
