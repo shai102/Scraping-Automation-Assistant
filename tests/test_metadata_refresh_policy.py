@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from core.metadata.completeness import metadata_is_incomplete, metadata_missing_fields
-from monitor import metadata_refresh_runner
+from monitor import metadata_refresh_runner, metadata_refresh_state
 
 
 def _episode_meta(**overrides):
@@ -99,6 +99,41 @@ class MetadataCompletenessPolicyTests(unittest.TestCase):
 
 class MetadataRefreshBackoffTests(unittest.TestCase):
     def test_no_progress_attempt_sets_backoff_and_next_pass_skips(self):
+        now = datetime.datetime.now()
+        state = SimpleNamespace(
+            record_id=10,
+            attempts=0,
+            no_progress_count=0,
+            last_missing_fields=None,
+            last_error=None,
+            last_attempt_at=None,
+            next_attempt_at=None,
+            created_at=now,
+            updated_at=now,
+        )
+        session = SimpleNamespace(commits=0)
+
+        def commit():
+            session.commits += 1
+
+        session.commit = commit
+        with patch.object(metadata_refresh_state, "get_or_create_state", return_value=state):
+            metadata_refresh_state.mark_refresh_result(
+                session,
+                10,
+                before_missing=["集标题"],
+                after_missing=["集标题"],
+                updated=False,
+                error=None,
+                now=now,
+            )
+
+        self.assertEqual(1, state.attempts)
+        self.assertEqual(1, state.no_progress_count)
+        self.assertGreater(state.next_attempt_at, now)
+        self.assertEqual(1, session.commits)
+
+    def test_runner_backoff_wrapper_keeps_legacy_patch_path(self):
         now = datetime.datetime.now()
         state = SimpleNamespace(
             record_id=10,

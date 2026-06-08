@@ -2,64 +2,27 @@ import datetime
 import logging
 import time
 
-from core.metadata.completeness import metadata_is_incomplete, metadata_missing_fields
+from core.metadata.completeness import metadata_is_incomplete
 from db.database import SessionLocal
-from db.scrape_models import MetadataRefreshState, ScrapeRecord
+from db.scrape_models import ScrapeRecord
+from monitor import metadata_refresh_state
+from monitor.metadata_refresh_policy import (
+    metadata_refresh_options as _metadata_refresh_options,
+    missing_fields_for_record as _missing_fields_for_record,
+)
 from monitor.metadata_refresh_records import record_to_dict
 from monitor.metadata_refresh_update import refresh_record_metadata
 
 
 logger = logging.getLogger(__name__)
 
-_NO_PROGRESS_BACKOFF_HOURS = (12, 24, 48, 96, 168, 336)
-
-
-def _metadata_refresh_options(worker_ctx) -> dict:
-    cfg = getattr(worker_ctx, "_cfg", {}) if worker_ctx else {}
-    return {
-        "ignore_episode_title_rules": cfg.get("metadata_refresh_ignore_episode_title_rules", []),
-        "skip_rules": cfg.get("metadata_refresh_skip_rules", []),
-    }
-
-
-def _missing_fields_for_record(record, options: dict) -> list[str]:
-    return metadata_missing_fields(
-        record.metadata_json or "",
-        ignore_episode_title_rules=options.get("ignore_episode_title_rules"),
-        skip_rules=options.get("skip_rules"),
-        title_hint=record.matched_title or record.original_name or "",
-        matched_id=record.matched_id or "",
-        provider_hint=record.matched_provider or "",
-    )
-
 
 def _get_or_create_state(db, record_id: int, now: datetime.datetime):
-    state = (
-        db.query(MetadataRefreshState)
-        .filter(MetadataRefreshState.record_id == record_id)
-        .first()
-    )
-    if state:
-        return state
-    state = MetadataRefreshState(
-        record_id=record_id,
-        attempts=0,
-        no_progress_count=0,
-        created_at=now,
-        updated_at=now,
-    )
-    db.add(state)
-    db.flush()
-    return state
+    return metadata_refresh_state.get_or_create_state(db, record_id, now)
 
 
 def _should_skip_for_backoff(db, record_id: int, now: datetime.datetime) -> bool:
-    state = (
-        db.query(MetadataRefreshState)
-        .filter(MetadataRefreshState.record_id == record_id)
-        .first()
-    )
-    return bool(state and state.next_attempt_at and state.next_attempt_at > now)
+    return metadata_refresh_state.should_skip_for_backoff(db, record_id, now)
 
 
 def _mark_refresh_result(
@@ -72,22 +35,16 @@ def _mark_refresh_result(
     error: str | None,
     now: datetime.datetime,
 ) -> None:
-    state = _get_or_create_state(db, record_id, now)
-    state.attempts = int(state.attempts or 0) + 1
-    state.last_attempt_at = now
-    state.last_missing_fields = ",".join(after_missing or before_missing)
-    state.last_error = (error or "")[:1000] if error else None
-    state.updated_at = now
-
-    made_progress = bool(error is None and (updated or len(after_missing) < len(before_missing)))
-    if made_progress:
-        state.no_progress_count = 0
-        state.next_attempt_at = None
-    else:
-        state.no_progress_count = int(state.no_progress_count or 0) + 1
-        index = min(state.no_progress_count - 1, len(_NO_PROGRESS_BACKOFF_HOURS) - 1)
-        state.next_attempt_at = now + datetime.timedelta(hours=_NO_PROGRESS_BACKOFF_HOURS[index])
-    db.commit()
+    return metadata_refresh_state.mark_refresh_result(
+        db,
+        record_id,
+        before_missing=before_missing,
+        after_missing=after_missing,
+        updated=updated,
+        error=error,
+        now=now,
+        get_state_fn=_get_or_create_state,
+    )
 
 
 def run_metadata_refresh_pass(

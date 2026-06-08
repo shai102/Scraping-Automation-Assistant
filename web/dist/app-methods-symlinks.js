@@ -34,6 +34,15 @@ window.scraperAppMethodsSymlinks = {
     if (this.symlinkGroupedView) this.loadSymlinkGroupedRecords();
     else this.loadSymlinkRecords();
   },
+  gotoSymlinkPage() {
+    var max = Math.ceil(this.symlinkTotal / this.symlinkPageSize) || 1;
+    var p = parseInt(this.symlinkGoPage) || 1;
+    if (p < 1) p = 1;
+    if (p > max) p = max;
+    this.symlinkPage = p;
+    this.symlinkGoPage = p;
+    this.loadSymlinkRecords();
+  },
   toggleSymlinkGroupedView() {
     this.symlinkGroupedView = !this.symlinkGroupedView;
     try { localStorage.setItem('scraping_symlink_grouped_view', this.symlinkGroupedView ? '1' : '0'); } catch (e) {}
