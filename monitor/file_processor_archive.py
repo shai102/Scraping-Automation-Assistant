@@ -26,7 +26,7 @@ def handle_symlink_export(watcher, folder, path: str, db) -> bool:
         db.commit()
         db.refresh(symlink_record)
         watcher._broadcast({"type": "symlink_update", "data": symlink_record_to_dict(symlink_record)})
-        return True
+        return False
 
     rel_path = os.path.relpath(path, os.path.normpath(folder.path))
     link_path = os.path.join(target_root, rel_path)
@@ -97,6 +97,7 @@ def handle_symlink_export(watcher, folder, path: str, db) -> bool:
         db.commit()
         db.refresh(symlink_record)
         watcher._broadcast({"type": "symlink_update", "data": symlink_record_to_dict(symlink_record)})
+        return False
     return True
 
 

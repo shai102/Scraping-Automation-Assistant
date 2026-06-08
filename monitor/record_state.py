@@ -1,6 +1,10 @@
+import datetime
+import logging
 import os
 
 from db.scrape_models import ScrapeRecord
+
+logger = logging.getLogger(__name__)
 
 
 def has_nfo(filepath: str) -> bool:
@@ -113,3 +117,24 @@ def reset_scrape_record_for_rebuild(record):
     record.matched_provider = None
     record.metadata_json = None
     record.error_msg = None
+
+
+def reset_stale_processing_records(db, *, stale_minutes: int = 120) -> int:
+    cutoff = datetime.datetime.now() - datetime.timedelta(minutes=max(1, int(stale_minutes)))
+    rows = (
+        db.query(ScrapeRecord)
+        .filter(ScrapeRecord.status == "processing")
+        .all()
+    )
+    reset_count = 0
+    for row in rows:
+        last_seen = getattr(row, "updated_at", None) or getattr(row, "created_at", None)
+        if last_seen and last_seen > cutoff:
+            continue
+        row.status = "failed"
+        row.error_msg = "程序上次处理被中断，已自动标记失败，可手动重试"
+        reset_count += 1
+    if reset_count:
+        db.commit()
+        logger.warning("Recovered stale processing records: %s", reset_count)
+    return reset_count

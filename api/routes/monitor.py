@@ -5,20 +5,24 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Literal, Optional
 
 from db.database import get_db
 from db.scrape_models import MonitorFolder
 
 router = APIRouter(prefix="/api/monitor", tags=["monitor"])
 
+MediaType = Literal["auto", "movie", "tv"]
+DataSource = Literal["siliconflow_tmdb", "bgm"]
+OrganizeMode = Literal["move", "copy", "symlink", "hardlink", "rename", "symlink_export"]
+
 
 class FolderCreate(BaseModel):
     path: str
     target_root: str = ""
-    media_type: str = "auto"
-    data_source: str = "siliconflow_tmdb"
-    organize_mode: str = "move"
+    media_type: MediaType = "auto"
+    data_source: DataSource = "siliconflow_tmdb"
+    organize_mode: OrganizeMode = "move"
     symlink_source: str = ""
     skip_if_scraped: bool = False
     preserve_existing_folder: bool = False
@@ -28,9 +32,9 @@ class FolderCreate(BaseModel):
 class FolderUpdate(BaseModel):
     path: Optional[str] = None
     target_root: Optional[str] = None
-    media_type: Optional[str] = None
-    data_source: Optional[str] = None
-    organize_mode: Optional[str] = None
+    media_type: Optional[MediaType] = None
+    data_source: Optional[DataSource] = None
+    organize_mode: Optional[OrganizeMode] = None
     symlink_source: Optional[str] = None
     skip_if_scraped: Optional[bool] = None
     preserve_existing_folder: Optional[bool] = None

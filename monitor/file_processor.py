@@ -2,6 +2,7 @@
 
 import logging
 import os
+import json
 import uuid
 
 from sqlalchemy import or_
@@ -23,18 +24,29 @@ from monitor.record_state import (
 )
 from monitor.record_payloads import scrape_record_to_dict, symlink_record_to_dict
 from monitor.scan_service import find_folder_for_path
+from monitor.task_queue import finish_task, finish_task_by_id, mark_task_running
 
 logger = logging.getLogger(__name__)
 
 
-def process_file(watcher, path: str):
+def process_file(watcher, path: str, task_id: int | None = None):
     """Run the full recognition + archive pipeline for a single file."""
     if not os.path.isfile(path):
+        finish_task_by_id(task_id, "failed", "源文件不存在")
         return
 
+    task_status = None
+    task_error = None
     dir_slot = watcher._acquire_dir_slot(path)
     db = SessionLocal()
+
+    def _set_task_result(status: str, error: str | None = None):
+        nonlocal task_status, task_error
+        task_status = status
+        task_error = error
+
     try:
+        mark_task_running(db, task_id)
         folder = find_folder_for_path(path, db)
         record = None
 
@@ -64,6 +76,7 @@ def process_file(watcher, path: str):
                     db.delete(existing)
                     db.commit()
                 else:
+                    _set_task_result("skipped", "已有软链接记录，跳过重复处理")
                     return
             else:
                 if scrape_record_needs_repair(existing, watcher._worker_ctx):
@@ -74,7 +87,17 @@ def process_file(watcher, path: str):
                     reset_scrape_record_for_rebuild(record)
                     db.commit()
                     watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
+                elif str(getattr(existing, "status", "") or "").lower() in (
+                    "failed",
+                    "pending_manual",
+                    "processing",
+                ):
+                    record = existing
+                    reset_scrape_record_for_rebuild(record)
+                    db.commit()
+                    watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
                 else:
+                    _set_task_result("skipped", "已有刮削记录，跳过重复处理")
                     return
 
         is_sl_export_check = organize_mode_check == "symlink_export"
@@ -97,6 +120,7 @@ def process_file(watcher, path: str):
             db.commit()
             db.refresh(record)
             watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
+            _set_task_result("skipped", record.error_msg)
             return
 
         from utils.title_parsing import is_decimal_episode
@@ -117,15 +141,18 @@ def process_file(watcher, path: str):
             db.commit()
             db.refresh(record)
             watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
+            _set_task_result("skipped", record.error_msg)
             return
 
         if organize_mode_early == "symlink_export" and folder:
             if symlink_source_consumed_downstream(folder, path, db, watcher._worker_ctx):
                 logger.info(f"跳过已被下游刮削消费的导出源文件: {path}")
+                _set_task_result("skipped", "已被下游刮削消费，跳过导出")
                 return
 
         if organize_mode_early == "symlink_export" and folder:
-            handle_symlink_export(watcher, folder, path, db)
+            ok = handle_symlink_export(watcher, folder, path, db)
+            _set_task_result("done" if ok else "failed", None if ok else "导出软链接失败")
             return
 
         if record is None:
@@ -141,6 +168,7 @@ def process_file(watcher, path: str):
             watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
 
         if not watcher._worker_ctx:
+            _set_task_result("failed", "WorkerContext 未初始化")
             return
         ctx = WorkerContext(config=dict(watcher._worker_ctx._cfg))
         ctx.dir_cache = watcher._worker_ctx.dir_cache
@@ -192,6 +220,7 @@ def process_file(watcher, path: str):
                 record.error_msg = str(err)[:500]
                 db.commit()
                 watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
+                _set_task_result("failed", record.error_msg)
                 return
 
         tid = (item.metadata or {}).get("id", "None")
@@ -213,6 +242,7 @@ def process_file(watcher, path: str):
                 record.error_msg = meta.get("pending_reason") or "无法自动识别"
             db.commit()
             watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
+            _set_task_result("failed", record.error_msg)
             return
 
         meta = item.metadata or {}
@@ -236,16 +266,28 @@ def process_file(watcher, path: str):
         )
 
         try:
-            finalize_processed_item(watcher, folder, db, record, item, path)
+            archived = finalize_processed_item(watcher, folder, db, record, item, path)
+            _set_task_result("done" if archived else "failed", None if archived else record.error_msg)
         except Exception as err:
             logger.error(f"Archive failed for {path}: {err}")
             record.status = "failed"
             record.error_msg = str(err)[:500]
             db.commit()
             watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
+            _set_task_result("failed", record.error_msg)
 
     except Exception as err:
         logger.error(f"Unexpected error processing {path}: {err}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        _set_task_result("failed", str(err)[:500])
     finally:
+        if task_id and task_status:
+            try:
+                finish_task(db, task_id, task_status, task_error)
+            except Exception as err:
+                logger.debug("Failed to update task %s status: %s", task_id, err)
         db.close()
         watcher._release_dir_slot(dir_slot)

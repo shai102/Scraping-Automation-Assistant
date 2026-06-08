@@ -1,5 +1,8 @@
 # ── Python 缓存 ───────────────────────────────────────────────────────────────
 __pycache__/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
 *.pyc
 *.pyo
 *.pyd
@@ -7,20 +10,28 @@ __pycache__/
 
 # ── 本地运行时数据（不应打入镜像，由 DATA_DIR 卷提供）────────────────────────
 media_renamer.db
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
 renamer_config.json
 api_cache.json
 media_renamer.log
 *.log
+data/
 
 # ── 打包输出 ──────────────────────────────────────────────────────────────────
 dist/
 build/
 *.spec
 *.exe
+*.rar
 
 # ── 开发工具 ──────────────────────────────────────────────────────────────────
 .git/
 .gitignore
+.venv/
+venv/
 .vscode/
 .idea/
 *.bat

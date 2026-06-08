@@ -1,6 +1,43 @@
+window.scraperAppPages = [
+  'folders',
+  'records',
+  'logs',
+  'metadata_logs',
+  'recognition_test',
+  'symlink_folders',
+  'symlink_records',
+  'tmdb',
+  'ai',
+  'proxy',
+  'classify',
+  'tgnotify',
+  'embynotify',
+  'app_logs',
+];
+window.scraperAppPageKey = 'scraping_current_page';
+window.scraperAppResolveInitialPage = function() {
+  var pages = window.scraperAppPages || [];
+  function clean(value) {
+    return String(value || '').replace(/^#/, '').replace(/^\/+/, '');
+  }
+  function valid(value) {
+    return pages.indexOf(value) >= 0;
+  }
+
+  var hashPage = clean(decodeURIComponent(location.hash || ''));
+  if (valid(hashPage)) return hashPage;
+
+  try {
+    var storedPage = clean(localStorage.getItem(window.scraperAppPageKey));
+    if (valid(storedPage)) return storedPage;
+  } catch (e) {}
+
+  return 'folders';
+};
+
 window.scraperAppCreateData = function() {
   return {
-    page: location.hash ? location.hash.slice(1) : 'folders',
+    page: window.scraperAppResolveInitialPage(),
     folders: [],
     showAddFolder: false,
     newFolder: { path: '', target_root: '', media_type: 'auto', data_source: 'siliconflow_tmdb', organize_mode: 'move', symlink_source: '', skip_if_scraped: false, preserve_existing_folder: false },

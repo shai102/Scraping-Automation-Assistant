@@ -3,6 +3,7 @@
 import logging
 import os
 import sys
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -12,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from api.routes import logs, monitor, recognition_test, records, settings, symlinks
 from api.routes.ws import router as ws_router, manager as ws_manager
+from core.security import OptionalAuthMiddleware
 from db.database import init_db
 from monitor.watcher import FolderWatcher
 
@@ -28,6 +30,7 @@ def get_watcher() -> Optional[FolderWatcher]:
 async def lifespan(app: FastAPI):
     global _watcher
     # Startup
+    ws_manager.set_loop(asyncio.get_running_loop())
     init_db()
     _watcher = FolderWatcher(broadcast_fn=ws_manager.broadcast_sync)
     _watcher.start()
@@ -40,6 +43,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="刮削助手", lifespan=lifespan)
+app.add_middleware(OptionalAuthMiddleware)
 
 # CORS — allow local dev frontend (Vite on :5173)
 app.add_middleware(
@@ -58,6 +62,11 @@ app.include_router(settings.router)
 app.include_router(symlinks.router)
 app.include_router(logs.router)
 app.include_router(ws_router)
+
+
+@app.get("/healthz", include_in_schema=False)
+def healthz():
+    return {"ok": True}
 
 # Serve built frontend
 # In frozen (PyInstaller) mode, static files are unpacked into sys._MEIPASS

@@ -3,9 +3,10 @@
 import asyncio
 import json
 import logging
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from core.security import auth_enabled, is_valid_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -14,6 +15,10 @@ router = APIRouter()
 class ConnectionManager:
     def __init__(self):
         self.active: List[WebSocket] = []
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def set_loop(self, loop: asyncio.AbstractEventLoop):
+        self._loop = loop
 
     async def connect(self, ws: WebSocket):
         await ws.accept()
@@ -33,16 +38,26 @@ class ConnectionManager:
                 self.disconnect(ws)
 
     def broadcast_sync(self, message: dict):
-        """Thread-safe broadcast — schedules the async broadcast on the event loop."""
+        """Thread-safe broadcast from worker threads.
+
+        Broadcasting is best-effort UI feedback; a closed or missing event loop
+        must never fail the scrape pipeline that produced the update.
+        """
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self.broadcast(message))
+            if not loop.is_closed():
+                loop.create_task(self.broadcast(message))
+            return
         except RuntimeError:
-            # No running loop in this thread — try to get the server's loop
-            if hasattr(self, "_loop") and self._loop:
-                self._loop.call_soon_threadsafe(
-                    asyncio.ensure_future, self.broadcast(message)
-                )
+            pass
+
+        loop = self._loop
+        if not loop or loop.is_closed():
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(self.broadcast(message), loop)
+        except RuntimeError as err:
+            logger.debug("WebSocket broadcast skipped: %s", err)
 
 
 manager = ConnectionManager()
@@ -50,9 +65,13 @@ manager = ConnectionManager()
 
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
+    token = ws.query_params.get("token", "") or ws.cookies.get("media_scraper_auth", "")
+    if auth_enabled() and not is_valid_token(token):
+        await ws.close(code=1008)
+        return
     await manager.connect(ws)
     # Store the event loop so sync threads can broadcast
-    manager._loop = asyncio.get_running_loop()
+    manager.set_loop(asyncio.get_running_loop())
     try:
         while True:
             # Keep connection alive; client may send pings

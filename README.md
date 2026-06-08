@@ -311,6 +311,9 @@ services:
       # Metadata Hub 在容器内的只读路径
       - METADATA_HUB_ROOT=/media/metadata hub
 
+      # 可选：开启 Web/API 访问令牌；启用后用 http://127.0.0.1:8090/?token=你的令牌 首次进入
+      # - APP_AUTH_TOKEN=change-me
+
     volumes:
       # 持久化程序数据到宿主机 ./data
       - ./data:/data
@@ -323,7 +326,7 @@ services:
 
     # 健康检查：确认 Web API 已可访问
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/api/settings')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/healthz')"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -337,6 +340,7 @@ services:
 - `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`：按实际代理地址修改；不需要代理时可以删除这几行和 `extra_hosts`
 - `"8090:8090"`：左侧是宿主机访问端口，右侧是容器内服务端口
 - `DATA_DIR=/data` + `./data:/data`：建议保留这组配置，用来持久化数据库、设置和日志
+- `APP_AUTH_TOKEN`：可选访问令牌，默认不启用；如果服务会暴露到局域网或公网，建议设置
 
 如果你不想把本地部署文件命名为默认名，也可以自己保存成例如：
 
@@ -498,6 +502,17 @@ http://127.0.0.1:8090
 | Telegram Bot Token / Chat ID | 归档完成后发送 TG 通知 |
 
 > Docker 模式下，这些配置同样写入 `DATA_DIR` 下的 `renamer_config.json`，不是写回镜像内部。
+
+## 测试 / 开发
+
+```bash
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+python -m unittest discover -s tests -v
+python -m compileall -q .
+```
+
+如果使用本地虚拟环境，可将上面的 `python` 替换成 `.venv/bin/python`。
 
 ### 监控目录配置
 

@@ -1,5 +1,4 @@
 import os
-import threading
 from typing import Iterable
 
 from fastapi import HTTPException
@@ -7,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from db.database import vacuum_db
 from db.scrape_models import SymlinkRecord
+from monitor.scan_service import enqueue_path
+from monitor.task_queue import enqueue_task
 
 
 def _normcase_path(path: str) -> str:
@@ -184,17 +185,28 @@ def clear_failed_symlinks(db: Session):
     return {"ok": True, "deleted": deleted}
 
 
-def _queue_retry_paths(paths: list[str]):
+def _queue_retry_paths(db: Session, items: list[tuple[str, int | None]]):
     from server import get_watcher
 
     watcher = get_watcher()
-
-    def _run():
-        if watcher:
-            for path in paths:
-                watcher._process_file(path)
-
-    threading.Thread(target=_run, daemon=True).start()
+    for path, folder_id in items:
+        if watcher and getattr(watcher, "_worker_ctx", None):
+            enqueue_path(
+                watcher,
+                path,
+                source="symlink_retry",
+                immediate=True,
+                force=True,
+                db=db,
+            )
+            continue
+        enqueue_task(
+            db,
+            path,
+            folder_id=folder_id,
+            task_type="symlink_export",
+            source="symlink_retry",
+        )
 
 
 def retry_symlink_record(db: Session, record_id: int):
@@ -204,17 +216,22 @@ def retry_symlink_record(db: Session, record_id: int):
     if not os.path.isfile(row.original_path):
         raise HTTPException(400, detail="源文件不存在")
     path = row.original_path
+    folder_id = row.folder_id
     db.delete(row)
     db.commit()
-    _queue_retry_paths([path])
+    _queue_retry_paths(db, [(path, folder_id)])
     return {"ok": True}
 
 
 def retry_all_failed_symlinks(db: Session):
     rows = db.query(SymlinkRecord).filter(SymlinkRecord.status == "failed").all()
-    paths = [row.original_path for row in rows if os.path.isfile(row.original_path)]
+    items = [
+        (row.original_path, row.folder_id)
+        for row in rows
+        if os.path.isfile(row.original_path)
+    ]
     for row in rows:
         db.delete(row)
     db.commit()
-    _queue_retry_paths(paths)
-    return {"ok": True, "queued": len(paths)}
+    _queue_retry_paths(db, items)
+    return {"ok": True, "queued": len(items)}

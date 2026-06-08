@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, ForeignKey, Index, text
 from sqlalchemy.orm import relationship
 
 from db.database import Base
@@ -59,3 +59,50 @@ class SymlinkRecord(Base):
     created_at = Column(DateTime, default=datetime.datetime.now)
 
     folder = relationship("MonitorFolder", back_populates="symlink_records")
+
+
+class TaskQueue(Base):
+    """Persistent background work queue for scan/retry processing."""
+    __tablename__ = "task_queue"
+    __table_args__ = (
+        Index("idx_task_queue_status_updated", "status", "updated_at"),
+        Index("idx_task_queue_folder_id", "folder_id"),
+        Index("idx_task_queue_path_key", "path_key"),
+        Index(
+            "ux_task_queue_active_path_type",
+            "path_key",
+            "task_type",
+            unique=True,
+            sqlite_where=text("status IN ('queued', 'running')"),
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    path = Column(String(2048), nullable=False)
+    path_key = Column(String(2048), nullable=False)
+    folder_id = Column(Integer, nullable=True)
+    task_type = Column(String(32), nullable=False, default="scrape")  # scrape | symlink_export
+    source = Column(String(32), nullable=False, default="watchdog")
+    status = Column(String(32), nullable=False, default="queued")  # queued | running | done | failed | skipped
+    attempts = Column(Integer, nullable=False, default=0)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+
+
+class FolderScanState(Base):
+    """Directory mtime checkpoints used by polling scans."""
+    __tablename__ = "folder_scan_state"
+    __table_args__ = (
+        Index("ux_folder_scan_state_folder_dir", "folder_id", "dir_key", unique=True),
+        Index("idx_folder_scan_state_updated", "updated_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    folder_id = Column(Integer, nullable=False)
+    dir_path = Column(String(2048), nullable=False)
+    dir_key = Column(String(2048), nullable=False)
+    mtime_ns = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)

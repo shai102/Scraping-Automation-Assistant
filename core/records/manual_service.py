@@ -4,10 +4,8 @@ import json
 import logging
 import os
 import shutil
-import threading
 import time
 import uuid
-from collections import defaultdict
 from typing import Optional
 
 from fastapi import HTTPException
@@ -27,6 +25,8 @@ from monitor.metadata_refresh import (
     record_to_dict as record_to_dict_impl,
     refresh_record_metadata as refresh_record_metadata_impl,
 )
+from monitor.scan_service import enqueue_path
+from monitor.task_queue import enqueue_task
 from utils.cache import invalidate_cache_prefix
 
 from .delete_service import (
@@ -54,6 +54,28 @@ def _notify_manual_success(folder, item):
     watcher = _get_watcher()
     if watcher and hasattr(watcher, "_tg_batcher") and folder:
         watcher._tg_batcher.add(folder.id, os.path.basename(folder.path), item)
+
+
+def _enqueue_retry_path(path: str, db, *, folder_id: int | None = None, source: str = "manual_retry"):
+    watcher = _get_watcher()
+    if watcher and getattr(watcher, "_worker_ctx", None):
+        return enqueue_path(
+            watcher,
+            path,
+            source=source,
+            immediate=True,
+            force=True,
+            db=db,
+        )
+
+    task, _created = enqueue_task(
+        db,
+        path,
+        folder_id=folder_id,
+        task_type="scrape",
+        source=source,
+    )
+    return task.id
 
 
 def _delete_file_sidecars(file_path: str):
@@ -346,41 +368,26 @@ def retry_record_async(record_id: int, db) -> dict:
     row.error_msg = None
     db.commit()
 
-    watcher = _get_watcher()
-
-    def _run():
-        if watcher:
-            watcher._process_file(row.original_path)
-
-    threading.Thread(target=_run, daemon=True).start()
+    _enqueue_retry_path(row.original_path, db, folder_id=row.folder_id, source="manual_retry")
     return {"ok": True, "message": "重试已启动"}
 
 
 def batch_retry_records(ids: list[int], db) -> dict:
     rows = db.query(ScrapeRecord).filter(ScrapeRecord.id.in_(ids)).all()
-    paths_to_retry = [row.original_path for row in rows if os.path.isfile(row.original_path)]
+    retry_items = [
+        (row.original_path, row.folder_id)
+        for row in rows
+        if os.path.isfile(row.original_path)
+    ]
 
     for row in rows:
         db.delete(row)
     db.commit()
 
-    watcher = _get_watcher()
     count = 0
-    if watcher:
-        dir_groups = defaultdict(list)
-        for path in paths_to_retry:
-            dir_groups[os.path.dirname(path)].append(path)
-
-        for _dir_path, paths in dir_groups.items():
-            for path in sorted(paths):
-                norm = os.path.normpath(path)
-                with watcher._pending_lock:
-                    watcher._processed.discard(norm)
-                watcher._pool.submit(watcher._process_file, path)
-                with watcher._pending_lock:
-                    watcher._processed.add(norm)
-                count += 1
-                time.sleep(0.1)
+    for path, folder_id in sorted(retry_items, key=lambda item: item[0]):
+        _enqueue_retry_path(path, db, folder_id=folder_id, source="batch_retry")
+        count += 1
 
     return {"ok": True, "count": count}
 

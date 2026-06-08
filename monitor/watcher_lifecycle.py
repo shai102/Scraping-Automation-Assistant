@@ -7,6 +7,9 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from core.services.worker_context import WorkerContext
+from monitor.record_state import reset_stale_processing_records
+from monitor.scan_service import restore_queued_tasks
+from monitor.task_queue import recover_stale_running_tasks
 
 
 logger = logging.getLogger(__name__)
@@ -104,6 +107,12 @@ def start_watcher(watcher):
         return
     watcher._running = True
     watcher._worker_ctx = WorkerContext()
+    db = watcher._session_factory()
+    try:
+        reset_stale_processing_records(db)
+        recover_stale_running_tasks(db, stale_minutes=0)
+    finally:
+        db.close()
     refresh_pool_workers(watcher)
     watcher._observer = Observer()
     watcher._observer.daemon = True
@@ -115,6 +124,9 @@ def start_watcher(watcher):
     watcher._metadata_refresh_thread = threading.Thread(target=watcher._metadata_refresh_loop, daemon=True)
     watcher._metadata_refresh_thread.start()
     sync_watches(watcher)
+    restored = restore_queued_tasks(watcher)
+    if restored:
+        logger.info("Restored queued watcher tasks: %s", restored)
     logger.info("FolderWatcher started")
 
 

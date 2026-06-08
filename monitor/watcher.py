@@ -53,6 +53,7 @@ _DEBOUNCE_SECONDS = 5.0
 
 # Polling: scan folders every N seconds to catch network-written files
 _POLL_INTERVAL_SECONDS = 30.0
+_POLL_MAX_ENQUEUE_PER_PASS = 500
 
 # Metadata refresh: default interval (12 hours) and lookback (14 days)
 _METADATA_REFRESH_DEFAULT_INTERVAL_HOURS = 12
@@ -77,6 +78,8 @@ class FolderWatcher:
         self._observer.daemon = True
         self._watches: Dict[int, object] = {}  # folder_id -> ObservedWatch
         self._pending: Dict[str, float] = {}  # path -> last event time
+        self._pending_task_ids: Dict[str, int] = {}
+        self._pending_task_types: Dict[str, str] = {}
         self._pending_lock = threading.Lock()
         self._processed: Set[str] = set()
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="scrape")
@@ -89,6 +92,8 @@ class FolderWatcher:
         self._poll_thread: Optional[threading.Thread] = None
         self._metadata_refresh_thread: Optional[threading.Thread] = None
         self._symlink_export_paths: Set[str] = set()
+        self._poll_max_enqueue_per_pass = _POLL_MAX_ENQUEUE_PER_PASS
+        self._poll_use_scan_state = True
         self._tg_batcher = NotificationBatcher(
             cfg_getter=lambda: self._worker_ctx._cfg if self._worker_ctx else {}
         )
@@ -225,8 +230,8 @@ class FolderWatcher:
         """Find the MonitorFolder that owns *path*."""
         return find_folder_for_path(path, db)
 
-    def _process_file(self, path: str):
-        process_file(self, path)
+    def _process_file(self, path: str, task_id: int | None = None):
+        process_file(self, path, task_id=task_id)
 
 
 def _delete_per_file_sidecars(file_path: str):
