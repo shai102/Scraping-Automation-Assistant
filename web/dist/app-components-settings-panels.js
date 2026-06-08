@@ -195,6 +195,8 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
                 <option :value="24">24 小时</option>
                 <option :value="48">48 小时</option>
                 <option :value="168">7 天</option>
+                <option :value="360">15 天（半个月）</option>
+                <option :value="720">30 天（一个月）</option>
               </select>
             </div>
             <div class="form-group">
@@ -202,12 +204,23 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
               <select v-model.number="$root.cfg.metadata_refresh_lookback_days" style="max-width:200px">
                 <option :value="7">最近 7 天</option>
                 <option :value="14">最近 14 天（默认）</option>
+                <option :value="15">最近 15 天（半个月）</option>
                 <option :value="30">最近 30 天</option>
                 <option :value="90">最近 90 天</option>
                 <option :value="0">不限制</option>
               </select>
               <small style="color:#888;display:block;margin-top:6px">只检查此范围内的已成功记录，超过该天数的记录不再自动巡检。</small>
             </div>
+          </div>
+          <div class="form-group">
+            <label>跳过集标题补齐的作品</label>
+            <textarea v-model="$root.cfg.metadata_refresh_ignore_episode_title_rules" rows="3" placeholder="每行一个作品标题或 ID，例如：&#10;夺命许愿&#10;tmdb:285838" style="font-family:Consolas,Monaco,monospace;resize:vertical"></textarea>
+            <small style="color:#888;display:block;margin-top:6px">命中的作品不会因为“集标题”是第一集/第二集/第 1 集而反复巡检；其它字段如简介、剧照、演员仍会正常补齐。</small>
+          </div>
+          <div class="form-group">
+            <label>跳过自动补齐的作品</label>
+            <textarea v-model="$root.cfg.metadata_refresh_skip_rules" rows="3" placeholder="每行一个作品标题或 ID，例如：&#10;幽游白书&#10;tmdb:121659" style="font-family:Consolas,Monaco,monospace;resize:vertical"></textarea>
+            <small style="color:#888;display:block;margin-top:6px">命中的作品不会进入元数据自动补齐巡检；也可以在“元数据巡检日志”的分组视图里勾选作品后一键加入。</small>
           </div>
           <div class="form-actions">
             <button class="btn btn-primary" @click="$root.saveSettings">保存</button>

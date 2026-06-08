@@ -293,6 +293,10 @@ main.content>section{padding-top:0}
 .table th{background:#fbfcff;color:#8a94a6;font-size:12px;font-weight:800;border-bottom:1px solid #edf1f7}
 .table td{border-bottom:1px solid #f0f3f8;color:#344054}
 .table tr:hover{background:#f8faff}
+.table th:first-child,.table td:first-child{text-align:center}
+.table input[type=checkbox]{width:18px;height:18px;accent-color:var(--primary);cursor:pointer;vertical-align:middle}
+.table input[type=checkbox]:disabled{cursor:not-allowed;opacity:.45}
+.group-row input[type=checkbox]{width:20px;height:20px}
 .badge{border-radius:999px;padding:3px 9px;font-weight:800}
 .badge-success{background:#dcfae6;color:#067647}
 .badge-warning{background:#fef0c7;color:#b54708}

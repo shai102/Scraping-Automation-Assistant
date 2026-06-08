@@ -52,6 +52,8 @@ def get_settings_raw_defaults() -> dict:
     cfg.setdefault("metadata_refresh_enabled", True)
     cfg.setdefault("metadata_refresh_interval_hours", 12)
     cfg.setdefault("metadata_refresh_lookback_days", 14)
+    cfg.setdefault("metadata_refresh_ignore_episode_title_rules", "")
+    cfg.setdefault("metadata_refresh_skip_rules", "")
     cfg.setdefault("metadata_hub_root", get_metadata_hub_root(cfg))
     return cfg
 

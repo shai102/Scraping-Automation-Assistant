@@ -32,6 +32,7 @@ var UI_STATE_BOOLEAN_FIELDS = [
   'symlinkGroupedView',
   'logShowAnnotations',
   'logAutoRefreshEnabled',
+  'metadataLogGroupedView',
   'recognitionUseAi',
   'recognitionBypassCache',
   'searchIsTv',

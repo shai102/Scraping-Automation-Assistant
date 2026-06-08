@@ -1,7 +1,7 @@
 """Symlink record API — query / delete symlink_export records."""
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 from typing import Optional, List
 
@@ -30,6 +30,8 @@ class GroupDeleteBody(BaseModel):
 
 
 class SymlinkOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     folder_id: Optional[int] = None
     original_path: str
@@ -37,9 +39,6 @@ class SymlinkOut(BaseModel):
     status: str
     error_msg: Optional[str] = None
     created_at: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
 
 @router.get("", response_model=dict)

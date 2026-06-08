@@ -17,14 +17,20 @@ import db.database as database
 
 database.init_db()
 with database.engine.connect() as conn:
-    payload = {
-        "journal_mode": conn.exec_driver_sql("PRAGMA journal_mode").scalar(),
-        "busy_timeout": conn.exec_driver_sql("PRAGMA busy_timeout").scalar(),
-        "indexes": [
-            row[1]
-            for row in conn.exec_driver_sql("PRAGMA index_list('scrape_records')").fetchall()
-        ],
-    }
+        payload = {
+            "journal_mode": conn.exec_driver_sql("PRAGMA journal_mode").scalar(),
+            "busy_timeout": conn.exec_driver_sql("PRAGMA busy_timeout").scalar(),
+            "indexes": [
+                row[1]
+                for row in conn.exec_driver_sql("PRAGMA index_list('scrape_records')").fetchall()
+            ],
+            "metadata_refresh_indexes": [
+                row[1]
+                for row in conn.exec_driver_sql(
+                    "PRAGMA index_list('metadata_refresh_state')"
+                ).fetchall()
+            ],
+        }
 print(json.dumps(payload))
 """
             result = subprocess.run(
@@ -41,6 +47,14 @@ print(json.dumps(payload))
             self.assertEqual(30000, payload["busy_timeout"])
             self.assertIn("idx_scrape_records_original_path", payload["indexes"])
             self.assertIn("idx_scrape_records_status", payload["indexes"])
+            self.assertIn(
+                "ux_metadata_refresh_state_record_id",
+                payload["metadata_refresh_indexes"],
+            )
+            self.assertIn(
+                "idx_metadata_refresh_state_next_attempt",
+                payload["metadata_refresh_indexes"],
+            )
 
 
 if __name__ == "__main__":

@@ -92,6 +92,26 @@ class TaskQueue(Base):
     finished_at = Column(DateTime, nullable=True)
 
 
+class MetadataRefreshState(Base):
+    """Backoff state for automatic metadata patrol refreshes."""
+    __tablename__ = "metadata_refresh_state"
+    __table_args__ = (
+        Index("ux_metadata_refresh_state_record_id", "record_id", unique=True),
+        Index("idx_metadata_refresh_state_next_attempt", "next_attempt_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    record_id = Column(Integer, nullable=False)
+    attempts = Column(Integer, nullable=False, default=0)
+    no_progress_count = Column(Integer, nullable=False, default=0)
+    last_missing_fields = Column(Text, nullable=True)
+    last_error = Column(Text, nullable=True)
+    last_attempt_at = Column(DateTime, nullable=True)
+    next_attempt_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
 class FolderScanState(Base):
     """Directory mtime checkpoints used by polling scans."""
     __tablename__ = "folder_scan_state"

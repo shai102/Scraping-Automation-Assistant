@@ -9,6 +9,14 @@ window.scraperAppMethodsRecords = {
       var data = await this.api('GET', '/api/records?' + params.toString());
       this.records = data.items || [];
       this.recordTotal = data.total || 0;
+      var maxPage = Math.ceil(this.recordTotal / this.recordPageSize) || 1;
+      if (this.recordPage > maxPage) {
+        this.recordPage = maxPage;
+        this.recordGoPage = maxPage;
+        if (this.recordTotal > 0) {
+          return this.loadRecords();
+        }
+      }
       this.selectedIds = [];
     } catch (ex) {}
   },
@@ -229,6 +237,7 @@ window.scraperAppMethodsRecords = {
       if (this.recordParseFilter) params.set('parse_source', this.recordParseFilter);
       var data = await this.api('GET', '/api/records/grouped?' + params.toString());
       this.groupedRecords = data.groups || [];
+      this.expandedGroups = {};
     } catch (ex) {}
   },
   toggleGroup(g) {

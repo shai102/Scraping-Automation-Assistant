@@ -243,11 +243,46 @@ def _migration_folder_scan_state(conn):
         _create_index_if_missing(conn, table_name, index_name, ddl)
 
 
+def _migration_metadata_refresh_state(conn):
+    conn.execute(text(
+        """
+        CREATE TABLE IF NOT EXISTS metadata_refresh_state (
+            id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            record_id INTEGER NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            no_progress_count INTEGER NOT NULL DEFAULT 0,
+            last_missing_fields TEXT,
+            last_error TEXT,
+            last_attempt_at DATETIME,
+            next_attempt_at DATETIME,
+            created_at DATETIME,
+            updated_at DATETIME
+        )
+        """
+    ))
+    for table_name, index_name, ddl in (
+        (
+            "metadata_refresh_state",
+            "ux_metadata_refresh_state_record_id",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_metadata_refresh_state_record_id "
+            "ON metadata_refresh_state(record_id)",
+        ),
+        (
+            "metadata_refresh_state",
+            "idx_metadata_refresh_state_next_attempt",
+            "CREATE INDEX IF NOT EXISTS idx_metadata_refresh_state_next_attempt "
+            "ON metadata_refresh_state(next_attempt_at)",
+        ),
+    ):
+        _create_index_if_missing(conn, table_name, index_name, ddl)
+
+
 _MIGRATIONS: tuple[tuple[str, Callable], ...] = (
     ("0001_monitor_folder_columns", _migration_monitor_folder_columns),
     ("0002_runtime_indexes", _migration_runtime_indexes),
     ("0003_task_queue", _migration_task_queue),
     ("0004_folder_scan_state", _migration_folder_scan_state),
+    ("0005_metadata_refresh_state", _migration_metadata_refresh_state),
 )
 
 
@@ -272,6 +307,7 @@ def init_db():
     from db.scrape_models import (  # noqa: F401
         FolderScanState,
         MonitorFolder,
+        MetadataRefreshState,
         ScrapeRecord,
         SymlinkRecord,
         TaskQueue,

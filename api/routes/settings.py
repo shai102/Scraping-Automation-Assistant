@@ -74,6 +74,8 @@ class SettingsModel(BaseModel):
     metadata_refresh_enabled: Optional[bool] = None
     metadata_refresh_interval_hours: Optional[int] = None
     metadata_refresh_lookback_days: Optional[int] = None
+    metadata_refresh_ignore_episode_title_rules: Optional[str] = None
+    metadata_refresh_skip_rules: Optional[str] = None
     metadata_hub_root: Optional[str] = None
 
 
