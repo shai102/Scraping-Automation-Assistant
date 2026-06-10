@@ -14,8 +14,16 @@ from ai.ollama_ai import (
 )
 from utils.app_runtime import TIMEOUT_AI_CHAT, TIMEOUT_OLLAMA_CHAT
 from utils.candidate_utils import format_candidate_label
-from utils.title_parsing import clean_search_title
 from utils.value_utils import extract_year_from_release, safe_str
+
+
+def _year_diff(year_a, year_b):
+    """Absolute difference in years, or None when either side is missing/invalid."""
+    a = extract_year_from_release(year_a)
+    b = extract_year_from_release(year_b)
+    if not a or not b:
+        return None
+    return abs(int(a) - int(b))
 
 
 def candidate_rating(candidate):
@@ -88,6 +96,9 @@ def auto_pick_candidate_by_score(query_title, year, source_name, candidates):
         if requested_year:
             if candidate_year == requested_year:
                 score += 25.0
+            elif _year_diff(candidate_year, requested_year) == 1:
+                # Regional release-year off-by-one is common; treat as near-match.
+                score += 10.0
             elif candidate_year:
                 score -= 30.0
 

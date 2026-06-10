@@ -2,9 +2,7 @@ import difflib
 import re
 
 from db.tmdb_api import (
-    fetch_bgm_by_id,
     fetch_bgm_candidates,
-    fetch_tmdb_by_id,
     fetch_tmdb_candidates,
 )
 from utils.title_parsing import (
@@ -16,7 +14,29 @@ from utils.title_parsing import (
     text_mentions_extra_title,
 )
 from utils.candidate_utils import candidate_to_result
-from utils.value_utils import extract_year_from_release, normalize_compare_text, safe_str
+from utils.value_utils import (
+    extract_year_from_release,
+    normalize_compare_text,
+    safe_str,
+    years_within_tolerance,
+)
+
+
+def _has_cjk(text):
+    return bool(re.search(r"[\u4e00-\u9fff\u3040-\u30ff]", str(text or "")))
+
+
+def _is_substantial_query_norm(norm):
+    """Decide whether a normalized query title is long enough to trust a direct hit.
+
+    Latin titles need >=6 chars to avoid spurious matches, but CJK titles are
+    inherently short (e.g. 咒术回战 -> 4 chars) and would otherwise never qualify.
+    """
+    if not norm:
+        return False
+    if _has_cjk(norm):
+        return len(norm) >= 2
+    return len(norm) >= 6
 
 
 def pick_strong_tmdb_direct_hit(query_titles, year, candidates):
@@ -27,7 +47,7 @@ def pick_strong_tmdb_direct_hit(query_titles, year, candidates):
     for raw in query_titles or []:
         text = str(raw or "").strip()
         norm = normalize_compare_text(text)
-        if not norm or len(norm) < 6 or norm in seen_norms:
+        if not _is_substantial_query_norm(norm) or norm in seen_norms:
             continue
         seen_norms.add(norm)
         preferred_norms.append(norm)
@@ -60,7 +80,7 @@ def pick_strong_tmdb_direct_hit(query_titles, year, candidates):
         top_meta = top.get("meta") or {}
         top_rank = int(top_meta.get("search_rank") or 999)
         top_year = extract_year_from_release(top.get("release") or "")
-        year_ok = not requested_year or not top_year or top_year == requested_year
+        year_ok = years_within_tolerance(requested_year, top_year)
         if top_rank == 1 and year_ok:
             return top, str(top_meta.get("search_query") or "")
 
@@ -252,7 +272,7 @@ def select_best_db_match(
         candidate_year = extract_year_from_release(candidate.get("release") or "")
         if not candidate_year:
             return True
-        return candidate_year == requested_year
+        return years_within_tolerance(requested_year, candidate_year)
 
     if query_norm:
         exact = None

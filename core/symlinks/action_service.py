@@ -67,7 +67,7 @@ def clear_all_symlinks(db: Session):
 
 
 def delete_symlink_record(db: Session, record_id: int, delete_files: bool = False):
-    row = db.query(SymlinkRecord).get(record_id)
+    row = db.get(SymlinkRecord, record_id)
     if not row:
         raise HTTPException(404, detail="记录不存在")
     files_deleted = 0
@@ -210,7 +210,7 @@ def _queue_retry_paths(db: Session, items: list[tuple[str, int | None]]):
 
 
 def retry_symlink_record(db: Session, record_id: int):
-    row = db.query(SymlinkRecord).get(record_id)
+    row = db.get(SymlinkRecord, record_id)
     if not row:
         raise HTTPException(404, detail="记录不存在")
     if not os.path.isfile(row.original_path):

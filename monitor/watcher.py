@@ -10,7 +10,7 @@ import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Optional, Set
+from typing import Dict, Optional, Set, TYPE_CHECKING
 
 from watchdog.observers import Observer
 
@@ -21,7 +21,6 @@ from monitor.file_processor import process_file
 from monitor.metadata_refresh import (
     record_to_dict as metadata_record_to_dict,
     refresh_record_metadata as refresh_record_metadata_impl,
-    run_metadata_refresh_pass,
 )
 from monitor.scan_service import (
     enqueue_path,
@@ -32,7 +31,6 @@ from monitor.scan_service import (
     scan_folder as run_scan_folder,
 )
 from monitor.watcher_lifecycle import (
-    MediaHandler,
     refresh_pool_workers as refresh_pool_workers_impl,
     start_watcher,
     stop_watcher,
@@ -45,6 +43,9 @@ from monitor.watcher_metadata import (
 )
 from utils.telegram_notify import NotificationBatcher
 from utils.emby_notify import EmbyNotifier
+
+if TYPE_CHECKING:
+    from core.services.worker_context import WorkerContext
 
 logger = logging.getLogger(__name__)
 

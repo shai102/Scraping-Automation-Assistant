@@ -28,6 +28,27 @@ def extract_year_from_release(release):
     return match.group(1) if match else ""
 
 
+def years_match_exact(year_a, year_b):
+    """True only when both years are present and identical."""
+    a = extract_year_from_release(year_a)
+    b = extract_year_from_release(year_b)
+    return bool(a) and bool(b) and a == b
+
+
+def years_within_tolerance(year_a, year_b, tolerance=1):
+    """True when years are missing on either side, or differ by <= tolerance.
+
+    Regional release dates (e.g. JP air date vs TMDb regional year) frequently
+    differ by one year, especially for cross-year anime seasons. Treat such
+    near-misses as compatible instead of rejecting the candidate outright.
+    """
+    a = extract_year_from_release(year_a)
+    b = extract_year_from_release(year_b)
+    if not a or not b:
+        return True
+    return abs(int(a) - int(b)) <= tolerance
+
+
 def normalize_parse_source(parse_source):
     raw = str(parse_source or "").strip().lower()
     if raw == "guessit":

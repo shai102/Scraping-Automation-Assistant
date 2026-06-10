@@ -25,6 +25,9 @@ class FakeSession:
     def query(self, *args, **kwargs):
         return FakeQuery(self.row)
 
+    def get(self, _model, _id):
+        return self.row
+
     def delete(self, row):
         self.deleted.append(row)
 

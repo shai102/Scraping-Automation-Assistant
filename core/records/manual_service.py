@@ -325,11 +325,11 @@ def process_single_manual(row, body, folder, db):
 
 
 def manual_match_record(record_id: int, body, db) -> dict:
-    row = db.query(ScrapeRecord).get(record_id)
+    row = db.get(ScrapeRecord, record_id)
     if not row:
         raise HTTPException(404)
 
-    folder = db.query(MonitorFolder).get(row.folder_id) if row.folder_id else None
+    folder = db.get(MonitorFolder, row.folder_id) if row.folder_id else None
     process_single_manual(row, body, folder, db)
     processed_count = 1
 
@@ -355,7 +355,7 @@ def manual_match_record(record_id: int, body, db) -> dict:
 
 
 def retry_record_async(record_id: int, db) -> dict:
-    row = db.query(ScrapeRecord).get(record_id)
+    row = db.get(ScrapeRecord, record_id)
     if not row:
         raise HTTPException(404)
     if not os.path.isfile(row.original_path):
@@ -393,7 +393,7 @@ def batch_retry_records(ids: list[int], db) -> dict:
 
 
 def refresh_metadata_for_record(record_id: int, db) -> dict:
-    row = db.query(ScrapeRecord).get(record_id)
+    row = db.get(ScrapeRecord, record_id)
     if not row:
         raise HTTPException(404)
     if row.status != "success":
@@ -450,7 +450,7 @@ def batch_refresh_metadata_records(ids: list[int], db) -> dict:
 
 
 def update_metadata_from_hub_for_record(record_id: int, db) -> dict:
-    row = db.query(ScrapeRecord).get(record_id)
+    row = db.get(ScrapeRecord, record_id)
     if not row:
         raise HTTPException(404)
 

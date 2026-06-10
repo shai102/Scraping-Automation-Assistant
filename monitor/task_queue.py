@@ -90,7 +90,7 @@ def _find_active_task(db, path_key: str, task_type: str):
 def mark_task_running(db, task_id: int | None):
     if not task_id:
         return None
-    task = db.query(TaskQueue).get(task_id)
+    task = db.get(TaskQueue, task_id)
     if not task:
         return None
     now = datetime.datetime.now()
@@ -109,7 +109,7 @@ def finish_task(db, task_id: int | None, status: str, error: str | None = None):
         return None
     if status not in TERMINAL_STATUSES:
         raise ValueError(f"Unsupported task status: {status}")
-    task = db.query(TaskQueue).get(task_id)
+    task = db.get(TaskQueue, task_id)
     if not task:
         return None
     now = datetime.datetime.now()

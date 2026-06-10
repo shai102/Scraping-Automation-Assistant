@@ -83,7 +83,7 @@ def _mark_scan_state_clean(
 
 def find_folder_for_path(path: str, db) -> MonitorFolder | None:
     """Return the enabled MonitorFolder that most specifically owns *path*."""
-    folders = db.query(MonitorFolder).filter(MonitorFolder.enabled == True).all()
+    folders = db.query(MonitorFolder).filter(MonitorFolder.enabled.is_(True)).all()
     norm = os.path.normpath(path)
     best = None
     for folder in folders:
@@ -316,7 +316,7 @@ def poll_once(watcher):
     queued = 0
     db = SessionLocal()
     try:
-        folders = db.query(MonitorFolder).filter(MonitorFolder.enabled == True).all()
+        folders = db.query(MonitorFolder).filter(MonitorFolder.enabled.is_(True)).all()
         for folder in folders:
             if not os.path.isdir(folder.path):
                 continue
@@ -372,7 +372,7 @@ def scan_folder(watcher, folder_id: int):
     """Manually trigger a full scan of one monitored folder."""
     db = SessionLocal()
     try:
-        folder = db.query(MonitorFolder).get(folder_id)
+        folder = db.get(MonitorFolder, folder_id)
         if not folder or not os.path.isdir(folder.path):
             return
         exts = watcher._worker_ctx.get_media_exts() if watcher._worker_ctx else ()

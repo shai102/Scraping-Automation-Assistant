@@ -74,7 +74,7 @@ def refresh_pool_workers(watcher):
 def sync_watches(watcher):
     db = watcher._session_factory()
     try:
-        folders = db.query(watcher._folder_model).filter(watcher._folder_model.enabled == True).all()
+        folders = db.query(watcher._folder_model).filter(watcher._folder_model.enabled.is_(True)).all()
         watcher._symlink_export_paths = {
             os.path.normpath(folder.path)
             for folder in folders

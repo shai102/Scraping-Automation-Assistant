@@ -84,7 +84,7 @@ def main():
     _fix_frozen_stdio()   # must be first, before any uvicorn import
     _setup_logging()
 
-    print(f"\n  刮削助手")
+    print("\n  刮削助手")
     print(f"  Web 管理界面: http://127.0.0.1:{PORT}\n")
 
     # Start uvicorn in a daemon thread so the main thread is free for the tray

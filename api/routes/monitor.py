@@ -117,7 +117,7 @@ def create_folder(body: FolderCreate, db: Session = Depends(get_db)):
 
 @router.put("/folders/{folder_id}", response_model=FolderOut)
 def update_folder(folder_id: int, body: FolderUpdate, db: Session = Depends(get_db)):
-    row = db.query(MonitorFolder).get(folder_id)
+    row = db.get(MonitorFolder, folder_id)
     if not row:
         raise HTTPException(404, detail="目录不存在")
     if body.path is not None:
@@ -162,7 +162,7 @@ def update_folder(folder_id: int, body: FolderUpdate, db: Session = Depends(get_
 
 @router.delete("/folders/{folder_id}")
 def delete_folder(folder_id: int, db: Session = Depends(get_db)):
-    row = db.query(MonitorFolder).get(folder_id)
+    row = db.get(MonitorFolder, folder_id)
     if not row:
         raise HTTPException(404, detail="目录不存在")
     db.delete(row)
@@ -178,7 +178,7 @@ def delete_folder(folder_id: int, db: Session = Depends(get_db)):
 
 @router.post("/folders/{folder_id}/scan")
 def scan_folder(folder_id: int, db: Session = Depends(get_db)):
-    row = db.query(MonitorFolder).get(folder_id)
+    row = db.get(MonitorFolder, folder_id)
     if not row:
         raise HTTPException(404, detail="目录不存在")
     if not os.path.isdir(row.path):

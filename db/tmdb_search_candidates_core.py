@@ -1,3 +1,4 @@
+import difflib
 import logging
 import re
 
@@ -69,8 +70,6 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
             if not key or key in seen:
                 continue
             seen.add(key)
-            import difflib
-
             score = difflib.SequenceMatcher(None, norm_text(base_query), key).ratio()
             scored.append((score, len(name), name))
         scored.sort(key=lambda item: (-item[0], item[1], item[2]))
@@ -94,7 +93,7 @@ def fetch_tmdb_candidates_raw(title, year=None, is_tv=True, api_key=""):
         queries = [q]
         if raw_query and norm_text(raw_query) != norm_text(q):
             queries.append(raw_query)
-        retry_query = re.sub(r"(?i)HD|閲嶅埗鐗坾閲嶈＝鐗坾Remaster|Edition", "", q).strip()
+        retry_query = re.sub(r"(?i)HD|重制版|重製版|重装版|Remaster|Edition", "", q).strip()
         if retry_query and retry_query != q:
             queries.append(retry_query)
 

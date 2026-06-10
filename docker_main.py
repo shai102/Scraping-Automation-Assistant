@@ -33,7 +33,7 @@ def main() -> None:
     data_dir = _resolve_data_dir()
     setup_logging(data_dir, console_stream=sys.stdout)
 
-    print(f"\n  刮削助手 (Docker Mode)")
+    print("\n  刮削助手 (Docker Mode)")
     print(f"  DATA_DIR : {data_dir}")
     print(f"  Web 管理界面: http://0.0.0.0:{PORT}\n")
 

@@ -70,7 +70,7 @@ def handle_dir_deleted(service, dir_path: str):
                 )
                 if scraped and scraped.target_path:
                     target_path = scraped.target_path
-                    target_folder = db.query(MonitorFolder).get(scraped.folder_id) if scraped.folder_id else None
+                    target_folder = db.get(MonitorFolder, scraped.folder_id) if scraped.folder_id else None
                     target_stop = (target_folder.target_root or "").strip() or None if target_folder else None
                     if os.path.exists(target_path) or os.path.lexists(target_path):
                         try:

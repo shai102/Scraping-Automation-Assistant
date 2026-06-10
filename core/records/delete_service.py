@@ -127,7 +127,7 @@ def delete_record_files(row: ScrapeRecord, db, cleanup_dirs: bool = True) -> int
             deleted += 1
 
     if cleanup_dirs and target and deleted:
-        folder = db.query(MonitorFolder).get(row.folder_id) if row.folder_id else None
+        folder = db.get(MonitorFolder, row.folder_id) if row.folder_id else None
         watch_root = None
         if folder:
             organize_mode = getattr(folder, "organize_mode", "move") or "move"
@@ -268,7 +268,7 @@ def cleanup_parent_show_dir(
 
 
 def delete_record_by_id(record_id: int, delete_files: bool, db) -> dict:
-    row = db.query(ScrapeRecord).get(record_id)
+    row = db.get(ScrapeRecord, record_id)
     if not row:
         raise HTTPException(404)
     files_deleted = delete_record_files(row, db) if delete_files else 0
@@ -286,7 +286,7 @@ def batch_delete_records(ids: list[int], delete_files: bool, db) -> dict:
             target = str(row.target_path or "").strip()
             if not target:
                 continue
-            folder = db.query(MonitorFolder).get(row.folder_id) if row.folder_id else None
+            folder = db.get(MonitorFolder, row.folder_id) if row.folder_id else None
             watch_root = None
             if folder:
                 organize_mode = getattr(folder, "organize_mode", "move") or "move"
