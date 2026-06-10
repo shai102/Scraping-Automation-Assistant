@@ -9,8 +9,6 @@ def try_nfo_fast_path(item, ctx) -> bool:
     """Resolve subtitle/audio metadata from an existing tvshow.nfo when possible."""
     import xml.etree.ElementTree as ET
 
-    from guessit import guessit
-
     from core.services.naming_templates import extract_lang_and_ext
     from db.tmdb_api import (
         fetch_hybrid_episode_meta,
@@ -18,7 +16,7 @@ def try_nfo_fast_path(item, ctx) -> bool:
         fetch_tmdb_season_poster,
     )
     from utils.library_paths import build_existing_library_target
-    from utils.title_parsing import extract_episode_number
+    from utils.title_parsing import cached_guessit, extract_episode_number, extract_episode_range
     from utils.value_utils import safe_filename
 
     file_dir = os.path.dirname(item.path)
@@ -67,7 +65,7 @@ def try_nfo_fast_path(item, ctx) -> bool:
         item.old_name,
         ctx.lang_tags.get() if hasattr(ctx, "lang_tags") else "",
     )
-    guessed = guessit(pure_name)
+    guessed = cached_guessit(pure_name)
     raw_s = guessed.get("season") or 1
     raw_e = extract_episode_number(pure_name, guessed)
     if raw_e is None:
@@ -114,8 +112,16 @@ def try_nfo_fast_path(item, ctx) -> bool:
     )
     season_fmt = f"{season_number:02d}"
     episode_fmt = f"{episode_number:02d}"
+    ep_range = extract_episode_range(pure_name, guessed)
+    episode_end = None
+    if ep_range and ep_range[0] == episode_number and ep_range[1] > episode_number:
+        episode_end = ep_range[1]
+        episode_fmt = f"{episode_number:02d}-E{episode_end:02d}"
     safe_title = safe_filename(series_title)
-    safe_ep = safe_filename(episode_name or f"第 {episode_number} 集")
+    fallback_ep_text = (
+        f"第 {episode_number}-{episode_end} 集" if episode_end else f"第 {episode_number} 集"
+    )
+    safe_ep = safe_filename(episode_name or fallback_ep_text)
 
     new_fn, media_suffix = ctx._render_media_filename(
         ctx.tv_format.get(),
@@ -135,13 +141,14 @@ def try_nfo_fast_path(item, ctx) -> bool:
     item.metadata = {
         "id": tid,
         "provider": "tmdb" if use_tmdb else "bgm",
-        "title": safe_title,
+        "title": series_title,
         "year": year,
-        "ep_title": episode_name or f"第 {episode_number} 集",
+        "ep_title": episode_name or fallback_ep_text,
         "overview": "",
         "ep_plot": episode_plot,
         "s": season_number,
         "e": episode_number,
+        "e_end": episode_end,
         "poster": None,
         "fanart": None,
         "still": episode_still,

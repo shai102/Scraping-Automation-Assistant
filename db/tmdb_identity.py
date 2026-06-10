@@ -92,3 +92,41 @@ def fetch_tmdb_by_id(tmdb_id, is_tv=True, api_key=""):
         is_tv,
         api_key,
     )
+
+
+def fetch_tmdb_zh_alternative_title_raw(tmdb_id, is_tv=True, api_key=""):
+    """从 TMDB 别名接口获取中文标题（zh-CN 详情标题缺失时的兜底）。"""
+    if not api_key or not api_key.strip():
+        return ""
+    stype = "tv" if is_tv else "movie"
+    try:
+        response = tmdb_get(
+            f"https://api.themoviedb.org/3/{stype}/{tmdb_id}/alternative_titles",
+            params={"api_key": api_key.strip(), "country": "CN"},
+            timeout=TIMEOUT_DB_DETAIL,
+        )
+        response.raise_for_status()
+        data = response.json()
+        # 电影返回 titles，剧集返回 results
+        entries = data.get("titles") or data.get("results") or []
+        import re as _re
+
+        for entry in entries:
+            if str(entry.get("iso_3166_1") or "").upper() not in ("CN", "HK", "TW", "SG"):
+                continue
+            title = str(entry.get("title") or "").strip()
+            if title and _re.search(r"[一-鿿]", title):
+                return title
+    except Exception as err:
+        logging.warning("TMDb别名查询失败 %s/%s: %s", stype, tmdb_id, err)
+    return ""
+
+
+def fetch_tmdb_zh_alternative_title(tmdb_id, is_tv=True, api_key=""):
+    return cached_request(
+        fetch_tmdb_zh_alternative_title_raw,
+        get_cache_key("tmdb_alt_zh_v1", f"{tmdb_id}_{is_tv}"),
+        tmdb_id,
+        is_tv,
+        api_key,
+    )

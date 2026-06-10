@@ -49,6 +49,17 @@ def populate_preview_item(gui, item, state, match_state, index):
     s_fmt = f"{int(season):02d}"
     e_fmt = f"{int(episode_calc):02d}"
 
+    episode_range = state.get("episode_range")
+    episode_end = None
+    if (
+        state["is_tv"]
+        and isinstance(episode_range, (tuple, list))
+        and len(episode_range) == 2
+        and safe_int(episode_range[1], 0) > episode_calc
+    ):
+        episode_end = safe_int(episode_range[1], 0)
+        e_fmt = f"{int(episode_calc):02d}-E{int(episode_end):02d}"
+
     v_tag = gui._get_version_tag(item.path)
 
     safe_std_t = safe_filename(match_state["std_title"])
@@ -105,16 +116,21 @@ def populate_preview_item(gui, item, state, match_state, index):
             match_state["tid"], is_tv=state["is_tv"], api_key=gui.tmdb_api_key.get()
         )
 
+    fallback_ep_text = (
+        f"第 {episode_calc}-{episode_end} 集" if episode_end else f"第 {episode_calc} 集"
+    )
+
     item.metadata = {
         "id": match_state["tid"],
         "provider": "tmdb" if match_state["eff_tmdb"] else "bgm",
-        "title": safe_std_t,
+        "title": match_state["std_title"],
         "year": state["year"],
-        "ep_title": ep_n_final or f"第 {episode_calc} 集",
+        "ep_title": ep_n_final or fallback_ep_text,
         "overview": match_state["meta"].get("overview", ""),
         "ep_plot": ep_p,
         "s": season,
         "e": episode_calc,
+        "e_end": episode_end,
         "poster": match_state["meta"].get("poster"),
         "fanart": match_state["meta"].get("fanart"),
         "still": ep_s,

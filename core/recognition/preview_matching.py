@@ -14,6 +14,7 @@ from db.tmdb_api import (
     fetch_bgm_by_id,
     fetch_bgm_candidates,
     fetch_tmdb_by_id,
+    fetch_tmdb_zh_alternative_title,
 )
 from utils.library_paths import extract_db_id_from_path
 from utils.title_parsing import derive_title_from_filename
@@ -206,15 +207,41 @@ def resolve_preview_match(gui, item, state):
         and re.search(r"[A-Za-z]", std_t)
         and not re.search(r"[\u4e00-\u9fff\u3040-\u30ff]", std_t)
     ):
-        release_year = extract_year_from_release(meta.get("release", ""))
-        if release_year:
-            bgm_cands = fetch_bgm_candidates(
-                std_t, year=release_year, api_key=gui.bgm_api_key.get()
+        zh_title = ""
+        resolved_is_tv = state["is_tv"]
+        detail_t, detail_id, _, detail_meta = fetch_tmdb_by_id(
+            tid, resolved_is_tv, gui.tmdb_api_key.get()
+        )
+        if detail_id == "None":
+            resolved_is_tv = not state["is_tv"]
+            detail_t, detail_id, _, detail_meta = fetch_tmdb_by_id(
+                tid, resolved_is_tv, gui.tmdb_api_key.get()
             )
-            if bgm_cands:
-                bgm_cn_title = bgm_cands[0].get("title", "")
-                if bgm_cn_title and re.search(r"[\u4e00-\u9fff]", bgm_cn_title):
-                    std_t = bgm_cn_title
+        if (
+            detail_id != "None"
+            and detail_t
+            and re.search(r"[\u4e00-\u9fff]", str(detail_t))
+        ):
+            zh_title = str(detail_t)
+            if detail_meta and not meta.get("genres"):
+                meta = {**detail_meta, **{k: v for k, v in meta.items() if v}}
+        if not zh_title:
+            # zh-CN \u8be6\u60c5\u6807\u9898\u7f3a\u5931\uff08TMDB \u7ffb\u8bd1\u672a\u586b\u5199\uff09\u65f6\uff0c\u67e5\u522b\u540d\u63a5\u53e3\u515c\u5e95
+            zh_title = fetch_tmdb_zh_alternative_title(
+                tid, resolved_is_tv, gui.tmdb_api_key.get()
+            )
+        if zh_title:
+            std_t = zh_title
+        else:
+            release_year = extract_year_from_release(meta.get("release", ""))
+            if release_year:
+                bgm_cands = fetch_bgm_candidates(
+                    std_t, year=release_year, api_key=gui.bgm_api_key.get()
+                )
+                if bgm_cands:
+                    bgm_cn_title = bgm_cands[0].get("title", "")
+                    if bgm_cn_title and re.search(r"[\u4e00-\u9fff]", bgm_cn_title):
+                        std_t = bgm_cn_title
 
     return {
         "std_title": std_t,

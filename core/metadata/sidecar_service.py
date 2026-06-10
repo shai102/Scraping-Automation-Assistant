@@ -124,12 +124,38 @@ def write_nfo(path, data, nfo_type="movie"):
         ET.SubElement(root, "lockdata").text = "false"
         ET.SubElement(root, "uniqueid", type=provider).text = str(data.get("id", ""))
 
-        xml_str = ET.tostring(root, encoding="utf-8")
-        dom = minidom.parseString(xml_str)
-        pretty_xml = dom.toprettyxml(indent="  ")
-        pretty_xml = "\n".join(
-            [line for line in pretty_xml.split("\n") if line.strip()]
-        )
+        roots = [root]
+        if nfo_type == "episodedetails":
+            # 多集合并文件（如 S01E01-E02）：按 Kodi/Emby 规范追加多个 episodedetails 块
+            try:
+                e_start = int(data.get("e", 1))
+                e_end = int(data.get("e_end") or 0)
+            except (TypeError, ValueError):
+                e_start, e_end = 1, 0
+            if e_end > e_start and e_end - e_start <= 30:
+                for extra_ep in range(e_start + 1, e_end + 1):
+                    extra_root = ET.Element(nfo_type)
+                    ET.SubElement(extra_root, "title").text = f"第 {extra_ep} 集"
+                    ET.SubElement(extra_root, "plot").text = ""
+                    ET.SubElement(extra_root, "season").text = str(data.get("s", 1))
+                    ET.SubElement(extra_root, "episode").text = str(extra_ep)
+                    ET.SubElement(extra_root, "year").text = str(data.get("year") or "")
+                    ET.SubElement(extra_root, "lockdata").text = "false"
+                    ET.SubElement(extra_root, "uniqueid", type=provider).text = str(
+                        data.get("id", "")
+                    )
+                    roots.append(extra_root)
+
+        parts = []
+        for index, element in enumerate(roots):
+            xml_str = ET.tostring(element, encoding="utf-8")
+            dom = minidom.parseString(xml_str)
+            pretty_xml = dom.toprettyxml(indent="  ")
+            lines = [line for line in pretty_xml.split("\n") if line.strip()]
+            if index > 0 and lines and lines[0].startswith("<?xml"):
+                lines = lines[1:]
+            parts.append("\n".join(lines))
+        pretty_xml = "\n".join(parts)
 
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(pretty_xml)

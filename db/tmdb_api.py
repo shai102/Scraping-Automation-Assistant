@@ -24,7 +24,11 @@ from db.tmdb_hybrid import (
     fetch_hybrid_tmdb_id,
     fetch_hybrid_tmdb_id_raw,
 )
-from db.tmdb_identity import fetch_tmdb_by_id, fetch_tmdb_by_id_raw
+from db.tmdb_identity import (
+    fetch_tmdb_by_id,
+    fetch_tmdb_by_id_raw,
+    fetch_tmdb_zh_alternative_title,
+)
 from db.tmdb_search import (
     fetch_tmdb_candidates,
     fetch_tmdb_candidates_raw,

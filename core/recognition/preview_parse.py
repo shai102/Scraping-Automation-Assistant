@@ -4,6 +4,7 @@ import time
 
 from ai.ollama_ai import fetch_siliconflow_info, is_ai_rate_limited_error
 from core.services.season_rules import extract_season_from_dir
+from utils.episode_parsing import DECIMAL_EPISODE_RE
 from utils.title_parsing import derive_title_from_filename, extract_episode_number
 from utils.value_utils import normalize_compare_text, safe_int
 
@@ -19,16 +20,7 @@ GENERIC_SEASON_DIR_RE = re.compile(r"(?i)^(?:season\s*\d{1,2}|s\s*\d{1,2}|第\s*
 STANDARD_EPISODE_RE = re.compile(r"(?i)\bS\d{1,2}E\d{1,3}\b")
 ZERO_EPISODE_SPECIAL_RE = re.compile(r"(?i)\bS\s*0*(\d{1,2})\s*E\s*0*0\b")
 ALT_ZERO_EPISODE_SPECIAL_RE = re.compile(r"(?i)\b(\d{1,2})x0*0\b")
-DECIMAL_EPISODE_RE = re.compile(
-    r"""(?ix)
-    (?:
-        s\d{1,2}\s*e\d{1,4}\.\d(?!\d)
-        | (?:ep?)\s*0*\d{1,4}\.\d(?!\d)
-        | 第\s*0*\d{1,4}\.\d(?!\d)\s*[集话話]
-        | [\[\(（]\s*0*\d{1,4}\.\d(?!\d)\s*[\]\)）]
-        | (?<![.\d])-\s*0*\d{1,2}\.\d(?!\d)(?=[\s\[\(（]|$)
-    )"""
-)
+# DECIMAL_EPISODE_RE 统一定义在 utils/episode_parsing.py，此处仅 re-export
 AI_RATE_LIMIT_COOLDOWN_SECONDS = 60.0
 
 

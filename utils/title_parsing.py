@@ -1,4 +1,9 @@
-from utils.episode_parsing import extract_episode_number, is_decimal_episode
+from utils.episode_parsing import (
+    cached_guessit,
+    extract_episode_number,
+    extract_episode_range,
+    is_decimal_episode,
+)
 from utils.query_planning import build_db_query_plan, build_query_titles, unique_keep_order
 from utils.title_cleanup import (
     BRACKET_CONTENT_RE,

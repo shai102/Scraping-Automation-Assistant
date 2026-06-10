@@ -3,8 +3,6 @@ import os
 import re
 import threading
 
-from guessit import guessit
-
 from ai.ollama_ai import is_ai_rate_limited_error
 from core.recognition.preview_helpers import (
     PROLOGUE_RE,
@@ -26,7 +24,12 @@ from core.recognition.preview_helpers import (
     store_dir_parse_cache as _store_dir_parse_cache,
 )
 from utils.library_paths import extract_db_id_from_path
-from utils.title_parsing import derive_title_from_filename, extract_episode_number
+from utils.title_parsing import (
+    cached_guessit,
+    derive_title_from_filename,
+    extract_episode_number,
+    extract_episode_range,
+)
 from utils.value_utils import safe_int
 
 
@@ -48,7 +51,7 @@ def recognize_preview_item(gui, item):
                 )
         pure_for_parse = re.sub(r"\s+", " ", pure_for_parse).strip()
 
-    g = guessit(pure_for_parse)
+    g = cached_guessit(pure_for_parse)
 
     extracted_ep = extract_episode_number(pure, g)
     guess_title, guess_year, guess_season, guess_episode = _derive_guessit_fields(
@@ -258,6 +261,14 @@ def recognize_preview_item(gui, item):
     if forced_o != 0:
         e_calc = max(1, safe_int(e, 1) + forced_o)
 
+    episode_range = None
+    if not recap_status and safe_int(s, 1) != 0:
+        ep_range = extract_episode_range(pure, g)
+        if ep_range and safe_int(e, -1) == ep_range[0]:
+            span = ep_range[1] - ep_range[0]
+            range_start = safe_int(e_calc, ep_range[0])
+            episode_range = (range_start, range_start + span)
+
     return {
         "pure": pure,
         "ext": ext,
@@ -281,6 +292,7 @@ def recognize_preview_item(gui, item):
         "season": s,
         "episode": e,
         "episode_calc": e_calc,
+        "episode_range": episode_range,
         "recap_status": recap_status,
         "media_type": media_type,
         "is_tv": is_tv,

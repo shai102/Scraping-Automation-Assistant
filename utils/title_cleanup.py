@@ -349,7 +349,7 @@ def derive_title_from_filename(pure_name):
     text = text.replace("_", " ").replace(".", " ")
     text = re.sub(r"(?i)\bS\d{1,2}E\d{1,4}\b.*$", "", text)
     text = re.sub(r"(?i)\bEP?\s*\d{1,4}\b.*$", "", text)
-    text = re.sub(r"(?i)第\s*\d{1,4}\s*[集话話].*$", "", text)
+    text = re.sub(r"(?i)第\s*(?:\d{1,4}|[零〇一二三四五六七八九十百两]{1,8})\s*[集话話].*$", "", text)
     text = re.sub(r"(?i)[\[\(（]\s*\d{1,4}(?:v\d+)?\s*[\]\)）]\s*$", "", text)
     return clean_search_title(text)
 

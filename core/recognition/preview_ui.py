@@ -123,7 +123,7 @@ def bg_update_single_ui(gui, idx, title, t_id, msg, meta):
         item.metadata = {
             "id": t_id,
             "provider": "tmdb" if eff_tmdb else "bgm",
-            "title": safe_title,
+            "title": title,
             "year": year,
             "ep_title": ep_n_final or f"第 {e_calc} 集",
             "overview": meta.get("overview", ""),
