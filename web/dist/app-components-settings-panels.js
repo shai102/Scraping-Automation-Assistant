@@ -28,7 +28,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
           <div class="form-group">
             <label>Metadata Hub 本地目录</label>
             <input v-model="$root.cfg.metadata_hub_root" placeholder="/media/metadata hub">
-            <small style="color:#888;display:block;margin-top:6px">只读、手动调用。仅在记录页点击“从 Metadata Hub 更新”时读取，不会自动查询、覆盖或定期同步。</small>
+            <small style="color:var(--text-muted);display:block;margin-top:6px">只读、手动调用。仅在记录页点击“从 Metadata Hub 更新”时读取，不会自动查询、覆盖或定期同步。</small>
           </div>
           <div class="form-actions">
             <button class="btn btn-primary" @click="$root.saveSettings">保存</button>
@@ -50,9 +50,9 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
               <button :class="['btn', (!$root.cfg.ai_mode||$root.cfg.ai_mode==='assist')?'btn-primary':'']" style="border-radius:0;min-width:80px" @click="$root.cfg.ai_mode='assist'">辅助识别</button>
               <button :class="['btn', $root.cfg.ai_mode==='force'?'btn-primary':'']" style="border-radius:0 6px 6px 0;min-width:80px" @click="$root.cfg.ai_mode='force'">强制使用</button>
             </div>
-            <small style="color:#888;display:block;margin-top:6px" v-if="$root.cfg.ai_mode==='disabled'">禁用：只使用 guessit 解析文件名并搜索资料库，不调用 AI。</small>
-            <small style="color:#888;display:block;margin-top:6px" v-else-if="!$root.cfg.ai_mode||$root.cfg.ai_mode==='assist'">辅助识别：标准命名优先走 guessit；遇到标题不可靠、番组命名或季集不清晰时自动调用 AI。记录来源只显示 guessit 或 AI，不显示混合。</small>
-            <small style="color:#888;display:block;margin-top:6px" v-else>强制使用：始终由 AI 解析标题与季集；AI 失败时会直接记为失败或待处理。</small>
+            <small style="color:var(--text-muted);display:block;margin-top:6px" v-if="$root.cfg.ai_mode==='disabled'">禁用：只使用 guessit 解析文件名并搜索资料库，不调用 AI。</small>
+            <small style="color:var(--text-muted);display:block;margin-top:6px" v-else-if="!$root.cfg.ai_mode||$root.cfg.ai_mode==='assist'">辅助识别：标准命名优先走 guessit；遇到标题不可靠、番组命名或季集不清晰时自动调用 AI。记录来源只显示 guessit 或 AI，不显示混合。</small>
+            <small style="color:var(--text-muted);display:block;margin-top:6px" v-else>强制使用：始终由 AI 解析标题与季集；AI 失败时会直接记为失败或待处理。</small>
           </div>
           <div class="form-group">
             <label><input type="checkbox" v-model="$root.cfg.prefer_ollama"> 优先使用本地 Ollama</label>
@@ -116,7 +116,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
             <div class="form-group" v-if="$root.cfg.embedding_source==='online'">
               <label>在线 Embedding 模型</label>
               <input v-model="$root.cfg.online_embedding_model" placeholder="例如 BAAI/bge-m3 或 openai/text-embedding-3-small">
-              <small style="color:#888;display:block;margin-top:6px">复用本区域的 API URL 和 API Key，通过 /embeddings 接口进行候选重排。</small>
+              <small style="color:var(--text-muted);display:block;margin-top:6px">复用本区域的 API URL 和 API Key，通过 /embeddings 接口进行候选重排。</small>
             </div>
           </fieldset>
           <div class="form-row">
@@ -145,12 +145,12 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
               <button class="btn btn-primary btn-sm" @click="$root.addStripKeyword">+ 添加</button>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px" v-if="$root.cfg.strip_keywords&&$root.cfg.strip_keywords.length">
-              <span v-for="(kw, idx) in $root.cfg.strip_keywords" :key="idx" style="display:inline-flex;align-items:center;padding:4px 10px;background:#e8f4fd;color:#1976d2;border-radius:14px;font-size:13px;border:1px solid #90cdf4">
+              <span v-for="(kw, idx) in $root.cfg.strip_keywords" :key="idx" style="display:inline-flex;align-items:center;padding:4px 10px;background:var(--info-soft);color:var(--info-text);border-radius:14px;font-size:13px;border:1px solid var(--info-border)">
                 {{kw}}
-                <span @click="$root.removeStripKeyword(idx)" style="margin-left:6px;cursor:pointer;color:#999;font-size:15px;line-height:1">&times;</span>
+                <span @click="$root.removeStripKeyword(idx)" style="margin-left:6px;cursor:pointer;color:var(--text-muted);font-size:15px;line-height:1">&times;</span>
               </span>
             </div>
-            <small style="color:#1976d2;display:block;margin-top:8px">从视频文件名中提取影视剧标题时先删除这些关键词，添加的越多识别准确率越高</small>
+            <small style="color:var(--info-text);display:block;margin-top:8px">从视频文件名中提取影视剧标题时先删除这些关键词，添加的越多识别准确率越高</small>
           </div>
           <div class="form-actions">
             <button class="btn btn-primary" @click="$root.saveSettings">保存</button>
@@ -168,7 +168,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
               <option :value="30">30 天</option>
               <option :value="0">永不过期</option>
             </select>
-            <small style="color:#888;display:block;margin-top:6px">设置 API 识别缓存的自动过期时间，过期后下次识别将重新向 API 请求。选择「永不过期」则只能手动清除。</small>
+            <small style="color:var(--text-muted);display:block;margin-top:6px">设置 API 识别缓存的自动过期时间，过期后下次识别将重新向 API 请求。选择「永不过期」则只能手动清除。</small>
           </div>
           <div class="form-actions">
             <button class="btn btn-primary" @click="$root.saveSettings">保存</button>
@@ -178,7 +178,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
         <div class="card" style="margin-top:16px">
           <div class="form-group">
             <label style="font-weight:600;font-size:15px">元数据自动补齐</label>
-            <small style="color:#1976d2;display:block;margin-top:6px">新番/新剧首次刮削时 TMDB 数据可能不完整（缺集名、简介、截图、演员等），开启后系统会定期巡检并自动从 TMDB/BGM 拉取最新数据补齐 NFO 和图片。</small>
+            <small style="color:var(--info-text);display:block;margin-top:6px">新番/新剧首次刮削时 TMDB 数据可能不完整（缺集名、简介、截图、演员等），开启后系统会定期巡检并自动从 TMDB/BGM 拉取最新数据补齐 NFO 和图片。</small>
           </div>
           <div class="form-group" style="margin-top:8px">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -209,18 +209,18 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
                 <option :value="90">最近 90 天</option>
                 <option :value="0">不限制</option>
               </select>
-              <small style="color:#888;display:block;margin-top:6px">只检查此范围内的已成功记录，超过该天数的记录不再自动巡检。</small>
+              <small style="color:var(--text-muted);display:block;margin-top:6px">只检查此范围内的已成功记录，超过该天数的记录不再自动巡检。</small>
             </div>
           </div>
           <div class="form-group">
             <label>跳过集标题补齐的作品</label>
             <textarea v-model="$root.cfg.metadata_refresh_ignore_episode_title_rules" rows="3" placeholder="每行一个作品标题或 ID，例如：&#10;夺命许愿&#10;tmdb:285838" style="font-family:Consolas,Monaco,monospace;resize:vertical"></textarea>
-            <small style="color:#888;display:block;margin-top:6px">命中的作品不会因为“集标题”是第一集/第二集/第 1 集而反复巡检；其它字段如简介、剧照、演员仍会正常补齐。</small>
+            <small style="color:var(--text-muted);display:block;margin-top:6px">命中的作品不会因为“集标题”是第一集/第二集/第 1 集而反复巡检；其它字段如简介、剧照、演员仍会正常补齐。</small>
           </div>
           <div class="form-group">
             <label>跳过自动补齐的作品</label>
             <textarea v-model="$root.cfg.metadata_refresh_skip_rules" rows="3" placeholder="每行一个作品标题或 ID，例如：&#10;幽游白书&#10;tmdb:121659" style="font-family:Consolas,Monaco,monospace;resize:vertical"></textarea>
-            <small style="color:#888;display:block;margin-top:6px">命中的作品不会进入元数据自动补齐巡检；也可以在“元数据巡检日志”的分组视图里勾选作品后一键加入。</small>
+            <small style="color:var(--text-muted);display:block;margin-top:6px">命中的作品不会进入元数据自动补齐巡检；也可以在“元数据巡检日志”的分组视图里勾选作品后一键加入。</small>
           </div>
           <div class="form-actions">
             <button class="btn btn-primary" @click="$root.saveSettings">保存</button>
@@ -254,13 +254,13 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
           <div class="form-group">
             <label>代理地址（单地址模式）</label>
             <input v-model="$root.cfg.proxy_url" placeholder="例如：http://127.0.0.1:7890 或 host.docker.internal:7890">
-            <small style="color:#888;display:block;margin-top:6px">可直接填写 127.0.0.1:7890，保存时会自动补全为 http://127.0.0.1:7890。</small>
+            <small style="color:var(--text-muted);display:block;margin-top:6px">可直接填写 127.0.0.1:7890，保存时会自动补全为 http://127.0.0.1:7890。</small>
           </div>
 
           <div class="form-group">
             <label>NO_PROXY（不走代理）</label>
             <textarea v-model="$root.cfg.proxy_no_proxy" rows="3" style="font-family:Consolas,Monaco,monospace;resize:vertical"></textarea>
-            <small style="color:#888;display:block;margin-top:6px">默认包含 localhost、127.0.0.1、host.docker.internal、192.168.*、10.*、172.16-31.*，避免 Ollama、Web 后端和本地服务被代理。</small>
+            <small style="color:var(--text-muted);display:block;margin-top:6px">默认包含 localhost、127.0.0.1、host.docker.internal、192.168.*、10.*、172.16-31.*，避免 Ollama、Web 后端和本地服务被代理。</small>
           </div>
 
           <div class="proxy-help">
@@ -339,7 +339,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
               <input type="checkbox" v-model="$root.cfg.preserve_media_suffix">
               <span>保留媒体信息后缀（如 2160p.TVING.WEB-DL.H.265.AAC-ColorTV）</span>
             </label>
-            <small style="color:#888;display:block;margin-top:6px">开启后会从原文件名提取清晰度、片源、编码、音频、发布组等信息；如果命名模板未显式写入 {media_suffix}，会自动追加到扩展名前。</small>
+            <small style="color:var(--text-muted);display:block;margin-top:6px">开启后会从原文件名提取清晰度、片源、编码、音频、发布组等信息；如果命名模板未显式写入 {media_suffix}，会自动追加到扩展名前。</small>
           </div>
           <div class="form-row">
             <div class="form-group">

@@ -66,18 +66,18 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
                 <td>{{$root.recordType(r)}}</td>
                 <td>{{r.matched_provider || '-'}}</td>
                 <td class="cell-name">
-                  <template v-if="r.matched_title">{{r.matched_title}}<span v-if="r.matched_id" style="color:#999;margin-left:4px">(ID:{{r.matched_id}})</span></template>
-                  <span v-else-if="r.error_msg" style="color:#999;font-size:12px">{{r.error_msg}}</span>
-                  <span v-else style="color:#999">-</span>
-                  <span v-if="r.parse_source==='ai'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#e8f4fd;color:#1a73e8;border:1px solid #90cdf4">AI</span>
-                  <span v-else-if="r.parse_source==='guessit'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#f0fdf4;color:#16a34a;border:1px solid #86efac">guessit</span>
-                  <div v-if="r.status==='pending_manual' && r.error_msg && r.matched_title" style="font-size:11px;color:#e67e22;margin-top:2px">{{r.error_msg}}</div>
+                  <template v-if="r.matched_title">{{r.matched_title}}<span v-if="r.matched_id" style="color:var(--text-muted);margin-left:4px">(ID:{{r.matched_id}})</span></template>
+                  <span v-else-if="r.error_msg" style="color:var(--text-muted);font-size:12px">{{r.error_msg}}</span>
+                  <span v-else style="color:var(--text-muted)">-</span>
+                  <span v-if="r.parse_source==='ai'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:var(--info-soft);color:var(--info-text);border:1px solid var(--info-border)">AI</span>
+                  <span v-else-if="r.parse_source==='guessit'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:var(--success-soft);color:var(--success-text);border:1px solid var(--success-border)">guessit</span>
+                  <div v-if="r.status==='pending_manual' && r.error_msg && r.matched_title" style="font-size:11px;color:var(--warning-text);margin-top:2px">{{r.error_msg}}</div>
                 </td>
                 <td class="cell-path">
                   <div>{{r.original_path || '-'}}</div>
                   <div class="path-target" v-if="r.target_path">→ {{r.target_path}}</div>
                 </td>
-                <td style="white-space:nowrap;font-size:12px;color:#999">{{$root.formatTime(r.updated_at || r.created_at)}}</td>
+                <td style="white-space:nowrap;font-size:12px;color:var(--text-muted)">{{$root.formatTime(r.updated_at || r.created_at)}}</td>
                 <td class="actions">
                   <button v-if="r.status!=='processing'" class="btn btn-sm btn-primary" @click="$root.openManualMatch(r)">手动识别</button>
                   <button v-if="r.status==='success'" class="btn btn-sm" @click="$root.refreshMetadata(r.id)" title="重新从 TMDB 拉取元数据">从 TMDB 刷新</button>
@@ -99,7 +99,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
             <div class="pagination-pages" v-if="$root.recordTotal > 0">
               <button class="btn btn-sm" :disabled="$root.recordPage<=1" @click="$root.recordPage--;$root.recordGoPage=$root.recordPage;$root.loadRecords()">&lt;</button>
               <span class="pagination-current">{{$root.recordPage}}</span>
-              <span style="color:#aaa;margin:0 2px">/</span>
+              <span style="color:var(--text-faint);margin:0 2px">/</span>
               <span class="pagination-total-pages">{{Math.ceil($root.recordTotal/$root.recordPageSize)||1}}</span>
               <button class="btn btn-sm" :disabled="$root.recordPage*$root.recordPageSize>=$root.recordTotal" @click="$root.recordPage++;$root.recordGoPage=$root.recordPage;$root.loadRecords()">&gt;</button>
               <span style="margin-left:8px">跳至</span>
@@ -129,7 +129,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
                   <td>
                     <span style="display:inline-block;width:18px;text-align:center;margin-right:4px">{{$root.expandedGroups[g.dir_path]?'▼':'▶'}}</span>
                     <strong>{{g.dir_name}}</strong>
-                    <span style="color:#999;margin-left:8px;font-size:12px">{{g.dir_path}}</span>
+                    <span style="color:var(--text-muted);margin-left:8px;font-size:12px">{{g.dir_path}}</span>
                   </td>
                   <td><span class="badge badge-gray">{{g.total}}</span></td>
                   <td><span class="badge badge-success" v-if="g.success">{{g.success}}</span><span v-else>-</span></td>
@@ -142,7 +142,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
               </tbody>
               <tbody v-if="$root.expandedGroups[g.dir_path]">
                 <tr v-if="$root.expandedGroups[g.dir_path].loading">
-                  <td colspan="7" style="text-align:center;color:#999;padding:12px">加载中...</td>
+                  <td colspan="7" style="text-align:center;color:var(--text-muted);padding:12px">加载中...</td>
                 </tr>
                 <template v-else>
                   <tr class="group-record-row" v-for="r in $root.expandedGroups[g.dir_path].records" :key="r.id">
@@ -155,13 +155,13 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
                       <span :class="['badge', $root.statusClass(r.status)]">{{$root.statusText(r.status)}}</span>
                     </td>
                     <td class="cell-name">
-                      <template v-if="r.matched_title">{{r.matched_title}}<span v-if="r.matched_id" style="color:#999;margin-left:4px;font-size:11px">({{r.matched_id}})</span></template>
-                      <span v-else style="color:#999">-</span>
-                      <span v-if="r.parse_source==='ai'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#e8f4fd;color:#1a73e8;border:1px solid #90cdf4">AI</span>
-                      <span v-else-if="r.parse_source==='guessit'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:#f0fdf4;color:#16a34a;border:1px solid #86efac">guessit</span>
-                      <div v-if="r.status==='pending_manual' && r.error_msg && r.matched_title" style="font-size:11px;color:#e67e22;margin-top:2px">{{r.error_msg}}</div>
+                      <template v-if="r.matched_title">{{r.matched_title}}<span v-if="r.matched_id" style="color:var(--text-muted);margin-left:4px;font-size:11px">({{r.matched_id}})</span></template>
+                      <span v-else style="color:var(--text-muted)">-</span>
+                      <span v-if="r.parse_source==='ai'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:var(--info-soft);color:var(--info-text);border:1px solid var(--info-border)">AI</span>
+                      <span v-else-if="r.parse_source==='guessit'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:var(--success-soft);color:var(--success-text);border:1px solid var(--success-border)">guessit</span>
+                      <div v-if="r.status==='pending_manual' && r.error_msg && r.matched_title" style="font-size:11px;color:var(--warning-text);margin-top:2px">{{r.error_msg}}</div>
                     </td>
-                    <td style="white-space:nowrap;font-size:12px;color:#999">{{$root.formatTime(r.updated_at || r.created_at)}}</td>
+                    <td style="white-space:nowrap;font-size:12px;color:var(--text-muted)">{{$root.formatTime(r.updated_at || r.created_at)}}</td>
                     <td class="actions">
                       <button v-if="r.status!=='processing'" class="btn btn-sm btn-primary" @click="$root.openManualMatch(r)">手动识别</button>
                       <button v-if="r.status==='success'" class="btn btn-sm" @click="$root.refreshMetadata(r.id)">从 TMDB 刷新</button>
@@ -172,7 +172,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
                   <tr v-if="$root.expandedGroups[g.dir_path].total > 50" class="group-pagination-row">
                     <td colspan="7" style="text-align:center;padding:8px">
                       <button class="btn btn-sm" :disabled="$root.expandedGroups[g.dir_path].page<=1" @click.stop="$root.groupPagePrev(g)">&lt; 上一页</button>
-                      <span style="margin:0 12px;font-size:13px;color:#666">{{$root.expandedGroups[g.dir_path].page}} / {{Math.ceil($root.expandedGroups[g.dir_path].total/50)}}</span>
+                      <span style="margin:0 12px;font-size:13px;color:var(--text-muted)">{{$root.expandedGroups[g.dir_path].page}} / {{Math.ceil($root.expandedGroups[g.dir_path].total/50)}}</span>
                       <button class="btn btn-sm" :disabled="$root.expandedGroups[g.dir_path].page*50>=$root.expandedGroups[g.dir_path].total" @click.stop="$root.groupPageNext(g)">下一页 &gt;</button>
                     </td>
                   </tr>

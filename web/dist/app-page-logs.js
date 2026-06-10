@@ -34,7 +34,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
             <option v-for="d in $root.logDates" :key="d" :value="d">{{d}}</option>
           </select>
           <input v-model="$root.logKeyword" placeholder="按关键字搜索日志内容" class="filter-input">
-          <label style="display:flex;align-items:center;gap:6px;padding:0 4px;white-space:nowrap;color:#666">
+          <label style="display:flex;align-items:center;gap:6px;padding:0 4px;white-space:nowrap;color:var(--text-muted)">
             <input type="checkbox" v-model="$root.logShowAnnotations">
             中文注释
           </label>
@@ -53,16 +53,16 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
             <tbody>
               <tr v-for="(log, idx) in $root.logEntries" :key="idx">
                 <td><span :class="['badge', $root.logLevelClass(log.level)]">{{log.level || 'INFO'}}</span></td>
-                <td style="white-space:nowrap;font-size:12px;color:#999">{{log.timestamp || '-'}}</td>
+                <td style="white-space:nowrap;font-size:12px;color:var(--text-muted)">{{log.timestamp || '-'}}</td>
                 <td style="font-family:Consolas,'Courier New',monospace;font-size:12px;line-height:1.5;word-break:break-all">
                   <div>{{log.message}}</div>
-                  <div v-if="$root.logShowAnnotations && log.annotation" style="margin-top:10px;padding:12px 14px;border-radius:10px;background:#fafbff;border:1px solid #e8ecff;font-family:system-ui,-apple-system,sans-serif;color:#333">
+                  <div v-if="$root.logShowAnnotations && log.annotation" style="margin-top:10px;padding:12px 14px;border-radius:10px;background:var(--bg-subtle);border:1px solid var(--border);font-family:system-ui,-apple-system,sans-serif;color:var(--text)">
                     <div style="font-weight:700;margin-bottom:6px">{{log.annotation.title}}</div>
-                    <div v-if="log.annotation.summary" style="font-size:12px;color:#666;margin-bottom:8px">{{log.annotation.summary}}</div>
+                    <div v-if="log.annotation.summary" style="font-size:12px;color:var(--text-muted);margin-bottom:8px">{{log.annotation.summary}}</div>
                     <ul v-if="log.annotation.items && log.annotation.items.length" style="margin:0;padding-left:18px">
                       <li v-for="(item, itemIdx) in log.annotation.items" :key="itemIdx" style="margin:0 0 8px 0">
                         <div style="font-family:Consolas,'Courier New',monospace;font-size:12px;font-weight:600">{{item.label}}{{item.value!=='' ? '=' + item.value : ''}}</div>
-                        <div style="font-size:12px;color:#666;margin-top:2px">中文：{{item.note}}</div>
+                        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">中文：{{item.note}}</div>
                       </li>
                     </ul>
                   </div>
@@ -94,35 +94,35 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
                   <td>
                     <span style="display:inline-block;width:18px;text-align:center;margin-right:4px">{{$root.metadataLogExpandedGroups[g.key]?'▼':'▶'}}</span>
                     <strong>{{g.dir_name}}</strong>
-                    <span v-if="g.dir_path" style="color:#999;margin-left:8px;font-size:12px">{{g.dir_path}}</span>
+                    <span v-if="g.dir_path" style="color:var(--text-muted);margin-left:8px;font-size:12px">{{g.dir_path}}</span>
                   </td>
                   <td><span class="badge badge-gray" v-if="$root.metadataLogSkipRule(g)">{{$root.metadataLogSkipRule(g)}}</span><span v-else>-</span></td>
                   <td><span class="badge badge-gray">{{g.total}}</span></td>
                   <td><span class="badge badge-warning" v-if="g.scan">{{g.scan}}</span><span v-else>-</span></td>
                   <td><span class="badge badge-success" v-if="g.success">{{g.success}}</span><span v-else>-</span></td>
                   <td><span class="badge badge-danger" v-if="g.failed">{{g.failed}}</span><span v-else>-</span></td>
-                  <td style="white-space:nowrap;font-size:12px;color:#999">{{g.records[0] && g.records[0].timestamp || '-'}}</td>
+                  <td style="white-space:nowrap;font-size:12px;color:var(--text-muted)">{{g.records[0] && g.records[0].timestamp || '-'}}</td>
                 </tr>
               </tbody>
               <tbody v-if="$root.metadataLogExpandedGroups[g.key]">
                 <tr class="group-record-row">
-                  <td colspan="8" style="padding:0;background:#f8fafc">
+                  <td colspan="8" style="padding:0;background:var(--bg-subtle)">
                     <div style="display:grid;gap:10px;padding:12px 14px 16px 54px">
-                      <article v-for="log in g.records" :key="g.key + '-' + log._idx" style="border:1px solid #e5e7eb;border-radius:12px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.04);overflow:hidden">
-                        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #eef2f7;background:#fbfdff">
+                      <article v-for="log in g.records" :key="g.key + '-' + log._idx" style="border:1px solid var(--border);border-radius:12px;background:var(--card-bg);box-shadow:var(--shadow-sm);overflow:hidden">
+                        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--bg-subtle)">
                           <span :class="['badge', $root.metadataLogKindClass(log.kind)]">{{$root.metadataLogKindText(log.kind)}}</span>
-                          <span style="font-size:12px;color:#64748b">{{log.timestamp || '-'}}</span>
-                          <span v-if="log.parsed && log.parsed.record_id" style="font-size:12px;color:#94a3b8">record_id={{log.parsed.record_id}}</span>
+                          <span style="font-size:12px;color:var(--text-muted)">{{log.timestamp || '-'}}</span>
+                          <span v-if="log.parsed && log.parsed.record_id" style="font-size:12px;color:var(--text-faint)">record_id={{log.parsed.record_id}}</span>
                         </div>
-                        <div style="padding:12px 14px;font-family:Consolas,'Courier New',monospace;font-size:12px;line-height:1.65;word-break:break-all;color:#334155">
+                        <div style="padding:12px 14px;font-family:Consolas,'Courier New',monospace;font-size:12px;line-height:1.65;word-break:break-all;color:var(--text-secondary)">
                           <div>{{log.message}}</div>
-                          <div v-if="$root.logShowAnnotations && log.annotation" style="margin-top:10px;padding:12px 14px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;font-family:system-ui,-apple-system,sans-serif;color:#333">
+                          <div v-if="$root.logShowAnnotations && log.annotation" style="margin-top:10px;padding:12px 14px;border-radius:10px;background:var(--bg-subtle);border:1px solid var(--border);font-family:system-ui,-apple-system,sans-serif;color:var(--text)">
                             <div style="font-weight:700;margin-bottom:6px">{{log.annotation.title}}</div>
-                            <div v-if="log.annotation.summary" style="font-size:12px;color:#666;margin-bottom:8px">{{log.annotation.summary}}</div>
+                            <div v-if="log.annotation.summary" style="font-size:12px;color:var(--text-muted);margin-bottom:8px">{{log.annotation.summary}}</div>
                             <ul v-if="log.annotation.items && log.annotation.items.length" style="margin:0;padding-left:18px">
                               <li v-for="(item, itemIdx) in log.annotation.items" :key="itemIdx" style="margin:0 0 8px 0">
                                 <div style="font-family:Consolas,'Courier New',monospace;font-size:12px;font-weight:600">{{item.label}}{{item.value!=='' ? '=' + item.value : ''}}</div>
-                                <div style="font-size:12px;color:#666;margin-top:2px">中文：{{item.note}}</div>
+                                <div style="font-size:12px;color:var(--text-muted);margin-top:2px">中文：{{item.note}}</div>
                               </li>
                             </ul>
                           </div>

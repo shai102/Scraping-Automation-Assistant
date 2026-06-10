@@ -21,7 +21,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
           <div class="form-group">
             <label>通知延迟（秒）</label>
             <input v-model.number="$root.cfg.tg_notify_delay" type="number" min="10" max="600" placeholder="60">
-            <small style="color:#888;display:block;margin-top:4px">文件夹内最后一个文件处理完成后等待此秒数再发送通知，以便汇总同批次文件</small>
+            <small style="color:var(--text-muted);display:block;margin-top:4px">文件夹内最后一个文件处理完成后等待此秒数再发送通知，以便汇总同批次文件</small>
           </div>
           <div class="form-actions">
             <button class="btn btn-primary" @click="$root.saveSettings">保存</button>
@@ -39,12 +39,12 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
         <div class="card">
           <div class="form-group">
             <label><input type="checkbox" v-model="$root.cfg.emby_notify_enabled"> 启用入库后自动搜媒体库</label>
-            <small style="color:#888;display:block;margin-top:4px">刮削成功后自动触发 Emby / Jellyfin 扫描，无需手动刷新媒体库。支持 Emby 和 Jellyfin。</small>
+            <small style="color:var(--text-muted);display:block;margin-top:4px">刮削成功后自动触发 Emby / Jellyfin 扫描，无需手动刷新媒体库。支持 Emby 和 Jellyfin。</small>
           </div>
           <div class="form-group">
             <label>Emby / Jellyfin 地址</label>
             <input v-model="$root.cfg.emby_url" type="text" placeholder="例如： http://192.168.1.100:8096">
-            <small style="color:#888;display:block;margin-top:4px">填入服务器地址，含协议与端口，末尾不加斜杠</small>
+            <small style="color:var(--text-muted);display:block;margin-top:4px">填入服务器地址，含协议与端口，末尾不加斜杠</small>
           </div>
           <div class="form-group">
             <label>API Key</label>
@@ -52,12 +52,12 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
               <input v-model="$root.cfg.emby_api_key" :type="$root.showEmbyKey ? 'text' : 'password'" placeholder="在 Emby 管理后台《 API 密鑰 》页面生成">
               <button class="btn btn-sm" @click="$root.showEmbyKey=!$root.showEmbyKey">{{$root.showEmbyKey?'隐藏':'显示'}}</button>
             </div>
-            <small style="color:#888;display:block;margin-top:4px">Emby: 管理后台 → 高级 → API 密鑰；Jellyfin: 管理后台 → API 密鑰</small>
+            <small style="color:var(--text-muted);display:block;margin-top:4px">Emby: 管理后台 → 高级 → API 密鑰；Jellyfin: 管理后台 → API 密鑰</small>
           </div>
           <div class="form-group">
             <label>通知延迟（秒）</label>
             <input v-model.number="$root.cfg.emby_notify_delay" type="number" min="5" max="300" placeholder="30">
-            <small style="color:#888;display:block;margin-top:4px">最后一个文件刮削完成后等待此秒数再触发扫描，同批文件只触发一次</small>
+            <small style="color:var(--text-muted);display:block;margin-top:4px">最后一个文件刮削完成后等待此秒数再触发扫描，同批文件只触发一次</small>
           </div>
           <div class="form-actions">
             <button class="btn btn-primary" @click="$root.saveSettings">保存</button>
@@ -85,11 +85,15 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
             <tr v-for="f in $root.symlinkFolders" :key="f.id">
               <td>{{f.path}}</td>
               <td>{{f.target_root || '-'}}</td>
-              <td><span :class="['badge', f.enabled?'badge-success':'badge-gray']">{{f.enabled?'监控中':'已停用'}}</span></td>
+              <td>
+                <label class="switch" :title="f.enabled?'监控中，点击停用':'已停用，点击启用'">
+                  <input type="checkbox" :checked="f.enabled" @change="$root.toggleFolder(f)">
+                  <span class="switch-track"><span class="switch-dot"></span></span>
+                </label>
+              </td>
               <td class="actions">
-                <button class="btn btn-sm" @click="$root.scanFolder(f.id)" title="立即扫描">🔍</button>
-                <button class="btn btn-sm" @click="$root.toggleFolder(f)" title="启停">{{f.enabled?'⏸':'▶'}}</button>
-                <button class="btn btn-sm btn-danger" @click="$root.deleteFolder(f.id)" title="删除">🗑</button>
+                <button class="btn btn-sm btn-icon" @click="$root.scanFolder(f.id)" title="立即扫描"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.34-4.34"/></svg></button>
+                <button class="btn btn-sm btn-icon btn-danger" @click="$root.deleteFolder(f.id)" title="删除"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg></button>
               </td>
             </tr>
           </tbody>
@@ -100,7 +104,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
           <div class="modal" style="width:520px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
               <h2 style="margin:0">添加软链接导出目录</h2>
-              <button @click="$root.showAddSymlink=false" style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#999;padding:0 6px">&times;</button>
+              <button @click="$root.showAddSymlink=false" style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--text-muted);padding:0 6px">&times;</button>
             </div>
             <div class="form-group">
               <label>监控路径（原始文件所在目录）</label>
@@ -115,7 +119,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
                 <input v-model="$root.newSymlinkFolder.target_root" placeholder="例如 E:\\STRM" readonly>
                 <button class="btn btn-sm" @click="$root.openBrowse('symlink_target')">浏览...</button>
               </div>
-              <small style="color:#1976d2;display:block;margin-top:6px">监控路径中的文件将在目标目录创建同名软链接，保持相同的目录结构，不刮削不改名</small>
+              <small style="color:var(--info-text);display:block;margin-top:6px">监控路径中的文件将在目标目录创建同名软链接，保持相同的目录结构，不刮削不改名</small>
             </div>
             <div class="form-actions">
               <button class="btn" @click="$root.showAddSymlink=false">取消</button>

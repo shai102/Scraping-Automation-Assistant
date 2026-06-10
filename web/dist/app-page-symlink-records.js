@@ -40,10 +40,10 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
                 <td><span :class="['badge', r.status==='success'?'badge-success':'badge-danger']">{{r.status==='success'?'成功':'失败'}}</span></td>
                 <td class="cell-path">
                   <div>{{r.original_path}}</div>
-                  <div v-if="r.error_msg" style="color:#e53935;font-size:12px;margin-top:2px">⚠ {{r.error_msg}}</div>
+                  <div v-if="r.error_msg" style="color:var(--danger-text);font-size:12px;margin-top:2px">⚠ {{r.error_msg}}</div>
                 </td>
                 <td class="cell-path">{{r.link_path || '-'}}</td>
-                <td style="white-space:nowrap;font-size:12px;color:#999">{{$root.formatTime(r.created_at)}}</td>
+                <td style="white-space:nowrap;font-size:12px;color:var(--text-muted)">{{$root.formatTime(r.created_at)}}</td>
                 <td class="actions">
                   <button class="btn btn-sm btn-danger" @click="$root.deleteSymlinkRecord(r.id)">删除</button>
                 </td>
@@ -61,7 +61,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
             <div class="pagination-pages" v-if="$root.symlinkTotal > 0">
               <button class="btn btn-sm" :disabled="$root.symlinkPage<=1" @click="$root.symlinkPage--;$root.symlinkGoPage=$root.symlinkPage;$root.loadSymlinkRecords()">&lt;</button>
               <span class="pagination-current">{{$root.symlinkPage}}</span>
-              <span style="color:#aaa;margin:0 2px">/</span>
+              <span style="color:var(--text-faint);margin:0 2px">/</span>
               <span class="pagination-total-pages">{{Math.ceil($root.symlinkTotal/$root.symlinkPageSize)||1}}</span>
               <button class="btn btn-sm" :disabled="$root.symlinkPage*$root.symlinkPageSize>=$root.symlinkTotal" @click="$root.symlinkPage++;$root.symlinkGoPage=$root.symlinkPage;$root.loadSymlinkRecords()">&gt;</button>
               <span style="margin-left:8px">跳至</span>
@@ -90,7 +90,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
                   <td>
                     <span style="display:inline-block;width:18px;text-align:center;margin-right:4px">{{$root.symlinkExpandedGroups[g.dir_path]?'▼':'▶'}}</span>
                     <strong>{{g.dir_name}}</strong>
-                    <span style="color:#999;margin-left:8px;font-size:12px">{{g.dir_path}}</span>
+                    <span style="color:var(--text-muted);margin-left:8px;font-size:12px">{{g.dir_path}}</span>
                   </td>
                   <td><span class="badge badge-gray">{{g.total}}</span></td>
                   <td><span class="badge badge-success" v-if="g.success">{{g.success}}</span><span v-else>-</span></td>
@@ -102,14 +102,14 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
               </tbody>
               <tbody v-if="$root.symlinkExpandedGroups[g.dir_path]">
                 <tr v-if="$root.symlinkExpandedGroups[g.dir_path].loading">
-                  <td colspan="6" style="text-align:center;color:#999;padding:12px">加载中...</td>
+                  <td colspan="6" style="text-align:center;color:var(--text-muted);padding:12px">加载中...</td>
                 </tr>
                 <template v-else>
                   <tr class="group-record-row" v-for="r in $root.symlinkExpandedGroups[g.dir_path].records" :key="r.id">
                     <td><input type="checkbox" :value="r.id" v-model="$root.symlinkSelectedIds"></td>
                     <td colspan="2" class="cell-path" style="padding-left:40px">
                       <div>{{r.original_path}}</div>
-                      <div v-if="r.error_msg" style="color:#e53935;font-size:12px;margin-top:2px">⚠ {{r.error_msg}}</div>
+                      <div v-if="r.error_msg" style="color:var(--danger-text);font-size:12px;margin-top:2px">⚠ {{r.error_msg}}</div>
                     </td>
                     <td><span :class="['badge', r.status==='success'?'badge-success':'badge-danger']">{{r.status==='success'?'成功':'失败'}}</span></td>
                     <td class="cell-path">{{r.link_path || '-'}}</td>
@@ -120,7 +120,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
                   <tr v-if="$root.symlinkExpandedGroups[g.dir_path].total > 50" class="group-pagination-row">
                     <td colspan="6" style="text-align:center;padding:8px">
                       <button class="btn btn-sm" :disabled="$root.symlinkExpandedGroups[g.dir_path].page<=1" @click.stop="$root.symlinkGroupPagePrev(g)">&lt; 上一页</button>
-                      <span style="margin:0 12px;font-size:13px;color:#666">{{$root.symlinkExpandedGroups[g.dir_path].page}} / {{Math.ceil($root.symlinkExpandedGroups[g.dir_path].total/50)}}</span>
+                      <span style="margin:0 12px;font-size:13px;color:var(--text-muted)">{{$root.symlinkExpandedGroups[g.dir_path].page}} / {{Math.ceil($root.symlinkExpandedGroups[g.dir_path].total/50)}}</span>
                       <button class="btn btn-sm" :disabled="$root.symlinkExpandedGroups[g.dir_path].page*50>=$root.symlinkExpandedGroups[g.dir_path].total" @click.stop="$root.symlinkGroupPageNext(g)">下一页 &gt;</button>
                     </td>
                   </tr>
