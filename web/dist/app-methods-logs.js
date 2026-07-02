@@ -3,14 +3,15 @@ window.scraperAppMethodsLogs = {
     this.logLoading = true;
     try {
       var params = new URLSearchParams({ limit: this.logLimit, kind: this.currentLogKind() });
+      var requestedDate = this.logDate || 'latest';
       if (this.logLevel) params.set('level', this.logLevel);
       if (this.logKeyword) params.set('keyword', this.logKeyword);
-      if (this.logDate) params.set('date', this.logDate);
+      if (requestedDate) params.set('date', requestedDate);
       var data = await this.api('GET', '/api/logs?' + params.toString());
       this.logEntries = data.items || [];
       this.logPath = data.path || '';
       this.logDates = data.available_dates || [];
-      this.logDate = data.selected_date || this.logDate || '';
+      this.logDate = requestedDate === 'latest' ? 'latest' : (data.selected_date || requestedDate);
       this.buildMetadataLogGroups();
     } catch (e) {
       this.notify(e.message, 'error');
@@ -32,7 +33,7 @@ window.scraperAppMethodsLogs = {
     if (!ok) return;
     try {
       var path = '/api/logs?kind=' + encodeURIComponent(this.currentLogKind());
-      if (this.logDate) path += '&date=' + encodeURIComponent(this.logDate);
+      path += '&date=' + encodeURIComponent(this.logDate || 'latest');
       var data = await this.api('DELETE', path);
       this.notify(data.message || '日志已清除', data.ok ? 'success' : 'error');
       if (data.ok) this.loadLogs();
@@ -58,6 +59,7 @@ window.scraperAppMethodsLogs = {
     this.logLevel = '';
     this.logKeyword = '';
     this.logLimit = 200;
+    this.logDate = 'latest';
     this.loadLogs();
   },
   onLogDateChange() {

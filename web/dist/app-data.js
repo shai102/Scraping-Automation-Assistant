@@ -73,7 +73,7 @@ window.scraperAppCreateData = function() {
     logKeyword: '',
     logLimit: 200,
     logPath: '',
-    logDate: '',
+    logDate: 'latest',
     logDates: [],
     logShowAnnotations: true,
     logAutoRefreshEnabled: true,

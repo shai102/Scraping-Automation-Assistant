@@ -31,6 +31,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
             <option :value="500">最近 500 条</option>
           </select>
           <select v-model="$root.logDate" class="filter-select" @change="$root.onLogDateChange">
+            <option value="latest">最新日期</option>
             <option v-for="d in $root.logDates" :key="d" :value="d">{{d}}</option>
           </select>
           <input v-model="$root.logKeyword" placeholder="按关键字搜索日志内容" class="filter-input">

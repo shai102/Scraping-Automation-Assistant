@@ -70,6 +70,9 @@ function restoreUiState(vm) {
   if (vm.recognitionTab !== 'single' && vm.recognitionTab !== 'batch') {
     vm.recognitionTab = 'single';
   }
+  if (!vm.logDate || vm.logDate === '__latest__') {
+    vm.logDate = 'latest';
+  }
 }
 
 function saveUiState(vm) {

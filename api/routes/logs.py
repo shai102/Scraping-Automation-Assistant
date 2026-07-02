@@ -17,7 +17,7 @@ def read_logs(
     level: str = Query("", description="INFO / WARNING / ERROR"),
     keyword: Optional[str] = Query(None),
     kind: str = Query("scrape", description="scrape / app / metadata"),
-    date: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    date: Optional[str] = Query(None, description="YYYY-MM-DD 或 latest"),
 ):
     return read_log_items(
         data_dir=base_data_dir(),
@@ -32,7 +32,7 @@ def read_logs(
 @router.delete("")
 def clear_logs(
     kind: str = Query("scrape", description="scrape / app / metadata"),
-    date: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    date: Optional[str] = Query(None, description="YYYY-MM-DD 或 latest"),
 ):
     data_dir = base_data_dir()
     log_kind = normalize_log_kind(kind)
