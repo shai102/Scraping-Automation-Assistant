@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 from pydantic import ValidationError
 
@@ -25,6 +26,13 @@ class MonitorApiModelTests(unittest.TestCase):
             FolderUpdate(media_type="anime")
         with self.assertRaises(ValidationError):
             FolderUpdate(data_source="unknown")
+
+    def test_frontend_uses_backend_bgm_data_source_value(self):
+        index_path = Path(__file__).resolve().parents[1] / "web" / "dist" / "index.html"
+        html = index_path.read_text(encoding="utf-8")
+
+        self.assertEqual(2, html.count('<option value="bgm">AI + BGM</option>'))
+        self.assertNotIn('value="siliconflow_bgm"', html)
 
 
 if __name__ == "__main__":

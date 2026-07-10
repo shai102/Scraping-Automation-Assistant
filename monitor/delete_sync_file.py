@@ -3,7 +3,13 @@ import os
 
 from db.database import SessionLocal
 from db.scrape_models import ScrapeRecord, SymlinkRecord
-from monitor.delete_sync_common import delete_per_file_sidecars, remove_empty_dirs
+from monitor.delete_sync_common import (
+    cleanup_scraped_output_tree,
+    configured_media_exts,
+    delete_per_file_sidecars,
+    output_cleanup_root,
+    remove_empty_dirs,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -17,7 +23,8 @@ def handle_file_deleted(service, path: str):
             return
 
         organize_mode = getattr(folder, "organize_mode", "move") or "move"
-        stop_root = (folder.target_root or "").strip() or None
+        stop_root = output_cleanup_root(folder)
+        media_exts = configured_media_exts(service.watcher)
 
         if organize_mode == "symlink_export":
             symlink_row = db.query(SymlinkRecord).filter(SymlinkRecord.original_path == path).first()
@@ -52,7 +59,7 @@ def handle_file_deleted(service, path: str):
                 if scraped and scraped.target_path:
                     target_path = scraped.target_path
                     target_folder = db.get(service.watcher._folder_model, scraped.folder_id) if scraped.folder_id else None
-                    target_stop = (target_folder.target_root or "").strip() or None if target_folder else None
+                    target_stop = output_cleanup_root(target_folder)
                     if os.path.exists(target_path) or os.path.lexists(target_path):
                         try:
                             os.remove(target_path)
@@ -62,12 +69,20 @@ def handle_file_deleted(service, path: str):
                     delete_per_file_sidecars(target_path)
                     db.delete(scraped)
                     db.commit()
-                    remove_empty_dirs(os.path.dirname(target_path), stop_at=target_stop)
+                    cleaned_tree = cleanup_scraped_output_tree(
+                        target_path,
+                        target_stop,
+                        media_exts,
+                    )
+                    if not cleaned_tree:
+                        remove_empty_dirs(os.path.dirname(target_path), stop_at=target_stop)
                 elif not scraped:
                     logger.debug(f"链式追查：未找到刮削记录 (软链接已删除或记录已清空): {link_path}")
 
             if link_dir:
-                remove_empty_dirs(link_dir, stop_at=stop_root)
+                link_folder = service.watcher._find_folder(link_path, db) if link_path else None
+                link_stop = output_cleanup_root(link_folder) or stop_root
+                remove_empty_dirs(link_dir, stop_at=link_stop)
             service.watcher._broadcast(
                 {"type": "symlink_deleted", "data": {"original_path": path, "link_path": link_path}}
             )
@@ -93,7 +108,9 @@ def handle_file_deleted(service, path: str):
             delete_per_file_sidecars(target_path)
             db.delete(record)
             db.commit()
-            remove_empty_dirs(os.path.dirname(target_path), stop_at=stop_root)
+            cleaned_tree = cleanup_scraped_output_tree(target_path, stop_root, media_exts)
+            if not cleaned_tree:
+                remove_empty_dirs(os.path.dirname(target_path), stop_at=stop_root)
             service.watcher._broadcast(
                 {"type": "record_deleted", "data": {"original_path": path, "target_path": target_path}}
             )

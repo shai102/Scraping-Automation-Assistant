@@ -4,7 +4,13 @@ import shutil
 
 from db.database import SessionLocal
 from db.scrape_models import MonitorFolder, ScrapeRecord, SymlinkRecord
-from monitor.delete_sync_common import delete_per_file_sidecars, remove_empty_dirs
+from monitor.delete_sync_common import (
+    cleanup_scraped_output_tree,
+    configured_media_exts,
+    delete_per_file_sidecars,
+    output_cleanup_root,
+    remove_empty_dirs,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -18,7 +24,8 @@ def handle_dir_deleted(service, dir_path: str):
             return
 
         organize_mode = getattr(folder, "organize_mode", "move") or "move"
-        stop_root = (folder.target_root or "").strip() or None
+        stop_root = output_cleanup_root(folder)
+        media_exts = configured_media_exts(service.watcher)
         prefix = dir_path + os.sep
 
         if organize_mode == "symlink_export":
@@ -55,7 +62,9 @@ def handle_dir_deleted(service, dir_path: str):
                     except Exception as err:
                         logger.warning(f"删除软链接失败 {link}: {err}")
                 if link:
-                    deleted_dirs.add(os.path.dirname(link))
+                    link_folder = service.watcher._find_folder(link, db)
+                    link_stop = output_cleanup_root(link_folder) or stop_root
+                    deleted_dirs.add((os.path.dirname(link), link_stop))
                     link_paths.append(link)
                 with service.watcher._pending_lock:
                     service.watcher._processed.discard(os.path.normpath(row.original_path))
@@ -71,7 +80,7 @@ def handle_dir_deleted(service, dir_path: str):
                 if scraped and scraped.target_path:
                     target_path = scraped.target_path
                     target_folder = db.get(MonitorFolder, scraped.folder_id) if scraped.folder_id else None
-                    target_stop = (target_folder.target_root or "").strip() or None if target_folder else None
+                    target_stop = output_cleanup_root(target_folder)
                     if os.path.exists(target_path) or os.path.lexists(target_path):
                         try:
                             os.remove(target_path)
@@ -79,6 +88,7 @@ def handle_dir_deleted(service, dir_path: str):
                         except Exception as err:
                             logger.warning(f"链式删除刮削目标失败 {target_path}: {err}")
                     delete_per_file_sidecars(target_path)
+                    cleanup_scraped_output_tree(target_path, target_stop, media_exts)
                     deleted_dirs.add((os.path.dirname(target_path), target_stop))
                     db.delete(scraped)
             db.commit()
@@ -118,6 +128,7 @@ def handle_dir_deleted(service, dir_path: str):
                     except Exception as err:
                         logger.warning(f"删除目标文件失败 {target_path}: {err}")
                     delete_per_file_sidecars(target_path)
+                    cleanup_scraped_output_tree(target_path, stop_root, media_exts)
                     deleted_dirs.add(os.path.dirname(target_path))
                 with service.watcher._pending_lock:
                     service.watcher._processed.discard(os.path.normpath(record.original_path))
