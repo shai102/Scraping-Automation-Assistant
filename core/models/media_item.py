@@ -13,3 +13,4 @@ class MediaItem:
     full_target: str = ""
     parse_source: str = ""
     media_suffix: str = ""
+    recognition_result: object | None = None

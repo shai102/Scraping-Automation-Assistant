@@ -155,6 +155,22 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
           <div class="form-actions">
             <button class="btn btn-primary" @click="$root.saveSettings">保存</button>
           </div>
+          <fieldset class="fieldset" style="margin-top:18px">
+            <legend>运行可靠性</legend>
+            <label class="setting-check"><input type="checkbox" v-model="$root.cfg.file_stability_enabled"><span>处理前检查文件是否写入完成</span></label>
+            <div class="form-row">
+              <div class="form-group"><label>稳定检查次数</label><input type="number" min="1" max="10" v-model.number="$root.cfg.file_stability_checks"></div>
+              <div class="form-group"><label>检查间隔（秒）</label><input type="number" min="0.1" max="30" step="0.1" v-model.number="$root.cfg.file_stability_interval_seconds"></div>
+              <div class="form-group"><label>最大重试次数</label><input type="number" min="1" max="20" v-model.number="$root.cfg.retry_max_attempts"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>任务保留天数</label><input type="number" min="1" v-model.number="$root.cfg.task_retention_days"></div>
+              <div class="form-group"><label>日志保留天数</label><input type="number" min="1" v-model.number="$root.cfg.log_retention_days"></div>
+            </div>
+            <label class="setting-check"><input type="checkbox" v-model="$root.cfg.recognition_confidence_gate_enabled"><span>启用低置信度待手动门控</span></label>
+            <div class="form-group"><label>自动归档最低置信度</label><input type="number" min="0" max="1" step="0.05" v-model.number="$root.cfg.recognition_confidence_threshold"></div>
+            <div class="form-actions"><button class="btn btn-primary" @click="$root.saveSettings">保存运行配置</button></div>
+          </fieldset>
         </div>
 
         <div class="card" style="margin-top:16px">

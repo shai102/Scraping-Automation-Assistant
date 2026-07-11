@@ -30,7 +30,6 @@ from core.records.query_service import (
     search_candidates_payload,
 )
 from db.database import get_db, vacuum_db
-from db.scrape_models import ScrapeRecord
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/records", tags=["records"])

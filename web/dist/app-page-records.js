@@ -71,6 +71,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
                   <span v-else style="color:var(--text-muted)">-</span>
                   <span v-if="r.parse_source==='ai'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:var(--info-soft);color:var(--info-text);border:1px solid var(--info-border)">AI</span>
                   <span v-else-if="r.parse_source==='guessit'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:var(--success-soft);color:var(--success-text);border:1px solid var(--success-border)">guessit</span>
+                  <span v-if="r.confidence!=null" :title="(r.recognition_warnings||[]).join('；')" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;border:1px solid var(--border)">{{Math.round(r.confidence*100)}}%</span>
                   <div v-if="r.status==='pending_manual' && r.error_msg && r.matched_title" style="font-size:11px;color:var(--warning-text);margin-top:2px">{{r.error_msg}}</div>
                 </td>
                 <td class="cell-path">
@@ -159,6 +160,7 @@ window.scraperAppPageComponents = Object.assign(window.scraperAppPageComponents 
                       <span v-else style="color:var(--text-muted)">-</span>
                       <span v-if="r.parse_source==='ai'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:var(--info-soft);color:var(--info-text);border:1px solid var(--info-border)">AI</span>
                       <span v-else-if="r.parse_source==='guessit'" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;background:var(--success-soft);color:var(--success-text);border:1px solid var(--success-border)">guessit</span>
+                      <span v-if="r.confidence!=null" :title="(r.recognition_warnings||[]).join('；')" style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:11px;border:1px solid var(--border)">{{Math.round(r.confidence*100)}}%</span>
                       <div v-if="r.status==='pending_manual' && r.error_msg && r.matched_title" style="font-size:11px;color:var(--warning-text);margin-top:2px">{{r.error_msg}}</div>
                     </td>
                     <td style="white-space:nowrap;font-size:12px;color:var(--text-muted)">{{$root.formatTime(r.updated_at || r.created_at)}}</td>

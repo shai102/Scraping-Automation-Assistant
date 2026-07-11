@@ -82,9 +82,12 @@
       <li :class="{active: page==='app_logs'}" @click="page='app_logs'">
         <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg></span> <span class="nav-label">普通日志</span>
       </li>
+      <li :class="{active: page==='system'}" @click="page='system'">
+        <span class="icon">◉</span> <span class="nav-label">运行状态</span>
+      </li>
     </ul>
     <div class="sidebar-footer">
-      <span class="version">v5.7</span>
+      <span class="version">v5.8</span>
       <button class="theme-toggle" type="button" title="切换深色 / 浅色主题">
         <span class="tt-moon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span>
         <span class="tt-sun"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></span>
@@ -403,6 +406,7 @@
     <classify-page v-if="page==='classify'"></classify-page>
     <tgnotify-page v-if="page==='tgnotify'"></tgnotify-page>
     <embynotify-page v-if="page==='embynotify'"></embynotify-page>
+    <system-page v-if="page==='system'"></system-page>
     <symlink-folders-page v-if="page==='symlink_folders'"></symlink-folders-page>
 
     <symlink-records-page v-if="page==='symlink_records'"></symlink-records-page>
@@ -484,6 +488,7 @@
 <script src="app-page-records.js"></script>
 <script src="app-page-logs.js"></script>
 <script src="app-page-symlink-records.js"></script>
+<script src="app-page-system.js"></script>
 <script src="app-components-recognition.js"></script>
 <script src="app-components-settings-panels.js"></script>
 <script src="app-components-notify.js"></script>

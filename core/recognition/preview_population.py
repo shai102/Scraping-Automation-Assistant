@@ -5,6 +5,7 @@ from core.recognition.preview_helpers import (
     render_media_filename as _render_media_filename,
     retry_rate_limited_siblings as _retry_rate_limited_siblings,
 )
+from core.recognition.result_service import build_recognition_result
 from db.tmdb_api import (
     fetch_hybrid_episode_meta,
     fetch_tmdb_credits,
@@ -151,6 +152,13 @@ def populate_preview_item(gui, item, state, match_state, index):
         "media_suffix": media_suffix,
         "pending_reason": match_state["db_message"],
     }
+    recognition_result = build_recognition_result(state, match_state)
+    item.recognition_result = recognition_result
+    item.metadata["recognition_result"] = recognition_result.to_dict()
+    item.metadata["confidence"] = recognition_result.confidence
+    item.metadata["confidence_level"] = recognition_result.confidence_level
+    item.metadata["recognition_trace"] = recognition_result.trace
+    item.metadata["recognition_warnings"] = recognition_result.warnings
     item.parse_source = state["parse_source"]
     item.media_suffix = media_suffix
     item.new_name_only = new_fn

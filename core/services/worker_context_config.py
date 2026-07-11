@@ -1,20 +1,15 @@
-import json
 import logging
-import os
-
-from utils.app_runtime import CONFIG_FILE
 from utils.cache import set_cache_expiry_days
 from utils.value_utils import safe_int
 
 
 def load_config_from_disk() -> dict:
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as handle:
-                return json.load(handle)
-        except Exception as err:
-            logging.error("WorkerContext: 加载配置失败: %s", err)
-    return {}
+    try:
+        from core.settings.config_service import load_settings
+        return load_settings()
+    except Exception as err:
+        logging.error("WorkerContext: 加载配置失败: %s", err)
+        return {}
 
 
 def clamp_workers(value, default):

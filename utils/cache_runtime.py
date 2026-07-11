@@ -7,6 +7,7 @@ from contextvars import ContextVar
 CACHE_EXPIRY_DAYS = 7
 CACHE_FLUSH_INTERVAL_SECONDS = 8
 CACHE_FLUSH_MAX_WRITES = 20
+CACHE_ALGORITHM_VERSION = "recognition-v2"
 
 _cache_expiry_days = CACHE_EXPIRY_DAYS
 _cache_file_lock = threading.Lock()

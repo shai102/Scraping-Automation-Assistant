@@ -3,10 +3,8 @@
 import json
 import logging
 import os
-import shutil
 import time
 import uuid
-from typing import Optional
 
 from fastapi import HTTPException
 
@@ -16,11 +14,12 @@ from core.metadata.local_hub_service import (
     update_record_from_metadata_hub,
 )
 from core.services.worker_context import WorkerContext
+from core.services.archive_service import ArchiveConflictError, archive_service
+from core.services.archive_journal import ArchiveJournal
 from core.settings.config_service import get_metadata_hub_root
 from core.workers.task_runner import process_task as process_task_impl
 from db.scrape_models import MonitorFolder, ScrapeRecord
 from db.tmdb_api import fetch_bgm_by_id, fetch_tmdb_by_id
-from monitor.delete_sync import remove_empty_dirs
 from monitor.metadata_refresh import (
     record_to_dict as record_to_dict_impl,
     refresh_record_metadata as refresh_record_metadata_impl,
@@ -29,11 +28,7 @@ from monitor.scan_service import enqueue_path
 from monitor.task_queue import enqueue_task
 from utils.cache import invalidate_cache_prefix
 
-from .delete_service import (
-    DIR_SIDECAR_EXACT,
-    DIR_SIDECAR_PATTERNS,
-    MEDIA_EXTS,
-)
+from .restore_service import restore_record_file
 
 logger = logging.getLogger(__name__)
 
@@ -78,104 +73,6 @@ def _enqueue_retry_path(path: str, db, *, folder_id: int | None = None, source: 
     return task.id
 
 
-def _delete_file_sidecars(file_path: str):
-    stem = os.path.splitext(file_path)[0]
-    for suffix in (".nfo", "-thumb.jpg"):
-        path = stem + suffix
-        if os.path.isfile(path):
-            try:
-                os.remove(path)
-                logger.debug(f"Deleted sidecar: {path}")
-            except Exception as err:
-                logger.warning(f"Failed to delete sidecar {path}: {err}")
-
-
-def _cleanup_dir_sidecars(target_file: str, watch_root: Optional[str] = None):
-    def _has_media(directory: str) -> bool:
-        for dirpath, _, filenames in os.walk(directory):
-            for filename in filenames:
-                if filename.lower().endswith(MEDIA_EXTS):
-                    return True
-        return False
-
-    def _safe_remove(file_path: str):
-        try:
-            os.remove(file_path)
-            logger.debug(f"Deleted dir sidecar: {file_path}")
-        except Exception as err:
-            logger.warning(f"Failed to delete dir sidecar {file_path}: {err}")
-
-    def _delete_dir_level_sidecars(directory: str):
-        try:
-            for filename in os.listdir(directory):
-                file_path = os.path.join(directory, filename)
-                if not os.path.isfile(file_path):
-                    continue
-                filename_lower = filename.lower()
-                if filename_lower in DIR_SIDECAR_EXACT:
-                    _safe_remove(file_path)
-                    continue
-                for prefix, suffixes in DIR_SIDECAR_PATTERNS:
-                    if filename_lower.startswith(prefix) and filename_lower.endswith(suffixes):
-                        _safe_remove(file_path)
-                        break
-        except Exception as err:
-            logger.warning(f"Failed to list dir for sidecar cleanup {directory}: {err}")
-
-    target_dir = os.path.normpath(os.path.dirname(target_file))
-    target_parent = os.path.normpath(os.path.dirname(target_dir))
-
-    if not _has_media(target_dir):
-        _delete_dir_level_sidecars(target_dir)
-
-    if target_parent != target_dir and (
-        watch_root is None or os.path.normcase(target_parent) != os.path.normcase(watch_root)
-    ):
-        if not _has_media(target_parent):
-            _delete_dir_level_sidecars(target_parent)
-
-
-def restore_record_file(row: ScrapeRecord, folder, db):
-    target = row.target_path
-    if not target or not os.path.exists(target):
-        if not os.path.isfile(row.original_path):
-            raise HTTPException(400, detail="源文件不存在，无法恢复")
-        return
-
-    organize_mode = getattr(folder, "organize_mode", "move") or "move" if folder else "move"
-    _delete_file_sidecars(target)
-
-    if os.path.normcase(os.path.normpath(target)) != os.path.normcase(os.path.normpath(row.original_path)):
-        watch_root = os.path.normpath(folder.path) if folder else None
-        if organize_mode in ("move", "rename"):
-            original_dir = os.path.dirname(row.original_path)
-            os.makedirs(original_dir, exist_ok=True)
-            shutil.move(target, row.original_path)
-            logger.info(f"Restored: {target} -> {row.original_path}")
-            _cleanup_dir_sidecars(target, watch_root=watch_root)
-            remove_empty_dirs(os.path.dirname(target), stop_at=watch_root)
-        else:
-            try:
-                os.remove(target)
-                logger.info(f"Removed target copy/link: {target}")
-                _cleanup_dir_sidecars(target, watch_root=watch_root)
-                remove_empty_dirs(os.path.dirname(target), stop_at=watch_root)
-            except Exception as err:
-                logger.warning(f"Failed to remove target {target}: {err}")
-
-    if not os.path.isfile(row.original_path):
-        raise HTTPException(400, detail="源文件恢复失败，文件不存在")
-
-    row.target_path = None
-    row.status = "processing"
-    row.error_msg = None
-    row.matched_title = None
-    row.matched_id = None
-    row.matched_provider = None
-    row.metadata_json = None
-    db.flush()
-
-
 def archive_file(item, row, folder, ctx, tid, provider, db):
     organize_mode = getattr(folder, "organize_mode", "move") or "move" if folder else "move"
 
@@ -183,56 +80,34 @@ def archive_file(item, row, folder, ctx, tid, provider, db):
         ctx.target_root.set(folder.path)
 
     target = item.full_target or os.path.join(item.dir, item.new_name_only or item.old_name)
-    target_dir = os.path.dirname(target)
-    if target_dir:
-        os.makedirs(target_dir, exist_ok=True)
-
-    if os.path.normcase(item.path) != os.path.normcase(target):
-        same_file = False
-        if os.path.exists(target) and os.path.isfile(item.path):
-            try:
-                same_file = os.path.samefile(item.path, target)
-            except (OSError, ValueError):
-                pass
-
-        if same_file:
-            item.path = target
-        elif os.path.exists(target):
-            if not os.path.isfile(item.path):
-                ctx._write_sidecar_files(item, target)
-                row.status = "success"
-                row.matched_title = (item.metadata or {}).get("title")
-                row.matched_id = str(tid)
-                row.matched_provider = provider
-                row.target_path = target
-                row.metadata_json = json.dumps(item.metadata or {}, ensure_ascii=False)
-                row.error_msg = None
-                db.flush()
-                return target
-            row.status = "failed"
-            row.target_path = target
-            row.error_msg = f"目标文件已存在: {target}"
-            db.commit()
-            raise HTTPException(400, detail=f"目标文件已存在: {target}")
-        else:
-            src_dir = os.path.dirname(item.path)
-            if organize_mode == "copy":
-                shutil.copy2(item.path, target)
-            elif organize_mode == "symlink":
-                os.symlink(os.path.abspath(item.path), target)
-            elif organize_mode == "hardlink":
-                os.link(item.path, target)
-            else:
-                shutil.move(item.path, target)
-
-            if organize_mode not in ("copy", "symlink", "hardlink"):
-                item.path = target
-                watch_root = os.path.normpath(folder.path) if folder else None
-                remove_empty_dirs(src_dir, stop_at=watch_root)
-            else:
-                item.path = target
-
-    ctx._write_sidecar_files(item, target)
+    journal = ArchiveJournal.begin(
+        db,
+        record_id=getattr(row, "id", None),
+        source=item.path,
+        target=target,
+        organize_mode=organize_mode,
+    )
+    try:
+        result = archive_service.archive(
+            item,
+            target=target,
+            organize_mode=organize_mode,
+            write_sidecars=ctx._write_sidecar_files,
+            watch_root=os.path.normpath(folder.path) if folder else None,
+            allow_existing_target=not os.path.isfile(item.path),
+            on_phase=journal.mark,
+        )
+        target = result.target
+    except ArchiveConflictError as err:
+        journal.fail(err)
+        row.status = "failed"
+        row.target_path = target
+        row.error_msg = str(err)
+        db.commit()
+        raise HTTPException(400, detail=str(err)) from err
+    except Exception as err:
+        journal.fail(err)
+        raise
 
     row.status = "success"
     row.matched_title = (item.metadata or {}).get("title")
@@ -242,6 +117,7 @@ def archive_file(item, row, folder, ctx, tid, provider, db):
     row.metadata_json = json.dumps(item.metadata or {}, ensure_ascii=False)
     row.error_msg = None
     db.flush()
+    journal.complete()
     return target
 
 

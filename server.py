@@ -11,10 +11,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from api.routes import logs, monitor, recognition_test, records, settings, symlinks
+from api.routes import logs, monitor, recognition_test, records, settings, symlinks, system
 from api.routes.ws import router as ws_router, manager as ws_manager
 from core.security import OptionalAuthMiddleware
 from db.database import init_db
+from db.database import SessionLocal
+from core.services.runtime_status import build_runtime_status
 from monitor.watcher import FolderWatcher
 
 logger = logging.getLogger(__name__)
@@ -62,11 +64,19 @@ app.include_router(settings.router)
 app.include_router(symlinks.router)
 app.include_router(logs.router)
 app.include_router(ws_router)
+app.include_router(system.router)
 
 
 @app.get("/healthz", include_in_schema=False)
 def healthz():
-    return {"ok": True}
+    db = SessionLocal()
+    try:
+        status = build_runtime_status(db, _watcher, len(ws_manager.active))
+    except Exception as err:
+        status = {"ok": False, "database": "error", "database_error": str(err)[:160]}
+    finally:
+        db.close()
+    return status
 
 # Serve built frontend
 # In frozen (PyInstaller) mode, static files are unpacked into sys._MEIPASS

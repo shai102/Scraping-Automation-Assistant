@@ -30,6 +30,12 @@ with database.engine.connect() as conn:
                     "PRAGMA index_list('metadata_refresh_state')"
                 ).fetchall()
             ],
+            "archive_operation_indexes": [
+                row[1]
+                for row in conn.exec_driver_sql(
+                    "PRAGMA index_list('archive_operations')"
+                ).fetchall()
+            ],
         }
 print(json.dumps(payload))
 """
@@ -54,6 +60,10 @@ print(json.dumps(payload))
             self.assertIn(
                 "idx_metadata_refresh_state_next_attempt",
                 payload["metadata_refresh_indexes"],
+            )
+            self.assertIn(
+                "idx_archive_operations_status_updated",
+                payload["archive_operation_indexes"],
             )
 
 

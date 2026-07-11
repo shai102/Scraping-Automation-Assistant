@@ -13,6 +13,7 @@ window.scraperAppPages = [
   'tgnotify',
   'embynotify',
   'app_logs',
+  'system',
 ];
 window.scraperAppPageKey = 'scraping_current_page';
 window.scraperAppResolveInitialPage = function() {
@@ -36,7 +37,7 @@ window.scraperAppResolveInitialPage = function() {
 };
 
 window.scraperAppCreateData = function() {
-  return {
+    return {
     page: window.scraperAppResolveInitialPage(),
     folders: [],
     showAddFolder: false,
@@ -144,6 +145,8 @@ window.scraperAppCreateData = function() {
       checkboxLabel: '',
       checkboxValue: false,
       resolver: null,
-    },
+      },
+    systemStatus: null,
+    systemStatusLoading: false,
   };
 };

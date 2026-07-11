@@ -29,13 +29,23 @@ class DummyRoot:
 
 
 class DummyTree:
-    """Absorbs gui.tree.set() and gui.tree.item() calls."""
+    """Translates legacy tree updates into headless status events."""
 
-    def set(self, *args, **kwargs):
-        pass
+    def __init__(self, ctx=None):
+        self._ctx = ctx
 
-    def item(self, *args, **kwargs):
-        pass
+    def set(self, item_id, column=None, value=None, *args, **kwargs):
+        if self._ctx and column in ("st", "status"):
+            self._ctx.emit_status(item_id, str(value or ""), {"source": "legacy_tree_set"})
+
+    def item(self, item_id, *args, **kwargs):
+        values = kwargs.get("values")
+        if self._ctx and isinstance(values, (tuple, list)) and values:
+            self._ctx.emit_status(
+                item_id,
+                str(values[-1] or ""),
+                {"source": "legacy_tree_item", "values": list(values)},
+            )
 
 
 class DummyProgressbar:

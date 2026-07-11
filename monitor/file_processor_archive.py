@@ -2,11 +2,14 @@ import logging
 import os
 import shutil
 import time
+import datetime
 from typing import Optional
 
 from db.scrape_models import SymlinkRecord
-from monitor.delete_sync import remove_empty_dirs
-from monitor.record_payloads import attach_record_metadata_json, scrape_record_to_dict, symlink_record_to_dict
+from core.services.archive_service import ArchiveConflictError, archive_service
+from core.services.archive_journal import ArchiveJournal
+from monitor.record_payloads import attach_record_metadata_json, symlink_record_to_dict
+from monitor.record_updates import persist_record_update
 
 
 logger = logging.getLogger(__name__)
@@ -105,68 +108,39 @@ def finalize_processed_item(watcher, folder, db, record, item, path: str):
     organize_mode = getattr(folder, "organize_mode", "move") or "move" if folder else "move"
 
     target = item.full_target or os.path.join(item.dir, item.new_name_only)
-    target_dir = os.path.dirname(target)
-    if target_dir:
-        os.makedirs(target_dir, exist_ok=True)
-
-    if os.path.normcase(item.path) != os.path.normcase(target):
-        target_exists = os.path.exists(target)
-        target_lexists = os.path.lexists(target)
-        is_repair_target = (
-            getattr(record, "_repairing", False)
-            and os.path.normcase(getattr(record, "_previous_target", "")) == os.path.normcase(target)
+    is_repair_target = (
+        getattr(record, "_repairing", False)
+        and os.path.normcase(getattr(record, "_previous_target", "")) == os.path.normcase(target)
+    )
+    journal = ArchiveJournal.begin(
+        db,
+        record_id=getattr(record, "id", None),
+        source=item.path,
+        target=target,
+        organize_mode=organize_mode,
+    )
+    try:
+        result = archive_service.archive(
+            item,
+            target=target,
+            organize_mode=organize_mode,
+            write_sidecars=watcher._worker_ctx._write_sidecar_files,
+            watch_root=os.path.normpath(folder.path) if folder else None,
+            allow_existing_target=is_repair_target,
+            replace_broken_target=is_repair_target,
+            on_phase=journal.mark,
         )
-        is_same_file = False
-        if target_exists and os.path.isfile(item.path):
-            try:
-                is_same_file = os.path.samefile(item.path, target)
-            except (OSError, ValueError):
-                pass
-        if is_same_file:
-            item.path = target
-        elif target_lexists and is_repair_target and target_exists:
-            item.path = target
-        elif target_lexists and is_repair_target and not target_exists:
-            try:
-                os.remove(target)
-            except Exception as err:
-                record.status = "failed"
-                record.target_path = target
-                record.error_msg = f"清理失效目标失败: {err}"
-                db.commit()
-                watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
-                return False
-        if target_exists and not is_repair_target:
-            record.status = "failed"
-            record.target_path = target
-            record.error_msg = f"目标文件已存在: {target}"
-            db.commit()
-            watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
-            return False
-        src_dir = os.path.dirname(item.path)
-
-        if os.path.normcase(item.path) == os.path.normcase(target):
-            pass
-        elif organize_mode == "copy":
-            shutil.copy2(item.path, target)
-        elif organize_mode == "symlink":
-            os.symlink(os.path.abspath(item.path), target)
-        elif organize_mode == "hardlink":
-            os.link(item.path, target)
-        else:
-            shutil.move(item.path, target)
-
-        if (
-            os.path.normcase(item.path) != os.path.normcase(target)
-            and organize_mode not in ("copy", "symlink", "hardlink")
-        ):
-            item.path = target
-            watch_root = os.path.normpath(folder.path) if folder else None
-            remove_empty_dirs(src_dir, stop_at=watch_root)
-        else:
-            item.path = target
-
-    watcher._worker_ctx._write_sidecar_files(item, target)
+        target = result.target
+    except ArchiveConflictError as err:
+        journal.fail(err)
+        record.status = "failed"
+        record.target_path = target
+        record.error_msg = str(err)
+        persist_record_update(db, record, watcher._broadcast)
+        return False
+    except Exception as err:
+        journal.fail(err)
+        raise
 
     record.status = "success"
     record.matched_title = (item.metadata or {}).get("title")
@@ -174,8 +148,9 @@ def finalize_processed_item(watcher, folder, db, record, item, path: str):
     record.matched_provider = (item.metadata or {}).get("provider")
     record.target_path = target
     attach_record_metadata_json(record, item.metadata or {})
-    db.commit()
-    watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
+    persist_record_update(db, record, watcher._broadcast)
+    journal.complete()
+    watcher._last_success_at = datetime.datetime.now()
     logger.info("Archived: %s -> %s", os.path.basename(path), target)
 
     try:

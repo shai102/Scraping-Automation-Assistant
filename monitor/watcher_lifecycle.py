@@ -1,6 +1,7 @@
 import logging
 import os
 import threading
+import datetime
 from concurrent.futures import ThreadPoolExecutor
 
 from watchdog.events import FileSystemEventHandler
@@ -10,6 +11,8 @@ from core.services.worker_context import WorkerContext
 from monitor.record_state import reset_stale_processing_records
 from monitor.scan_service import restore_queued_tasks
 from monitor.task_queue import recover_stale_running_tasks
+from monitor.runtime_maintenance import maintenance_loop
+from core.services.archive_journal import recover_incomplete_archive_operations
 
 
 logger = logging.getLogger(__name__)
@@ -106,11 +109,13 @@ def start_watcher(watcher):
     if watcher._running:
         return
     watcher._running = True
+    watcher._started_at = datetime.datetime.now()
     watcher._worker_ctx = WorkerContext()
     db = watcher._session_factory()
     try:
         reset_stale_processing_records(db)
         recover_stale_running_tasks(db, stale_minutes=0)
+        recover_incomplete_archive_operations(db)
     finally:
         db.close()
     refresh_pool_workers(watcher)
@@ -123,6 +128,8 @@ def start_watcher(watcher):
     watcher._poll_thread.start()
     watcher._metadata_refresh_thread = threading.Thread(target=watcher._metadata_refresh_loop, daemon=True)
     watcher._metadata_refresh_thread.start()
+    watcher._maintenance_thread = threading.Thread(target=maintenance_loop, args=(watcher,), daemon=True)
+    watcher._maintenance_thread.start()
     sync_watches(watcher)
     restored = restore_queued_tasks(watcher)
     if restored:

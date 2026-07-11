@@ -1,6 +1,8 @@
 import logging
 import os
 
+from core.models.recognition_result import RecognitionResult
+
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +168,33 @@ def try_nfo_fast_path(item, ctx) -> bool:
         "original_title": "",
         "media_suffix": media_suffix,
     }
+    recognition_result = RecognitionResult(
+        title=series_title,
+        year=year,
+        media_type="episode",
+        season=season_number,
+        episode=episode_number,
+        episode_end=episode_end,
+        provider="tmdb" if use_tmdb else "bgm",
+        provider_id=str(tid),
+        parse_source="nfo_fast_path",
+        query_title=series_title,
+        match_reason="本地 tvshow.nfo ID 锁定",
+        confidence=0.98,
+        confidence_level="high",
+        trace=[
+            {"stage": "nfo_fast_path", "nfo": nfo_path, "matched_id": str(tid)},
+            {"stage": "decision", "confidence": 0.98, "confidence_level": "high"},
+        ],
+    )
+    item.recognition_result = recognition_result
+    item.metadata["parse_source"] = recognition_result.parse_source
+    item.metadata["query_title"] = recognition_result.query_title
+    item.metadata["confidence"] = recognition_result.confidence
+    item.metadata["confidence_level"] = recognition_result.confidence_level
+    item.metadata["recognition_result"] = recognition_result.to_dict()
+    item.metadata["recognition_trace"] = recognition_result.trace
+    item.metadata["recognition_warnings"] = recognition_result.warnings
     item.media_suffix = media_suffix
     item.new_name_only = new_fn
 

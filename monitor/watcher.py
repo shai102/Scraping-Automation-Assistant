@@ -92,6 +92,11 @@ class FolderWatcher:
         self._debounce_thread: Optional[threading.Thread] = None
         self._poll_thread: Optional[threading.Thread] = None
         self._metadata_refresh_thread: Optional[threading.Thread] = None
+        self._maintenance_thread: Optional[threading.Thread] = None
+        self._started_at = None
+        self._last_poll_at = None
+        self._last_success_at = None
+        self._last_maintenance_at = None
         self._symlink_export_paths: Set[str] = set()
         self._poll_max_enqueue_per_pass = _POLL_MAX_ENQUEUE_PER_PASS
         self._poll_use_scan_state = True
@@ -174,9 +179,9 @@ class FolderWatcher:
     def _is_symlink_export_path(self, path: str) -> bool:
         return is_symlink_export_path(self, path)
 
-    def enqueue(self, path: str):
+    def enqueue(self, path: str, **kwargs):
         """Called by the watchdog handler for each new file event."""
-        enqueue_path(self, path)
+        return enqueue_path(self, path, **kwargs)
 
     def _debounce_loop(self):
         run_debounce_loop(self, _DEBOUNCE_SECONDS)

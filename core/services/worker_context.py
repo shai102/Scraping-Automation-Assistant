@@ -7,7 +7,7 @@ no-ops or optional callback hooks that the web layer can subscribe to.
 """
 
 import threading
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 from core.services.worker_context_config import (
     apply_runtime_config,
@@ -17,9 +17,7 @@ from core.services.worker_context_config import (
     get_ai_temperature,
     get_ai_top_p,
     get_execution_workers,
-    get_media_exts,
     get_preview_workers,
-    get_sub_audio_exts,
     get_sync_workers,
     get_symlink_export_workers,
     load_config_from_disk,
@@ -125,11 +123,20 @@ class WorkerContext(WorkerContextMediaMixin, WorkerContextRuntimeMixin):
 
         # --- Dummy UI stubs (task_runner calls gui.root.after, gui.tree, etc.) ---
         self.root = DummyRoot(self)
-        self.tree = DummyTree()
+        self.tree = DummyTree(self)
         self.pbar = DummyProgressbar()
         self.status = DummyLabel()
         self.btn_pre = DummyButton()
         apply_runtime_config(self, config)
+
+    def emit_status(self, record_id, status_text: str, extra: Optional[dict] = None):
+        """Headless status event used while legacy worker UI calls are phased out."""
+        if not callable(self._on_status):
+            return
+        try:
+            self._on_status(record_id, status_text, dict(extra or {}))
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Config helpers used by the worker modules

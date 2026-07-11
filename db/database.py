@@ -277,12 +277,48 @@ def _migration_metadata_refresh_state(conn):
         _create_index_if_missing(conn, table_name, index_name, ddl)
 
 
+def _migration_archive_operations(conn):
+    conn.execute(text(
+        """
+        CREATE TABLE IF NOT EXISTS archive_operations (
+            id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            record_id INTEGER,
+            source_path VARCHAR(2048) NOT NULL,
+            target_path VARCHAR(2048) NOT NULL,
+            organize_mode VARCHAR(32) NOT NULL,
+            phase VARCHAR(32) NOT NULL DEFAULT 'prepared',
+            status VARCHAR(32) NOT NULL DEFAULT 'running',
+            error_msg TEXT,
+            created_at DATETIME,
+            updated_at DATETIME,
+            completed_at DATETIME
+        )
+        """
+    ))
+    for table_name, index_name, ddl in (
+        (
+            "archive_operations",
+            "idx_archive_operations_status_updated",
+            "CREATE INDEX IF NOT EXISTS idx_archive_operations_status_updated "
+            "ON archive_operations(status, updated_at)",
+        ),
+        (
+            "archive_operations",
+            "idx_archive_operations_record_id",
+            "CREATE INDEX IF NOT EXISTS idx_archive_operations_record_id "
+            "ON archive_operations(record_id)",
+        ),
+    ):
+        _create_index_if_missing(conn, table_name, index_name, ddl)
+
+
 _MIGRATIONS: tuple[tuple[str, Callable], ...] = (
     ("0001_monitor_folder_columns", _migration_monitor_folder_columns),
     ("0002_runtime_indexes", _migration_runtime_indexes),
     ("0003_task_queue", _migration_task_queue),
     ("0004_folder_scan_state", _migration_folder_scan_state),
     ("0005_metadata_refresh_state", _migration_metadata_refresh_state),
+    ("0006_archive_operations", _migration_archive_operations),
 )
 
 
@@ -305,6 +341,7 @@ def _run_migrations():
 
 def init_db():
     from db.scrape_models import (  # noqa: F401
+        ArchiveOperation,
         FolderScanState,
         MonitorFolder,
         MetadataRefreshState,

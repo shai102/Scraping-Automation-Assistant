@@ -1,4 +1,10 @@
 window.scraperAppMethodsCore = {
+  async loadSystemStatus() {
+    this.systemStatusLoading = true;
+    try { this.systemStatus = await this.api('GET', '/api/system/status'); }
+    catch (e) { this.notify(e.message, 'error'); }
+    finally { this.systemStatusLoading = false; }
+  },
   isLogPage(page) {
     return page === 'logs' || page === 'app_logs' || page === 'metadata_logs';
   },

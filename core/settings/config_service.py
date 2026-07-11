@@ -1,16 +1,49 @@
 import json
 import os
+import shutil
+import tempfile
+from datetime import datetime
 
 from utils.app_runtime import CONFIG_FILE
 from utils.cache import set_cache_expiry_days
 from utils.proxy import DEFAULT_NO_PROXY, apply_proxy_environment, normalize_proxy_url
+
+CONFIG_VERSION = 2
+RUNTIME_DEFAULTS = {
+    "config_version": CONFIG_VERSION,
+    "file_stability_enabled": True,
+    "file_stability_checks": 2,
+    "file_stability_interval_seconds": 1.0,
+    "retry_base_seconds": 30,
+    "retry_max_seconds": 1800,
+    "retry_max_attempts": 5,
+    "task_retention_days": 30,
+    "log_retention_days": 30,
+    "recognition_confidence_gate_enabled": False,
+    "recognition_confidence_threshold": 0.60,
+}
+
+
+def migrate_settings(cfg: dict) -> tuple[dict, bool]:
+    migrated = dict(cfg or {})
+    try:
+        old_version = int(migrated.get("config_version") or 0)
+    except (TypeError, ValueError):
+        old_version = 0
+    for key, value in RUNTIME_DEFAULTS.items():
+        migrated.setdefault(key, value)
+    migrated["config_version"] = CONFIG_VERSION
+    return migrated, old_version < CONFIG_VERSION
 
 
 def load_settings() -> dict:
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as handle:
-                return json.load(handle)
+                cfg, changed = migrate_settings(json.load(handle))
+                if changed:
+                    save_settings(cfg, backup_existing=True)
+                return cfg
         except Exception:
             pass
     return {}
@@ -25,9 +58,21 @@ def get_metadata_hub_root(cfg: dict | None = None) -> str:
     ).strip()
 
 
-def save_settings(data: dict):
-    with open(CONFIG_FILE, "w", encoding="utf-8") as handle:
-        json.dump(data, handle, indent=4, ensure_ascii=False)
+def save_settings(data: dict, *, backup_existing: bool = False):
+    os.makedirs(os.path.dirname(CONFIG_FILE) or ".", exist_ok=True)
+    if backup_existing and os.path.isfile(CONFIG_FILE):
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        shutil.copy2(CONFIG_FILE, f"{CONFIG_FILE}.bak-{stamp}")
+    fd, temp_path = tempfile.mkstemp(prefix="renamer_config.", suffix=".tmp", dir=os.path.dirname(CONFIG_FILE) or ".")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=4, ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, CONFIG_FILE)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 def get_settings_for_display() -> dict:
@@ -42,6 +87,8 @@ def get_settings_for_display() -> dict:
 
 def get_settings_raw_defaults() -> dict:
     cfg = load_settings()
+    for key, value in RUNTIME_DEFAULTS.items():
+        cfg.setdefault(key, value)
     cfg.setdefault("ai_temperature", 0.20)
     cfg.setdefault("ai_top_p", 0.85)
     cfg.setdefault("proxy_enabled", False)

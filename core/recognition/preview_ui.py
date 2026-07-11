@@ -2,7 +2,6 @@
 
 import logging
 import os
-import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from db.tmdb_api import (
@@ -13,7 +12,7 @@ from db.tmdb_api import (
     fetch_tmdb_season_poster,
 )
 from utils.error_utils import ERROR_CODE_UNKNOWN, format_error_message
-from utils.value_utils import extract_year_from_release, safe_filename, safe_int, safe_str
+from utils.value_utils import safe_filename, safe_int, safe_str
 
 from .preview_helpers import notify_error, prefer_existing_library_target, render_media_filename
 
@@ -31,8 +30,7 @@ def async_batch_runner(gui, indices, title, t_id, msg, meta):
 
 def bg_update_single_ui(gui, idx, title, t_id, msg, meta):
     from guessit import guessit
-    from utils.title_parsing import derive_title_from_filename, extract_episode_number
-    from utils.library_paths import extract_db_id_from_path
+    from utils.title_parsing import extract_episode_number
 
     item = None
     try:

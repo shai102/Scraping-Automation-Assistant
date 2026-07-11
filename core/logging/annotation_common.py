@@ -1,4 +1,3 @@
-import re
 
 
 FIELD_LABELS = {

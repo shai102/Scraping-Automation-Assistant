@@ -77,6 +77,16 @@ class SettingsModel(BaseModel):
     metadata_refresh_ignore_episode_title_rules: Optional[str] = None
     metadata_refresh_skip_rules: Optional[str] = None
     metadata_hub_root: Optional[str] = None
+    file_stability_enabled: Optional[bool] = None
+    file_stability_checks: Optional[int] = None
+    file_stability_interval_seconds: Optional[float] = None
+    retry_base_seconds: Optional[int] = None
+    retry_max_seconds: Optional[int] = None
+    retry_max_attempts: Optional[int] = None
+    task_retention_days: Optional[int] = None
+    log_retention_days: Optional[int] = None
+    recognition_confidence_gate_enabled: Optional[bool] = None
+    recognition_confidence_threshold: Optional[float] = None
 
 
 class FilenamePreviewModel(BaseModel):

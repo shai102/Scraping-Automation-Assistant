@@ -1,0 +1,21 @@
+target-version = "py310"
+
+[lint]
+select = ["F"]
+
+[lint.per-file-ignores]
+"ai/ollama_ai.py" = ["F401"]
+"core/recognition/preview_helpers.py" = ["F401"]
+"core/recognition/preview_pipeline.py" = ["F401"]
+"core/services/naming_service.py" = ["F401"]
+"core/services/matcher_service.py" = ["F401"]
+"core/workers/task_runner.py" = ["F401"]
+"db/tmdb_api.py" = ["F401"]
+"db/tmdb_search.py" = ["F401"]
+"monitor/delete_sync.py" = ["F401"]
+"monitor/metadata_refresh.py" = ["F401"]
+"utils/cache.py" = ["F401"]
+"utils/helpers.py" = ["F401"]
+"utils/logging_setup.py" = ["F401"]
+"utils/telegram_notify.py" = ["F401"]
+"utils/title_parsing.py" = ["F401"]

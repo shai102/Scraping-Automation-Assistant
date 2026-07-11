@@ -28,11 +28,19 @@ def apply_parse_source_filter(query, parse_source: Optional[str]):
 def row_to_out_dict(row: ScrapeRecord) -> dict:
     media_type = None
     parse_source = None
+    confidence = None
+    confidence_level = None
+    recognition_trace = []
+    recognition_warnings = []
     if row.metadata_json:
         try:
             meta = json.loads(row.metadata_json)
             media_type = meta.get("type")
             parse_source = normalize_parse_source(meta.get("parse_source"))
+            confidence = meta.get("confidence")
+            confidence_level = meta.get("confidence_level")
+            recognition_trace = meta.get("recognition_trace") or []
+            recognition_warnings = meta.get("recognition_warnings") or []
         except Exception:
             pass
     return {
@@ -47,6 +55,10 @@ def row_to_out_dict(row: ScrapeRecord) -> dict:
         "target_path": row.target_path,
         "media_type": media_type,
         "parse_source": parse_source,
+        "confidence": confidence,
+        "confidence_level": confidence_level,
+        "recognition_trace": recognition_trace,
+        "recognition_warnings": recognition_warnings,
         "error_msg": row.error_msg,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,

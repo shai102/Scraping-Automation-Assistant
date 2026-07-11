@@ -131,6 +131,40 @@ def finish_task_by_id(task_id: int | None, status: str, error: str | None = None
         db.close()
 
 
+def requeue_task_by_id(task_id: int | None, error: str | None = None):
+    if not task_id:
+        return None
+    db = SessionLocal()
+    try:
+        task = db.get(TaskQueue, task_id)
+        if not task:
+            return None
+        now = datetime.datetime.now()
+        task.status = "queued"
+        task.started_at = None
+        task.finished_at = None
+        task.updated_at = now
+        task.last_error = (error or "等待自动重试")[:1000]
+        db.commit()
+        db.refresh(task)
+        return task
+    finally:
+        db.close()
+
+
+def cleanup_terminal_tasks(db, *, retention_days: int = 30) -> int:
+    days = max(1, int(retention_days or 30))
+    cutoff = datetime.datetime.now() - datetime.timedelta(days=days)
+    count = (
+        db.query(TaskQueue)
+        .filter(TaskQueue.status.in_(TERMINAL_STATUSES), TaskQueue.updated_at < cutoff)
+        .delete(synchronize_session=False)
+    )
+    if count:
+        db.commit()
+    return int(count or 0)
+
+
 def recover_stale_running_tasks(db, *, stale_minutes: int | None = 120) -> int:
     recover_all = stale_minutes is None or int(stale_minutes) <= 0
     cutoff = (

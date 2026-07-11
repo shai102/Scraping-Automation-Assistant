@@ -3,6 +3,7 @@
 import logging
 import os
 import time
+import datetime
 
 from db.database import SessionLocal
 from db.scrape_models import FolderScanState, MonitorFolder, ScrapeRecord, SymlinkRecord
@@ -308,6 +309,7 @@ def _iter_folder_candidates(
 
 
 def poll_once(watcher):
+    watcher._last_poll_at = datetime.datetime.now()
     """Walk enabled folders and enqueue any file not yet recorded."""
     if not watcher._worker_ctx:
         return 0

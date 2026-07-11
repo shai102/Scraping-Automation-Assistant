@@ -14,6 +14,7 @@ from db.database import SessionLocal
 from db.scrape_models import ScrapeRecord, SymlinkRecord
 from monitor.file_processor_archive import finalize_processed_item, handle_symlink_export
 from monitor.file_processor_fastpath import try_nfo_fast_path
+from monitor.file_stability import wait_for_file_stable
 from monitor.record_state import (
     is_already_scraped,
     reset_scrape_record_for_rebuild,
@@ -22,9 +23,10 @@ from monitor.record_state import (
     symlink_record_needs_repair,
     symlink_source_consumed_downstream,
 )
-from monitor.record_payloads import scrape_record_to_dict, symlink_record_to_dict
+from monitor.record_payloads import scrape_record_to_dict
 from monitor.scan_service import find_folder_for_path
 from monitor.task_queue import finish_task, finish_task_by_id, mark_task_running
+from monitor.retry_policy import can_retry, classify_retryable_error, retry_delay_seconds, schedule_task_retry
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,8 @@ def process_file(watcher, path: str, task_id: int | None = None):
 
     task_status = None
     task_error = None
+    task = None
+    cfg = getattr(watcher._worker_ctx, "_cfg", {}) if watcher._worker_ctx else {}
     dir_slot = watcher._acquire_dir_slot(path)
     db = SessionLocal()
 
@@ -46,7 +50,24 @@ def process_file(watcher, path: str, task_id: int | None = None):
         task_error = error
 
     try:
-        mark_task_running(db, task_id)
+        task = mark_task_running(db, task_id)
+        if cfg.get("file_stability_enabled", True):
+            stable, stability_error = wait_for_file_stable(
+                path,
+                checks=cfg.get("file_stability_checks", 2),
+                interval_seconds=cfg.get("file_stability_interval_seconds", 1.0),
+            )
+            if not stable:
+                delay = retry_delay_seconds(
+                    getattr(task, "attempts", 1),
+                    cfg.get("retry_base_seconds", 30),
+                    cfg.get("retry_max_seconds", 1800),
+                )
+                if can_retry(getattr(task, "attempts", 1), cfg.get("retry_max_attempts", 5)) and schedule_task_retry(watcher, path, task_id, stability_error, delay):
+                    logger.info("文件暂未稳定，%s 秒后重试: %s", delay, path)
+                    return
+                _set_task_result("failed", stability_error)
+                return
         folder = find_folder_for_path(path, db)
         record = None
 
@@ -220,6 +241,15 @@ def process_file(watcher, path: str, task_id: int | None = None):
                 record.error_msg = str(err)[:500]
                 db.commit()
                 watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
+                retryable, _category = classify_retryable_error(err)
+                if retryable and can_retry(getattr(task, "attempts", 1), cfg.get("retry_max_attempts", 5)):
+                    delay = retry_delay_seconds(
+                        getattr(task, "attempts", 1),
+                        cfg.get("retry_base_seconds", 30),
+                        cfg.get("retry_max_seconds", 1800),
+                    )
+                    if schedule_task_retry(watcher, path, task_id, record.error_msg, delay):
+                        return
                 _set_task_result("failed", record.error_msg)
                 return
 
@@ -242,10 +272,37 @@ def process_file(watcher, path: str, task_id: int | None = None):
                 record.error_msg = meta.get("pending_reason") or "无法自动识别"
             db.commit()
             watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
+            retryable, _category = classify_retryable_error(record.error_msg)
+            if retryable and can_retry(getattr(task, "attempts", 1), cfg.get("retry_max_attempts", 5)):
+                delay = retry_delay_seconds(
+                    getattr(task, "attempts", 1),
+                    cfg.get("retry_base_seconds", 30),
+                    cfg.get("retry_max_seconds", 1800),
+                )
+                if schedule_task_retry(watcher, path, task_id, record.error_msg, delay):
+                    return
             _set_task_result("failed", record.error_msg)
             return
 
         meta = item.metadata or {}
+        confidence = float(meta.get("confidence") or 0.0)
+        if (
+            cfg.get("recognition_confidence_gate_enabled", False)
+            and confidence < float(cfg.get("recognition_confidence_threshold", 0.60))
+        ):
+            record.status = "pending_manual"
+            record.matched_title = meta.get("title")
+            record.matched_id = str(meta.get("id") or "None")
+            record.matched_provider = meta.get("provider")
+            record.metadata_json = json.dumps(meta, ensure_ascii=False)
+            record.error_msg = (
+                f"识别置信度 {confidence:.0%} 低于自动归档阈值 "
+                f"{float(cfg.get('recognition_confidence_threshold', 0.60)):.0%}"
+            )
+            db.commit()
+            watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
+            _set_task_result("failed", record.error_msg)
+            return
         logger.info(
             "识别完成: title=%s | path=%s | name=%s | year=%s | type=%s | season=%s | episode=%s | provider=%s | id=%s | parse_source=%s | resolution=%s | source=%s | video_codec=%s | audio_codec=%s | release_group=%s",
             meta.get("title") or "",
@@ -274,6 +331,15 @@ def process_file(watcher, path: str, task_id: int | None = None):
             record.error_msg = str(err)[:500]
             db.commit()
             watcher._broadcast({"type": "record_update", "data": scrape_record_to_dict(record)})
+            retryable, _category = classify_retryable_error(err)
+            if retryable and can_retry(getattr(task, "attempts", 1), cfg.get("retry_max_attempts", 5)):
+                delay = retry_delay_seconds(
+                    getattr(task, "attempts", 1),
+                    cfg.get("retry_base_seconds", 30),
+                    cfg.get("retry_max_seconds", 1800),
+                )
+                if schedule_task_retry(watcher, path, task_id, record.error_msg, delay):
+                    return
             _set_task_result("failed", record.error_msg)
 
     except Exception as err:
@@ -282,6 +348,11 @@ def process_file(watcher, path: str, task_id: int | None = None):
             db.rollback()
         except Exception:
             pass
+        retryable, _category = classify_retryable_error(err)
+        if retryable and can_retry(getattr(task, "attempts", 1), cfg.get("retry_max_attempts", 5)):
+            delay = retry_delay_seconds(1, cfg.get("retry_base_seconds", 30), cfg.get("retry_max_seconds", 1800))
+            if schedule_task_retry(watcher, path, task_id, str(err)[:500], delay):
+                return
         _set_task_result("failed", str(err)[:500])
     finally:
         if task_id and task_status:

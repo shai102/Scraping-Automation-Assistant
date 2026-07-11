@@ -118,10 +118,13 @@ def clear_api_cache_file():
 
 
 def get_cache_key(api_name, query):
-    return f"{api_name}:{str(query)}"
+    return f"{runtime.CACHE_ALGORITHM_VERSION}:{api_name}:{str(query)}"
 
 
 def invalidate_cache_prefix(prefix):
+    version_prefix = f"{runtime.CACHE_ALGORITHM_VERSION}:"
+    if not str(prefix).startswith(version_prefix):
+        prefix = version_prefix + str(prefix)
     with runtime._cache_file_lock:
         _ensure_cache_loaded_unlocked()
         keys = [key for key in list(runtime._cache_data.keys()) if key.startswith(prefix)]

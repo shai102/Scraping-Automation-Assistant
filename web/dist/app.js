@@ -120,6 +120,7 @@ var app = Vue.createApp({
     if (this.page === 'symlink_folders') {
       this.loadFolders();
     }
+    if (this.page === 'system') this.loadSystemStatus();
     this._onHashChange = () => {
       var nextPage = normalizePageHash();
       if (isKnownPage(nextPage) && nextPage !== this.page) {
@@ -152,6 +153,7 @@ var app = Vue.createApp({
       if (val === 'symlink_folders') {
         this.loadFolders();
       }
+      if (val === 'system') this.loadSystemStatus();
     });
     var self = this;
     UI_STATE_STRING_FIELDS

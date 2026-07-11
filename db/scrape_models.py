@@ -126,3 +126,24 @@ class FolderScanState(Base):
     dir_key = Column(String(2048), nullable=False)
     mtime_ns = Column(Integer, nullable=False, default=0)
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
+class ArchiveOperation(Base):
+    """Durable journal for filesystem archive operations."""
+    __tablename__ = "archive_operations"
+    __table_args__ = (
+        Index("idx_archive_operations_status_updated", "status", "updated_at"),
+        Index("idx_archive_operations_record_id", "record_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    record_id = Column(Integer, nullable=True)
+    source_path = Column(String(2048), nullable=False)
+    target_path = Column(String(2048), nullable=False)
+    organize_mode = Column(String(32), nullable=False)
+    phase = Column(String(32), nullable=False, default="prepared")
+    status = Column(String(32), nullable=False, default="running")
+    error_msg = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+    completed_at = Column(DateTime, nullable=True)
